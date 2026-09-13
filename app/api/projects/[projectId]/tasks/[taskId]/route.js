@@ -4,6 +4,15 @@ import { prisma } from "@/lib/prisma";
 
 const VALID_STATUSES = ["todo", "in_progress", "done"];
 
+async function canAccess(record, userId) {
+  if (record.userId === userId) return true;
+  if (!record.businessId) return false;
+  const membership = await prisma.teamMember.findUnique({
+    where: { businessId_userId: { businessId: record.businessId, userId } },
+  });
+  return !!membership;
+}
+
 export async function PATCH(req, { params }) {
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
@@ -12,7 +21,7 @@ export async function PATCH(req, { params }) {
     where: { id: params.taskId },
     include: { project: true },
   });
-  if (!task || task.project.userId !== user.id || task.projectId !== params.projectId) {
+  if (!task || task.projectId !== params.projectId || !(await canAccess(task.project, user.id))) {
     return NextResponse.json({ error: "Task not found." }, { status: 404 });
   }
 
@@ -39,7 +48,7 @@ export async function DELETE(req, { params }) {
     where: { id: params.taskId },
     include: { project: true },
   });
-  if (!task || task.project.userId !== user.id || task.projectId !== params.projectId) {
+  if (!task || task.projectId !== params.projectId || !(await canAccess(task.project, user.id))) {
     return NextResponse.json({ error: "Task not found." }, { status: 404 });
   }
 
