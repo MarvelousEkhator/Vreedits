@@ -5,10 +5,12 @@ import Link from "next/link";
 import { ArrowLeft, Play, Loader2 } from "lucide-react";
 import * as Y from "yjs";
 import { WebsocketProvider } from "y-websocket";
-import { MonacoBinding } from "y-monaco";
-import Editor from "@monaco-editor/react";
+import { yCollab } from "y-codemirror.next";
+import { EditorState } from "@codemirror/state";
+import { EditorView, basicSetup } from "codemirror";
+import { javascript } from "@codemirror/lang-javascript";
+import { python } from "@codemirror/lang-python";
 
-const SYNC_SERVER_URL = process.env.NEXT_PUBLIC_CODEROOM_SYNC_URL;
 const PYODIDE_CDN = "https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js";
 
 const DEFAULT_CODE = {
@@ -16,6 +18,11 @@ const DEFAULT_CODE = {
   python: "print('Hello from Python!')",
   html: "<!DOCTYPE html>\n<html>\n  <body>\n    <h1>Hello!</h1>\n  </body>\n</html>",
 };
+
+function languageExtension(language) {
+  if (language === "python") return python();
+  return javascript(); // used for both "javascript" and as a reasonable default for "html" editing
+}
 
 let pyodideLoadPromise = null;
 function loadPyodide() {
@@ -38,7 +45,8 @@ function loadPyodide() {
 
 export default function CodeRoomPage() {
   const { roomId } = useParams();
-  const editorRef = useRef(null);
+  const editorContainerRef = useRef(null);
+  const editorViewRef = useRef(null);
   const providerRef = useRef(null);
   const ydocRef = useRef(null);
   const pyodideRef = useRef(null);
@@ -67,30 +75,48 @@ export default function CodeRoomPage() {
     load();
   }, [roomId]);
 
-  const handleEditorMount = useCallback((editor) => {
-    editorRef.current = editor;
+  // Set up Yjs + CodeMirror once the room has loaded
+  useEffect(() => {
+    if (!room || !editorContainerRef.current) return;
 
     const ydoc = new Y.Doc();
     ydocRef.current = ydoc;
-    const provider = new WebsocketProvider(SYNC_SERVER_URL, `coderoom-${roomId}`, ydoc);
-    providerRef.current = provider;
 
+    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const serverUrl = `${proto}//${window.location.host}/coderoom-sync`;
+    const provider = new WebsocketProvider(serverUrl, `coderoom-${roomId}`, ydoc);
+    providerRef.current = provider;
     provider.on("status", ({ status }) => setConnected(status === "connected"));
 
-    const yText = ydoc.getText("monaco");
-    new MonacoBinding(yText, editor.getModel(), new Set([editor]), provider.awareness);
-  }, [roomId]);
+    const yText = ydoc.getText("codemirror");
+    if (yText.length === 0) {
+      yText.insert(0, room.code || DEFAULT_CODE[room.language || "javascript"]);
+    }
 
-  useEffect(() => {
+    const state = EditorState.create({
+      doc: yText.toString(),
+      extensions: [
+        basicSetup,
+        languageExtension(room.language || "javascript"),
+        yCollab(yText, provider.awareness),
+        EditorView.theme({ "&": { height: "45vh", fontSize: "14px" } }),
+      ],
+    });
+
+    const view = new EditorView({ state, parent: editorContainerRef.current });
+    editorViewRef.current = view;
+
     return () => {
-      providerRef.current?.destroy();
-      ydocRef.current?.destroy();
+      view.destroy();
+      provider.destroy();
+      ydoc.destroy();
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [room, roomId]);
 
   useEffect(() => {
     const interval = setInterval(() => {
-      const code = editorRef.current?.getValue();
+      const code = editorViewRef.current?.state.doc.toString();
       if (code !== undefined) {
         fetch(`/api/coderooms/${roomId}`, {
           method: "PATCH",
@@ -162,12 +188,10 @@ export default function CodeRoomPage() {
         return "Failed to load Python runtime. Check your connection and try again.\n";
       }
     }
-
     const pyodide = pyodideRef.current;
     let collected = "";
     pyodide.setStdout({ batched: (text) => { collected += text + "\n"; } });
     pyodide.setStderr({ batched: (text) => { collected += "Error: " + text + "\n"; } });
-
     try {
       await pyodide.runPythonAsync(code);
     } catch (err) {
@@ -177,11 +201,10 @@ export default function CodeRoomPage() {
   }
 
   async function runCode() {
-    const code = editorRef.current?.getValue() || "";
+    const code = editorViewRef.current?.state.doc.toString() || "";
     setRunning(true);
 
     if (language === "html") {
-      // No "output" to capture — just render it in a live sandboxed preview.
       setPreviewSrcDoc(code);
       setRunning(false);
       return;
@@ -236,16 +259,7 @@ export default function CodeRoomPage() {
         </div>
       </div>
 
-      <div className="card" style={{ overflow: "hidden", marginBottom: 12 }}>
-        <Editor
-          height="45vh"
-          language={language === "html" ? "html" : language}
-          defaultValue={room.code || DEFAULT_CODE[language]}
-          theme="vs-dark"
-          onMount={handleEditorMount}
-          options={{ minimap: { enabled: false }, fontSize: 14 }}
-        />
-      </div>
+      <div className="card" style={{ overflow: "hidden", marginBottom: 12 }} ref={editorContainerRef} />
 
       {language === "html" ? (
         <div className="card" style={{ overflow: "hidden" }}>
