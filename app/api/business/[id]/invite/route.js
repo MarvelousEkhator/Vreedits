@@ -28,7 +28,8 @@ export async function POST(req, { params }) {
     data: { businessId, email, role, token: crypto.randomUUID() },
   });
 
-  // TODO: send this via your existing email system, if you have one, with a link like
-  // `${process.env.APP_URL}/invites/${invite.token}`
-  return NextResponse.json({ invite });
+  const baseUrl = process.env.APP_URL || `${req.nextUrl.protocol}//${req.nextUrl.host}`;
+  const inviteLink = `${baseUrl}/team-invites/${invite.token}`;
+
+  return NextResponse.json({ invite, inviteLink });
 }
