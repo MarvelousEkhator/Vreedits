@@ -527,3 +527,15 @@ model Invoice {
   dueDate     DateTime?
   createdAt   DateTime  @default(now())
 }
+model CodeRoom {
+  id         String    @id @default(uuid())
+  businessId String?
+  business   Business? @relation(fields: [businessId], references: [id], onDelete: SetNull)
+  hostId     String
+  host       User      @relation("CodeRoomHost", fields: [hostId], references: [id], onDelete: Cascade)
+  name       String
+  language   String    @default("javascript")
+  code       String    @db.Text
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+}
