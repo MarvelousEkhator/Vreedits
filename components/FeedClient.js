@@ -5,7 +5,7 @@ import Link from "next/link";
 import {
   Heart, MessageCircle, Share2, Bookmark, RotateCw, Plus, X, Send,
   Loader2, Search, User as UserIcon, Download, Trash2, Music2,
-  Volume2, VolumeX,
+  Volume2, VolumeX, Check,
 } from "lucide-react";
 import CameraCapture from "@/components/CameraCapture";
 
@@ -330,7 +330,7 @@ function HeartBurst({ x, y }) {
   );
 }
 
-function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onOpenComments, onLongPress, onOpenProfile, registerVideoRef }) {
+function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onOpenComments, onLongPress, onOpenProfile, registerVideoRef }) {
   const pressTimer = useRef(null);
   const lastTapRef = useRef(0);
   const [burst, setBurst] = useState(null); // { x, y, key } | null
@@ -423,19 +423,22 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onOpenComment
           style={{ position: "relative", marginBottom: 4, background: "none", border: "none", padding: 0 }}
         >
           <Avatar user={post.author} size={44} />
-          <div
-            aria-hidden="true"
-            title="Follow isn't wired up yet — no follow system exists in the backend"
+        </button>
+        {!isOwner && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onFollow(post); }}
+            aria-label={post.followedByMe ? `Unfollow ${post.author.username}` : `Follow ${post.author.username}`}
             style={{
-              position: "absolute", bottom: -8, left: "50%", transform: "translateX(-50%)",
-              width: 18, height: 18, borderRadius: "50%", background: "var(--accent)",
+              position: "relative", marginTop: -16, marginBottom: 4,
+              width: 18, height: 18, borderRadius: "50%",
+              background: post.followedByMe ? "var(--surface-2)" : "var(--accent)",
               color: "white", display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: 13, fontWeight: 700, border: "2px solid #000", lineHeight: 1,
+              fontSize: 13, fontWeight: 700, border: "2px solid #000", lineHeight: 1, padding: 0,
             }}
           >
-            +
-          </div>
-        </button>
+            {post.followedByMe ? <Check size={11} /> : "+"}
+          </button>
+        )}
 
         <button onClick={(e) => { e.stopPropagation(); onLike(post); }} aria-label="Like" style={{ background: "none", border: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
           <Heart size={30} color="white" fill={post.likedByMe ? "#ff4d67" : "none"} stroke={post.likedByMe ? "#ff4d67" : "white"} />
@@ -599,6 +602,26 @@ export default function FeedClient({ user }) {
     await fetch(`/api/feed/${post.id}/save`, { method: "POST" });
   }
 
+  async function handleFollow(post) {
+    const authorId = post.author.id;
+    const wasFollowing = post.followedByMe;
+
+    // Optimistically flip followedByMe on every post from this author,
+    // not just the one that was tapped, so the badge stays consistent
+    // if the same author appears more than once in the feed.
+    setPosts((prev) =>
+      prev.map((p) => (p.author.id === authorId ? { ...p, followedByMe: !wasFollowing } : p))
+    );
+
+    const res = await fetch(`/api/users/${authorId}/follow`, { method: "POST" });
+    if (!res.ok) {
+      // Revert on failure.
+      setPosts((prev) =>
+        prev.map((p) => (p.author.id === authorId ? { ...p, followedByMe: wasFollowing } : p))
+      );
+    }
+  }
+
   function handleDownload(post) {
     if (!post.mediaUrl) return;
     const ext = post.mediaType === "video" ? "webm" : "jpg";
@@ -693,6 +716,7 @@ export default function FeedClient({ user }) {
               onLike={handleLike}
               onSave={handleSave}
               onShare={handleShare}
+              onFollow={handleFollow}
               onOpenComments={setCommentsPost}
               onLongPress={setActionsPost}
               onOpenProfile={handleOpenProfile}
