@@ -111,11 +111,17 @@ export default function SettingsPage() {
                   ))}
                 </select>
               </div>
-              <div className="flex items-center gap-2.5">
+              <div
+                className="flex items-center gap-2.5"
+                style={{
+                  padding: "8px 12px", borderRadius: 10,
+                  background: "var(--surface-2)", width: "fit-content",
+                }}
+              >
                 {profile?.isPublic ? (
                   <Unlock size={15} style={{ color: "var(--text-muted)" }} />
                 ) : (
-                  <Lock size={15} style={{ color: "var(--text-muted)" }} />
+                  <Lock size={15} style={{ color: "var(--accent)" }} />
                 )}
                 <span>{profile?.isPublic ? "Public profile" : "Private profile"}</span>
               </div>
