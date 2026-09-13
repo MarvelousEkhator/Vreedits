@@ -21,6 +21,15 @@ export async function GET(req) {
     },
   });
 
+  // Batch-check which of these authors the current user already follows,
+  // instead of one query per post.
+  const authorIds = [...new Set(posts.map((p) => p.authorId))];
+  const follows = await prisma.follow.findMany({
+    where: { followerId: user.id, followingId: { in: authorIds } },
+    select: { followingId: true },
+  });
+  const followedIds = new Set(follows.map((f) => f.followingId));
+
   const shaped = posts.map((p) => ({
     id: p.id,
     caption: p.caption,
@@ -32,6 +41,9 @@ export async function GET(req) {
     likedByMe: p.likedBy.includes(user.id),
     commentCount: p._count.comments,
     savedByMe: p.saves.length > 0,
+    // Following yourself isn't a thing — the button is hidden for your
+    // own posts in the UI, but this keeps the API response consistent.
+    followedByMe: p.authorId === user.id ? true : followedIds.has(p.authorId),
   }));
 
   return NextResponse.json({
@@ -44,7 +56,7 @@ export async function POST(req) {
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
 
-  const { caption, mediaUrl, mediaType } = await req.json();
+  const { caption, mediaUrl, mediaType, isPrivate } = await req.json();
   if (!caption?.trim() && !mediaUrl) {
     return NextResponse.json({ error: "Add a caption or an image first." }, { status: 400 });
   }
@@ -55,6 +67,7 @@ export async function POST(req) {
       caption: caption?.trim() || null,
       mediaUrl: mediaUrl || null,
       mediaType: mediaType === "video" ? "video" : "image",
+      isPrivate: !!isPrivate,
     },
     include: {
       author: { select: { id: true, username: true, avatarDataUrl: true, allowDownloads: true } },
@@ -68,12 +81,14 @@ export async function POST(req) {
       caption: post.caption,
       mediaUrl: post.mediaUrl,
       mediaType: post.mediaType,
+      isPrivate: post.isPrivate,
       createdAt: post.createdAt,
       author: post.author,
       likeCount: 0,
       likedByMe: false,
       commentCount: 0,
       savedByMe: false,
+      followedByMe: true,
     },
   });
 }
