@@ -11,4 +11,4 @@ wss.on("connection", (conn, req) => {
 });
 
 const PORT = process.env.PORT || 1234;
-server.listen(PORT, () => console.log(`Sync server running on ${PORT}`));
+server.listen(PORT, "0.0.0.0", () => console.log(`Sync server running on ${PORT}`));
