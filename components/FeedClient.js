@@ -33,6 +33,95 @@ function Avatar({ user, size = 40 }) {
   );
 }
 
+function CommentRow({ comment, postId, isReply, onLike, onReplySubmitted }) {
+  const [replying, setReplying] = useState(false);
+  const [replyInput, setReplyInput] = useState("");
+  const [sendingReply, setSendingReply] = useState(false);
+
+  async function handleReplySend(e) {
+    e.preventDefault();
+    if (!replyInput.trim() || sendingReply) return;
+    setSendingReply(true);
+    const res = await fetch(`/api/feed/${postId}/comments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: replyInput.trim(), parentId: comment.id }),
+    });
+    const data = await res.json();
+    setSendingReply(false);
+    if (res.ok) {
+      onReplySubmitted(comment.id, data.comment);
+      setReplyInput("");
+      setReplying(false);
+    }
+  }
+
+  return (
+    <div className="flex items-start gap-2.5 mb-3" style={{ marginLeft: isReply ? 36 : 0 }}>
+      <Avatar user={comment.author} size={isReply ? 24 : 28} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div>
+          <span className="text-sm font-semibold mr-1.5">{comment.author.username}</span>
+          <span className="text-sm" style={{ overflowWrap: "anywhere" }}>{comment.content}</span>
+        </div>
+        <div className="flex items-center gap-3 mt-1">
+          {!isReply && (
+            <button
+              onClick={() => setReplying((r) => !r)}
+              className="text-xs font-medium"
+              style={{ background: "none", border: "none", color: "var(--text-muted)" }}
+            >
+              Reply
+            </button>
+          )}
+        </div>
+
+        {replying && (
+          <form onSubmit={handleReplySend} className="flex items-center gap-2 mt-2">
+            <input
+              className="input pl-3"
+              style={{ fontSize: 13, padding: "6px 10px" }}
+              placeholder={`Reply to ${comment.author.username}…`}
+              value={replyInput}
+              onChange={(e) => setReplyInput(e.target.value)}
+              autoFocus
+            />
+            <button
+              type="submit"
+              disabled={sendingReply || !replyInput.trim()}
+              className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
+              style={{ background: "var(--accent)", color: "white", opacity: sendingReply || !replyInput.trim() ? 0.6 : 1 }}
+              aria-label="Send reply"
+            >
+              <Send size={13} />
+            </button>
+          </form>
+        )}
+
+        {!isReply && comment.replies?.length > 0 && (
+          <div className="mt-3">
+            {comment.replies.map((r) => (
+              <CommentRow key={r.id} comment={r} postId={postId} isReply onLike={onLike} onReplySubmitted={onReplySubmitted} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      <button
+        onClick={() => onLike(comment.id, isReply, comment.likedByMe)}
+        className="flex flex-col items-center gap-0.5 flex-shrink-0"
+        style={{ background: "none", border: "none", paddingTop: 2 }}
+        aria-label="Like comment"
+      >
+        <Heart size={14} color={comment.likedByMe ? "#ff4d67" : "var(--text-muted)"} fill={comment.likedByMe ? "#ff4d67" : "none"} />
+        {comment.likeCount > 0 && (
+          <span className="text-xs" style={{ color: "var(--text-muted)" }}>{comment.likeCount}</span>
+        )}
+      </button>
+    </div>
+  );
+}
+
 function CommentsSheet({ postId, open, onClose }) {
   const [comments, setComments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -63,6 +152,36 @@ function CommentsSheet({ postId, open, onClose }) {
       setComments((prev) => [...prev, data.comment]);
       setInput("");
     }
+  }
+
+  // Handles liking either a top-level comment or one of its replies —
+  // updates local state optimistically, then confirms with the server.
+  async function handleLikeComment(commentId, isReply, currentlyLiked) {
+    setComments((prev) =>
+      prev.map((c) => {
+        if (!isReply && c.id === commentId) {
+          return { ...c, likedByMe: !currentlyLiked, likeCount: c.likeCount + (currentlyLiked ? -1 : 1) };
+        }
+        if (isReply && c.replies?.some((r) => r.id === commentId)) {
+          return {
+            ...c,
+            replies: c.replies.map((r) =>
+              r.id === commentId
+                ? { ...r, likedByMe: !currentlyLiked, likeCount: r.likeCount + (currentlyLiked ? -1 : 1) }
+                : r
+            ),
+          };
+        }
+        return c;
+      })
+    );
+    await fetch(`/api/feed/${postId}/comments/${commentId}/like`, { method: "POST" });
+  }
+
+  function handleReplySubmitted(parentId, newReply) {
+    setComments((prev) =>
+      prev.map((c) => (c.id === parentId ? { ...c, replies: [...(c.replies || []), newReply] } : c))
+    );
   }
 
   return (
@@ -99,13 +218,7 @@ function CommentsSheet({ postId, open, onClose }) {
             <p className="text-sm text-center py-8" style={{ color: "var(--text-muted)" }}>No comments yet.</p>
           ) : (
             comments.map((c) => (
-              <div key={c.id} className="flex items-start gap-2.5 mb-3">
-                <Avatar user={c.author} size={28} />
-                <div>
-                  <span className="text-sm font-semibold mr-1.5">{c.author.username}</span>
-                  <span className="text-sm" style={{ overflowWrap: "anywhere" }}>{c.content}</span>
-                </div>
-              </div>
+              <CommentRow key={c.id} comment={c} postId={postId} onLike={handleLikeComment} onReplySubmitted={handleReplySubmitted} />
             ))
           )}
         </div>
