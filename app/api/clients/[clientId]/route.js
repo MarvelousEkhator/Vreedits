@@ -2,6 +2,15 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/requireUser";
 import { prisma } from "@/lib/prisma";
 
+async function canAccess(record, userId) {
+  if (record.userId === userId) return true;
+  if (!record.businessId) return false;
+  const membership = await prisma.teamMember.findUnique({
+    where: { businessId_userId: { businessId: record.businessId, userId } },
+  });
+  return !!membership;
+}
+
 export async function GET(req, { params }) {
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
@@ -10,7 +19,7 @@ export async function GET(req, { params }) {
     where: { id: params.clientId },
     include: { notes: { orderBy: { updatedAt: "desc" } } },
   });
-  if (!client || client.userId !== user.id) {
+  if (!client || !(await canAccess(client, user.id))) {
     return NextResponse.json({ error: "Client not found." }, { status: 404 });
   }
 
@@ -22,7 +31,7 @@ export async function PATCH(req, { params }) {
   if (!user) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
 
   const client = await prisma.client.findUnique({ where: { id: params.clientId } });
-  if (!client || client.userId !== user.id) {
+  if (!client || !(await canAccess(client, user.id))) {
     return NextResponse.json({ error: "Client not found." }, { status: 404 });
   }
 
@@ -42,7 +51,7 @@ export async function DELETE(req, { params }) {
   if (!user) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
 
   const client = await prisma.client.findUnique({ where: { id: params.clientId } });
-  if (!client || client.userId !== user.id) {
+  if (!client || !(await canAccess(client, user.id))) {
     return NextResponse.json({ error: "Client not found." }, { status: 404 });
   }
 
