@@ -474,3 +474,46 @@ model ProjectTask {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+model Business {
+  id        String   @id @default(cuid())
+  name      String
+  ownerId   String
+  owner     User     @relation("BusinessOwner", fields: [ownerId], references: [id])
+  members   TeamMember[]
+  invoices  Invoice[]
+  createdAt DateTime @default(now())
+}
+
+model TeamMember {
+  id         String   @id @default(cuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id])
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  role       String   @default("member") // "owner" | "admin" | "member"
+  joinedAt   DateTime @default(now())
+
+  @@unique([businessId, userId])
+}
+
+model TeamInvite {
+  id         String   @id @default(cuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id])
+  email      String
+  role       String   @default("member")
+  token      String   @unique
+  status     String   @default("pending") // "pending" | "accepted" | "revoked"
+  createdAt  DateTime @default(now())
+}
+
+model Invoice {
+  id          String    @id @default(cuid())
+  businessId  String
+  business    Business  @relation(fields: [businessId], references: [id])
+  clientName  String
+  items       Json      // [{ description, quantity, unitPrice }]
+  status      String    @default("draft") // "draft" | "sent" | "paid" | "overdue"
+  dueDate     DateTime?
+  createdAt   DateTime  @default(now())
+}
