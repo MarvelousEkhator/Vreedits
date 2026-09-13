@@ -3,13 +3,25 @@ import { requireUser } from "@/lib/requireUser";
 import { SYNA_SYSTEM_CONTEXT } from "@/lib/synaContext";
 import { generateImage, isImageRequest } from "@/lib/cloudflareImage";
 import { generateTextReply } from "@/lib/cloudflareText";
+import { editImage, isImageEditRequest } from "@/lib/geminiImageEdit";
 
 // Cap attached file size (base64) so one image can't bloat a request or
 // the database it eventually gets persisted into via /api/ai/conversations.
-const MAX_ATTACHMENT_LENGTH = 5_500_000; // ~4MB actual file
+const MAX_ATTACHMENT_LENGTH = 5_500_000; // ~4MB actual file per image
+const MAX_ATTACHMENTS = 3; // matches the frontend's upload cap
 
-const GEMINI_MODEL = "gemini-2.5-flash";
+const GEMINI_MODEL = "gemini-3.1-flash-lite";
 const GEMINI_TIMEOUT_MS = 15_000;
+
+// Normalizes a message's attachments into an array, whether it came in
+// as the new `attachments` array (multi-image) or the older singular
+// `attachment` field (kept for backward compatibility with messages
+// persisted before multi-image support existed).
+function attachmentsForMessage(m) {
+  if (Array.isArray(m?.attachments) && m.attachments.length > 0) return m.attachments;
+  if (m?.attachment) return [m.attachment];
+  return [];
+}
 
 function partsForMessage(m) {
   const parts = [];
@@ -19,12 +31,14 @@ function partsForMessage(m) {
   // of sending it to Gemini as-is, which 400s the whole request.
   const text = typeof m.text === "string" ? m.text : (typeof m.text?.text === "string" ? m.text.text : "");
   if (text) parts.push({ text });
-  if (m.attachment?.dataUrl) {
-    const match = m.attachment.dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+
+  for (const att of attachmentsForMessage(m)) {
+    const match = att?.dataUrl?.match(/^data:([^;]+);base64,(.+)$/);
     if (match) {
       parts.push({ inlineData: { mimeType: match[1], data: match[2] } });
     }
   }
+
   return parts.length > 0 ? parts : [{ text: "" }];
 }
 
@@ -32,10 +46,10 @@ function roleForGemini(role) {
   return role === "assistant" ? "model" : "user";
 }
 
-// Wraps the Gemini call with a timeout and tags rate-limit/server/timeout
-// failures so the caller knows it's safe to fall back to Cloudflare, as
-// opposed to a genuine bad-request error (e.g. bad model name, malformed
-// content) that retrying elsewhere won't fix.
+// Wraps the Gemini call with a timeout and tags rate-limit/timeout
+// failures so the caller knows it's safe to fall back to Cloudflare,
+// as opposed to a genuine bad-request error that retrying elsewhere
+// won't fix.
 async function callGemini(contents, apiKey) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
@@ -54,14 +68,8 @@ async function callGemini(contents, apiKey) {
       }
     );
 
-    // 429 (rate limited) and any 5xx (Gemini-side server error, e.g. 503
-    // overloaded) are treated as transient — fall back to Cloudflare.
-    // 4xx other than 429 (bad model name, malformed request, etc.) is a
-    // real bug that falling back won't fix, so it's left to fail loudly.
-    if (res.status === 429 || res.status >= 500) {
-      const detail = await res.text().catch(() => "");
-      console.error(`Gemini error ${res.status} (falling back):`, detail);
-      const err = new Error(res.status === 429 ? "Gemini rate limited" : "Gemini server error");
+    if (res.status === 429) {
+      const err = new Error("Gemini rate limited");
       err.fallback = true;
       throw err;
     }
@@ -107,18 +115,50 @@ export async function POST(req) {
   }
 
   const lastMessage = messages[messages.length - 1];
+  const lastAttachments = attachmentsForMessage(lastMessage);
 
-  if (lastMessage.attachment?.dataUrl && lastMessage.attachment.dataUrl.length > MAX_ATTACHMENT_LENGTH) {
-    return NextResponse.json({ error: "That attachment is too large. Please use a smaller file." }, { status: 400 });
+  if (lastAttachments.length > MAX_ATTACHMENTS) {
+    return NextResponse.json(
+      { error: `You can attach up to ${MAX_ATTACHMENTS} images at a time.` },
+      { status: 400 }
+    );
   }
 
-  // Image generation branch: if the latest user message reads like a
-  // "draw me a..." request, skip the chat model entirely and hand back
-  // a generated image instead of a text reply.
-  if (lastMessage.role !== "assistant" && (isImageRequest(lastMessage.text) || lastMessage.attachment?.type?.startsWith("image/"))) {
-  try {
-    const dataUrl = await generateImage(lastMessage.text, lastMessage.attachment?.dataUrl);
-  return NextResponse.json({
+  for (const att of lastAttachments) {
+    if (att?.dataUrl?.length > MAX_ATTACHMENT_LENGTH) {
+      return NextResponse.json({ error: "One of your images is too large. Please use a smaller file." }, { status: 400 });
+    }
+  }
+
+  const lastImageAttachments = lastAttachments.filter((att) => att?.type?.startsWith("image/"));
+
+  // Image editing branch: an image is attached AND the text reads like
+  // an edit request ("swap the outfit", "change the background") — hand
+  // it to Gemini's image model instead of the chat model.
+  if (lastMessage.role !== "assistant" && lastImageAttachments.length > 0 && isImageEditRequest(lastMessage.text)) {
+    try {
+      const dataUrl = await editImage(lastMessage.text, lastImageAttachments);
+      return NextResponse.json({
+        reply: {
+          role: "assistant",
+          text: "Here's the edited image:",
+          attachment: { dataUrl, name: "edited-image.jpg" },
+        },
+      });
+    } catch (err) {
+      return NextResponse.json({
+        reply: { role: "assistant", text: err.message || "Image editing failed. Please try again." },
+      });
+    }
+  }
+
+  // Image generation branch: no image attached, and the text reads like
+  // a "draw me a..." request — skip the chat model entirely and hand
+  // back a freshly generated image instead of a text reply.
+  if (lastMessage.role !== "assistant" && lastImageAttachments.length === 0 && isImageRequest(lastMessage.text)) {
+    try {
+      const dataUrl = await generateImage(lastMessage.text);
+      return NextResponse.json({
         reply: {
           role: "assistant",
           text: "Here's what I generated:",
@@ -152,8 +192,8 @@ export async function POST(req) {
     });
   } catch (err) {
     if (err.fallback) {
-      // Gemini is rate-limited, had a server error, or timed out — fall
-      // back to Cloudflare Workers AI so Syna can still reply.
+      // Gemini is rate-limited or timed out — fall back to Cloudflare
+      // Workers AI so Syna can still reply while Gemini recovers.
       console.error("Gemini unavailable, falling back to Cloudflare:", err.message);
       try {
         const fallbackText = await generateTextReply(messages, SYNA_SYSTEM_CONTEXT);
