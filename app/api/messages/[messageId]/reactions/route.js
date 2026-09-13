@@ -1,14 +1,15 @@
 import { NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
-import { getSessionUser } from "@/lib/auth"; // adjust to however you resolve the logged-in user
+import { getSessionUserId } from "@/lib/auth";
 
 const prisma = new PrismaClient();
 
 // POST — toggle a reaction on/off for the current user
 export async function POST(req, { params }) {
   const { messageId } = params;
-  const user = await getSessionUser(req);
-  if (!user) {
+  const userId = getSessionUserId();
+
+  if (!userId) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
@@ -21,14 +22,13 @@ export async function POST(req, { params }) {
     where: {
       messageId_userId_emoji: {
         messageId,
-        userId: user.id,
+        userId,
         emoji,
       },
     },
   });
 
   if (existing) {
-    // already reacted with this emoji — remove it (toggle off)
     await prisma.messageReaction.delete({ where: { id: existing.id } });
     return NextResponse.json({ toggled: "off", emoji });
   }
@@ -36,7 +36,7 @@ export async function POST(req, { params }) {
   const reaction = await prisma.messageReaction.create({
     data: {
       messageId,
-      userId: user.id,
+      userId,
       emoji,
     },
   });
