@@ -5,7 +5,7 @@ import Link from "next/link";
 import {
   Heart, MessageCircle, Share2, Bookmark, RotateCw, Plus, X, Send,
   Loader2, Search, User as UserIcon, Download, Trash2, Music2,
-  Volume2, VolumeX, Check,
+  Volume2, VolumeX, Check, Play,
 } from "lucide-react";
 import CameraCapture from "@/components/CameraCapture";
 
@@ -132,6 +132,14 @@ function CommentsSheet({ postId, open, onClose }) {
 }
 
 function PostActionsSheet({ post, open, isOwner, onClose, onDownload, onShare, onDelete }) {
+  if (!post) return null;
+
+  const actions = [
+    { key: "download", label: "Save video", icon: Download, onClick: () => onDownload(post) },
+    { key: "share", label: "Share", icon: Share2, onClick: () => onShare(post) },
+    ...(isOwner ? [{ key: "delete", label: "Delete", icon: Trash2, danger: true, onClick: () => onDelete(post) }] : []),
+  ];
+
   return (
     <>
       <div
@@ -148,39 +156,64 @@ function PostActionsSheet({ post, open, isOwner, onClose, onDownload, onShare, o
           background: "var(--surface)", borderRadius: "20px 20px 0 0",
           transform: open ? "translateY(0)" : "translateY(100%)",
           transition: "transform 0.28s cubic-bezier(0.22,1,0.36,1)", zIndex: 211,
-          padding: 8,
+          padding: "10px 16px 24px",
         }}
       >
-        <button
-          onClick={() => { onDownload(post); onClose(); }}
-          className="flex items-center gap-3 w-full text-sm font-medium"
-          style={{ padding: "14px 12px", background: "none", border: "none", textAlign: "left" }}
-        >
-          <Download size={18} /> Download
-        </button>
-        <button
-          onClick={() => { onShare(post); onClose(); }}
-          className="flex items-center gap-3 w-full text-sm font-medium"
-          style={{ padding: "14px 12px", background: "none", border: "none", textAlign: "left" }}
-        >
-          <Share2 size={18} /> Share
-        </button>
-        {isOwner && (
-          <button
-            onClick={() => { onDelete(post); onClose(); }}
-            className="flex items-center gap-3 w-full text-sm font-medium"
-            style={{ padding: "14px 12px", background: "none", border: "none", textAlign: "left", color: "var(--danger)" }}
-          >
-            <Trash2 size={18} /> Delete post
-          </button>
-        )}
-        <button
-          onClick={onClose}
-          className="w-full text-sm font-medium"
-          style={{ padding: "14px 12px", background: "var(--surface-2)", border: "none", borderRadius: 12, marginTop: 6 }}
-        >
-          Cancel
-        </button>
+        {/* Swipe-down handle, TikTok-style — no "Cancel" button, dismiss by
+            swiping down or tapping the backdrop instead. */}
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}>
+          <div style={{ width: 36, height: 4, borderRadius: 2, background: "var(--border)" }} />
+        </div>
+
+        {/* Frozen preview + caption, matching TikTok's small header above the icon grid */}
+        <div className="flex items-center gap-3 mb-5">
+          <div style={{ width: 44, height: 60, borderRadius: 8, overflow: "hidden", flexShrink: 0, background: "#000" }}>
+            {post.mediaUrl ? (
+              post.mediaType === "video" ? (
+                <video src={post.mediaUrl} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              ) : (
+                <img src={post.mediaUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              )
+            ) : null}
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <div className="text-sm font-semibold" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {post.author.username}
+            </div>
+            {post.caption && (
+              <div className="text-xs" style={{ color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {post.caption}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Icon grid — TikTok's actual long-press layout: round icon buttons
+            with a label underneath each, not a vertical list of rows. */}
+        <div style={{ display: "flex", gap: 20 }}>
+          {actions.map((a) => (
+            <button
+              key={a.key}
+              onClick={() => { a.onClick(); onClose(); }}
+              className="flex flex-col items-center gap-1.5"
+              style={{ background: "none", border: "none", width: 64 }}
+            >
+              <div
+                className="flex items-center justify-center"
+                style={{
+                  width: 48, height: 48, borderRadius: "50%",
+                  background: "var(--surface-2)",
+                  color: a.danger ? "var(--danger, #e55)" : "var(--text)",
+                }}
+              >
+                <a.icon size={20} />
+              </div>
+              <span className="text-xs" style={{ color: a.danger ? "var(--danger, #e55)" : "var(--text-muted)" }}>
+                {a.label}
+              </span>
+            </button>
+          ))}
+        </div>
       </div>
     </>
   );
@@ -333,7 +366,10 @@ function HeartBurst({ x, y }) {
 function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onOpenComments, onLongPress, onOpenProfile, registerVideoRef }) {
   const pressTimer = useRef(null);
   const lastTapRef = useRef(0);
+  const singleTapTimerRef = useRef(null);
+  const videoElRef = useRef(null);
   const [burst, setBurst] = useState(null); // { x, y, key } | null
+  const [isPaused, setIsPaused] = useState(false);
 
   function startPress() {
     pressTimer.current = setTimeout(() => onLongPress(post), 500);
@@ -346,19 +382,56 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
     onLongPress(post);
   }
 
-  // Double-tap-to-like: two taps within 300ms on the media area (not the
-  // action rail, which has its own buttons) triggers a like (only if not
-  // already liked) plus a heart animation at the tap location.
+  function combinedVideoRef(el) {
+    videoElRef.current = el;
+    registerVideoRef(post.id, el);
+  }
+
+  // Video is the source of truth for paused/playing — this keeps the
+  // pause icon in sync whether playback changed from this card's own tap
+  // handler or externally (the IntersectionObserver in the parent playing
+  // the newly-visible video / pausing the one scrolled away from).
+  useEffect(() => {
+    const video = videoElRef.current;
+    if (!video) return;
+    const onPlay = () => setIsPaused(false);
+    const onPause = () => setIsPaused(true);
+    video.addEventListener("play", onPlay);
+    video.addEventListener("pause", onPause);
+    setIsPaused(video.paused);
+    return () => {
+      video.removeEventListener("play", onPlay);
+      video.removeEventListener("pause", onPause);
+    };
+  }, [post.mediaType]);
+
+  function togglePlayback() {
+    const video = videoElRef.current;
+    if (!video) return;
+    if (video.paused) video.play().catch(() => {});
+    else video.pause();
+  }
+
+  // Tap-to-pause / double-tap-to-like, disambiguated the standard way:
+  // a tap is only treated as a single tap (pause/play) after waiting to
+  // see whether a second tap follows within the double-tap window — if
+  // it does, the pause/play toggle is cancelled and the double-tap
+  // like fires instead.
   function handleMediaClick(e) {
     const now = Date.now();
     const isDoubleTap = now - lastTapRef.current < 300;
     lastTapRef.current = now;
 
     if (isDoubleTap) {
+      clearTimeout(singleTapTimerRef.current);
       const rect = e.currentTarget.getBoundingClientRect();
       setBurst({ x: e.clientX - rect.left, y: e.clientY - rect.top, key: now });
       setTimeout(() => setBurst((b) => (b?.key === now ? null : b)), 700);
       if (!post.likedByMe) onLike(post);
+    } else if (post.mediaType === "video") {
+      singleTapTimerRef.current = setTimeout(() => {
+        togglePlayback();
+      }, 300);
     }
   }
 
@@ -380,7 +453,7 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
     >
       {post.mediaType === "video" && post.mediaUrl ? (
         <video
-          ref={(el) => registerVideoRef(post.id, el)}
+          ref={combinedVideoRef}
           src={post.mediaUrl}
           loop
           muted={muted}
@@ -409,6 +482,21 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
       />
 
       {burst && <HeartBurst x={burst.x} y={burst.y} />}
+
+      {/* Center pause icon — shown while a video is manually paused, TikTok-style.
+          Not shown for images, and hidden again the instant playback resumes. */}
+      {post.mediaType === "video" && isPaused && (
+        <div
+          style={{
+            position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
+            zIndex: 2, width: 68, height: 68, borderRadius: "50%",
+            background: "rgba(0,0,0,0.35)", display: "flex", alignItems: "center", justifyContent: "center",
+            pointerEvents: "none",
+          }}
+        >
+          <Play size={30} color="white" fill="white" style={{ marginLeft: 4 }} />
+        </div>
+      )}
 
       {/* Right-side action rail — TikTok style: avatar+follow, like, comment, save, share, sound disc */}
       <div
@@ -501,6 +589,26 @@ export default function FeedClient({ user }) {
   const [loadingMore, setLoadingMore] = useState(false);
   const [commentsPost, setCommentsPost] = useState(null);
   const [actionsPost, setActionsPost] = useState(null);
+  const wasPlayingBeforeActionsRef = useRef(false);
+
+  // Freezes the video's current frame while the long-press actions sheet
+  // is open (matching TikTok's behavior), and resumes it on close — but
+  // only if it was actually playing beforehand, so long-pressing a video
+  // the user had already manually paused doesn't un-pause it afterward.
+  function handleLongPress(post) {
+    const video = videoRefsMap.current.get(post.id);
+    wasPlayingBeforeActionsRef.current = !!video && !video.paused;
+    video?.pause();
+    setActionsPost(post);
+  }
+
+  function handleCloseActionsSheet() {
+    const post = actionsPost;
+    setActionsPost(null);
+    if (post && wasPlayingBeforeActionsRef.current) {
+      videoRefsMap.current.get(post.id)?.play().catch(() => {});
+    }
+  }
   const [createOpen, setCreateOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [muted, setMuted] = useState(true); // global sound toggle, TikTok-style
@@ -718,7 +826,7 @@ export default function FeedClient({ user }) {
               onShare={handleShare}
               onFollow={handleFollow}
               onOpenComments={setCommentsPost}
-              onLongPress={setActionsPost}
+              onLongPress={handleLongPress}
               onOpenProfile={handleOpenProfile}
               registerVideoRef={registerVideoRef}
             />
@@ -761,7 +869,7 @@ export default function FeedClient({ user }) {
           post={actionsPost}
           open={!!actionsPost}
           isOwner={user?.id === actionsPost.author.id}
-          onClose={() => setActionsPost(null)}
+          onClose={handleCloseActionsSheet}
           onDownload={handleDownload}
           onShare={handleShare}
           onDelete={handleDeletePost}
