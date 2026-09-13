@@ -1,7 +1,8 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { Loader2, Users, FileText, FolderKanban, Plus, ArrowLeft } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Loader2, Users, FileText, FolderKanban, Code2, Plus, ArrowLeft } from "lucide-react";
 
 function StatusBadge({ status }) {
   const colors = {
@@ -51,13 +52,17 @@ function ProjectStatusBadge({ status }) {
 }
 
 export default function BusinessDashboard() {
+  const router = useRouter();
   const [businesses, setBusinesses] = useState([]);
   const [activeBusinessId, setActiveBusinessId] = useState(null);
   const [invoices, setInvoices] = useState([]);
   const [projects, setProjects] = useState([]);
+  const [codeRooms, setCodeRooms] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadingInvoices, setLoadingInvoices] = useState(false);
   const [loadingProjects, setLoadingProjects] = useState(false);
+  const [loadingRooms, setLoadingRooms] = useState(false);
+  const [creatingRoom, setCreatingRoom] = useState(false);
   const [error, setError] = useState("");
 
   const loadBusinesses = useCallback(async () => {
@@ -102,9 +107,22 @@ export default function BusinessDashboard() {
     }
   }, []);
 
+  const loadCodeRooms = useCallback(async (businessId) => {
+    if (!businessId) return;
+    setLoadingRooms(true);
+    try {
+      const res = await fetch(`/api/coderooms?businessId=${businessId}`);
+      const data = await res.json();
+      if (res.ok) setCodeRooms(data.rooms || []);
+    } finally {
+      setLoadingRooms(false);
+    }
+  }, []);
+
   useEffect(() => { loadBusinesses(); }, [loadBusinesses]);
   useEffect(() => { loadInvoices(activeBusinessId); }, [activeBusinessId, loadInvoices]);
   useEffect(() => { loadProjects(activeBusinessId); }, [activeBusinessId, loadProjects]);
+  useEffect(() => { loadCodeRooms(activeBusinessId); }, [activeBusinessId, loadCodeRooms]);
 
   const activeBusiness = businesses.find((b) => b.id === activeBusinessId);
 
@@ -118,6 +136,21 @@ export default function BusinessDashboard() {
     },
     { total: 0, paid: 0, outstanding: 0 }
   );
+
+  async function createCodeRoom() {
+    setCreatingRoom(true);
+    try {
+      const res = await fetch("/api/coderooms", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "New Code Room", businessId: activeBusinessId }),
+      });
+      const data = await res.json();
+      if (res.ok) router.push(`/coderoom/${data.room.id}`);
+    } finally {
+      setCreatingRoom(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -231,6 +264,43 @@ export default function BusinessDashboard() {
                 </div>
               </div>
               <ProjectStatusBadge status={p.status} />
+            </Link>
+          ))}
+        </div>
+      )}
+
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="text-sm font-semibold flex items-center gap-2">
+          <Code2 size={14} /> Code Rooms
+        </h2>
+        <button
+          onClick={createCodeRoom}
+          disabled={creatingRoom}
+          className="text-xs flex items-center gap-1"
+          style={{ color: "var(--accent)", background: "none", border: "none" }}
+        >
+          <Plus size={13} /> {creatingRoom ? "Creating…" : "New Code Room"}
+        </button>
+      </div>
+
+      {loadingRooms ? (
+        <Loader2 size={16} className="animate-spin" />
+      ) : codeRooms.length === 0 ? (
+        <p className="text-sm mb-6" style={{ color: "var(--text-muted)" }}>No code rooms yet.</p>
+      ) : (
+        <div className="flex flex-col gap-2 mb-6">
+          {codeRooms.map((room) => (
+            <Link
+              key={room.id}
+              href={`/coderoom/${room.id}`}
+              className="card p-3 flex items-center justify-between"
+            >
+              <div>
+                <div className="text-sm font-medium">{room.name}</div>
+                <div className="text-xs" style={{ color: "var(--text-muted)" }}>
+                  {room.language || "javascript"}
+                </div>
+              </div>
             </Link>
           ))}
         </div>
