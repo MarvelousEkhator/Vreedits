@@ -12,6 +12,43 @@ const LOCKED_SECTIONS = [
   { header: "Content & display", items: ["Activity centre", "Ads"] },
 ];
 
+// A nicer toggle than a flat two-tone switch: a spring-y thumb animation
+// (slight overshoot on settle) and a soft glow behind the track when on,
+// instead of a plain color swap.
+function ToggleSwitch({ checked, onChange, disabled }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      disabled={disabled}
+      style={{
+        width: 50, height: 30, borderRadius: 999, border: "none", padding: 3,
+        background: checked ? "var(--accent)" : "var(--surface-2)",
+        boxShadow: checked
+          ? "0 3px 12px rgba(124, 77, 255, 0.45), inset 0 0 0 1px rgba(255,255,255,0.08)"
+          : "inset 0 0 0 1px var(--border)",
+        transition: "background 0.25s ease, box-shadow 0.25s ease",
+        cursor: disabled ? "not-allowed" : "pointer",
+        opacity: disabled ? 0.6 : 1,
+        position: "relative",
+        flexShrink: 0,
+      }}
+    >
+      <span
+        style={{
+          display: "block", width: 24, height: 24, borderRadius: "50%",
+          background: "white",
+          boxShadow: "0 1px 3px rgba(0,0,0,0.35)",
+          transform: checked ? "translateX(20px)" : "translateX(0)",
+          transition: "transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
+        }}
+      />
+    </button>
+  );
+}
+
 export default function FeedSettingsPage() {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -84,8 +121,7 @@ export default function FeedSettingsPage() {
           </Link>
         </div>
 
-        {/* Account — now scoped to feed settings, not the main Vreedits
-            /settings page, so this stays self-contained. */}
+        {/* Account — scoped to feed settings, not the main Vreedits /settings page */}
         <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--text-muted)" }}>Account</div>
         <div className="card mb-6" style={{ padding: 6 }}>
           <Link href="/settings/feed/account" className="flex items-center justify-between p-3 rounded-xl" style={{ borderBottom: "1px solid var(--border)" }}>
@@ -106,14 +142,7 @@ export default function FeedSettingsPage() {
               <div className="text-sm font-medium">Private account</div>
               <div className="text-xs" style={{ color: "var(--text-muted)" }}>Only approved followers see your posts</div>
             </div>
-            <button
-              onClick={() => patchField("isPublic", !profile.isPublic)}
-              disabled={saving}
-              className="w-11 h-6 rounded-full relative transition-colors"
-              style={{ background: !profile.isPublic ? "var(--accent)" : "var(--border)" }}
-            >
-              <span className="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform" style={{ transform: !profile.isPublic ? "translateX(22px)" : "translateX(2px)" }} />
-            </button>
+            <ToggleSwitch checked={!profile.isPublic} onChange={(v) => patchField("isPublic", !v)} disabled={saving} />
           </div>
         </div>
 
@@ -125,14 +154,7 @@ export default function FeedSettingsPage() {
               <div className="text-sm font-medium">Downloads</div>
               <div className="text-xs" style={{ color: "var(--text-muted)" }}>Let others download your posts</div>
             </div>
-            <button
-              onClick={() => patchField("allowDownloads", !profile.allowDownloads)}
-              disabled={saving}
-              className="w-11 h-6 rounded-full relative transition-colors"
-              style={{ background: profile.allowDownloads ? "var(--accent)" : "var(--border)" }}
-            >
-              <span className="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform" style={{ transform: profile.allowDownloads ? "translateX(22px)" : "translateX(2px)" }} />
-            </button>
+            <ToggleSwitch checked={profile.allowDownloads} onChange={(v) => patchField("allowDownloads", v)} disabled={saving} />
           </div>
         </div>
 
