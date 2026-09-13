@@ -55,6 +55,8 @@ model User {
   tutorConversations   TutorConversation[]
   clients              Client[]
   projects             Project[]
+  ownedBusinesses      Business[]   @relation("BusinessOwner")
+  teamMemberships      TeamMember[]
 }
 
 model Follow {
@@ -474,6 +476,7 @@ model ProjectTask {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
 model Business {
   id        String   @id @default(cuid())
   name      String
@@ -481,6 +484,7 @@ model Business {
   owner     User     @relation("BusinessOwner", fields: [ownerId], references: [id])
   members   TeamMember[]
   invoices  Invoice[]
+  invites   TeamInvite[]
   createdAt DateTime @default(now())
 }
 
