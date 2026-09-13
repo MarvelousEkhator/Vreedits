@@ -3,14 +3,18 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "node server.js",
     "build": "prisma generate && next build",
     "start": "node server.js",
     "postinstall": "prisma generate"
   },
   "dependencies": {
+    "@codemirror/lang-javascript": "^6.2.2",
+    "@codemirror/state": "^6.4.1",
+    "@codemirror/view": "^6.34.1",
     "@prisma/client": "^5.20.0",
     "bcryptjs": "^2.4.3",
+    "codemirror": "^6.0.1",
     "jsonwebtoken": "^9.0.2",
     "lucide-react": "^0.383.0",
     "next": "14.2.5",
@@ -18,7 +22,9 @@
     "react-dom": "^18.3.1",
     "react-markdown": "^9.0.1",
     "ws": "^8.18.0",
-    "y-websocket": "^2.0.4"
+    "y-codemirror.next": "^0.3.5",
+    "y-websocket": "^2.0.4",
+    "yjs": "^13.6.20"
   },
   "devDependencies": {
     "autoprefixer": "^10.4.19",
