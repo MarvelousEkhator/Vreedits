@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { Loader2, ArrowLeft, UserPlus, Shield, X } from "lucide-react";
+import { Loader2, ArrowLeft, UserPlus, Shield, Copy, Check, Share2 } from "lucide-react";
 
 export default function TeamPage() {
   const { id: businessId } = useParams();
@@ -12,7 +12,8 @@ export default function TeamPage() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("member");
   const [inviting, setInviting] = useState(false);
-  const [inviteSuccess, setInviteSuccess] = useState("");
+  const [inviteLink, setInviteLink] = useState("");
+  const [copied, setCopied] = useState(false);
 
   const loadBusiness = useCallback(async () => {
     setLoading(true);
@@ -39,7 +40,7 @@ export default function TeamPage() {
     if (!inviteEmail.trim()) return;
     setInviting(true);
     setError("");
-    setInviteSuccess("");
+    setInviteLink("");
     try {
       const res = await fetch(`/api/business/${businessId}/invite`, {
         method: "POST",
@@ -51,13 +52,29 @@ export default function TeamPage() {
         setError(data.error || "Could not send invite.");
         return;
       }
-      setInviteSuccess(`Invite sent to ${inviteEmail.trim()}.`);
+      setInviteLink(data.inviteLink);
       setInviteEmail("");
       setInviteRole("member");
     } catch {
       setError("Network error.");
     } finally {
       setInviting(false);
+    }
+  }
+
+  async function copyLink() {
+    await navigator.clipboard.writeText(inviteLink);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }
+
+  async function shareLink() {
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: "Join my team on Vreedits", url: inviteLink });
+      } catch {}
+    } else {
+      copyLink();
     }
   }
 
@@ -81,11 +98,6 @@ export default function TeamPage() {
       </div>
     );
   }
-
-  const currentMembership = business.members?.find((m) => m.userId === business.ownerId);
-  const canManage = business.members?.some(
-    (m) => m.role === "owner" || m.role === "admin"
-  );
 
   return (
     <div className="px-4 pt-6 pb-10" style={{ maxWidth: 720, margin: "0 auto" }}>
@@ -121,6 +133,9 @@ export default function TeamPage() {
       <h2 className="text-sm font-semibold mb-2 flex items-center gap-2">
         <UserPlus size={14} /> Invite someone
       </h2>
+      <p className="text-xs mb-2" style={{ color: "var(--text-muted)" }}>
+        Automatic invite emails aren't set up yet — you'll get a link to send them yourself.
+      </p>
       <form onSubmit={handleInvite} className="flex flex-col gap-2 mb-2">
         <input
           type="email"
@@ -139,11 +154,24 @@ export default function TeamPage() {
           <option value="admin">Admin</option>
         </select>
         <button type="submit" className="btn btn-primary" disabled={inviting || !inviteEmail.trim()}>
-          {inviting ? <Loader2 size={14} className="animate-spin" /> : "Send Invite"}
+          {inviting ? <Loader2 size={14} className="animate-spin" /> : "Generate Invite Link"}
         </button>
       </form>
 
-      {inviteSuccess && <p className="text-sm mt-2" style={{ color: "#3ba55d" }}>{inviteSuccess}</p>}
+      {inviteLink && (
+        <div className="card p-3 flex items-center justify-between gap-2 mb-2" style={{ wordBreak: "break-all" }}>
+          <span className="text-xs" style={{ color: "var(--text-muted)" }}>{inviteLink}</span>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button onClick={copyLink} aria-label="Copy link" style={{ color: "var(--text-muted)" }}>
+              {copied ? <Check size={16} /> : <Copy size={16} />}
+            </button>
+            <button onClick={shareLink} aria-label="Share link" style={{ color: "var(--text-muted)" }}>
+              <Share2 size={16} />
+            </button>
+          </div>
+        </div>
+      )}
+
       {error && <p className="text-sm mt-2" style={{ color: "#e55" }}>{error}</p>}
     </div>
   );
