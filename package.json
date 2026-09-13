@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build",
-    "start": "next start",
+    "start": "node server.js",
     "postinstall": "prisma generate"
   },
   "dependencies": {
@@ -16,7 +16,9 @@
     "next": "14.2.5",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-markdown": "^9.0.1"
+    "react-markdown": "^9.0.1",
+    "ws": "^8.18.0",
+    "y-websocket": "^2.0.4"
   },
   "devDependencies": {
     "autoprefixer": "^10.4.19",
