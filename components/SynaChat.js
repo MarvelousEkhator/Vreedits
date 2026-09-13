@@ -10,6 +10,7 @@ import {
 import MarkdownText from "@/components/MarkdownText";
 
 const MAX_ATTACHMENT_BYTES = 4_000_000;
+const MAX_ATTACHMENTS = 3; // bump this (and the matching constant in route.js) to allow more
 const MAX_TEXTAREA_HEIGHT = 160;
 
 function relativeTime(dateStr) {
@@ -68,6 +69,68 @@ function formatTimerDuration(seconds) {
   const remainingMinutes = Math.floor((seconds % 3600) / 60);
   if (remainingMinutes === 0) return `${hours} hour${hours === 1 ? "" : "s"}`;
   return `${hours}h ${remainingMinutes}m`;
+}
+
+// Renders a message's attachments, whether it's the newer `attachments`
+// array (multi-image) or the older singular `attachment` field (kept for
+// backward compatibility with conversations persisted before multi-image
+// support existed).
+function attachmentsOf(m) {
+  if (Array.isArray(m?.attachments) && m.attachments.length > 0) return m.attachments;
+  if (m?.attachment) return [m.attachment];
+  return [];
+}
+
+function AttachmentGrid({ attachments, bubbleText }) {
+  if (attachments.length === 0) return null;
+
+  if (attachments.length === 1) {
+    const att = attachments[0];
+    return att.type?.startsWith("image/") ? (
+      <img
+        src={att.dataUrl}
+        alt={att.name}
+        style={{ maxWidth: "100%", borderRadius: 10, marginBottom: bubbleText ? 8 : 0, display: "block" }}
+      />
+    ) : (
+      <div
+        className="flex items-center gap-2"
+        style={{ background: "rgba(255,255,255,0.12)", borderRadius: 8, padding: "6px 10px", marginBottom: bubbleText ? 8 : 0, fontSize: 12 }}
+      >
+        <FileIcon size={14} /> {att.name}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: `repeat(${Math.min(attachments.length, 3)}, 1fr)`,
+        gap: 6,
+        marginBottom: bubbleText ? 8 : 0,
+      }}
+    >
+      {attachments.map((att, idx) =>
+        att.type?.startsWith("image/") ? (
+          <img
+            key={idx}
+            src={att.dataUrl}
+            alt={att.name}
+            style={{ width: "100%", aspectRatio: "1 / 1", objectFit: "cover", borderRadius: 8, display: "block" }}
+          />
+        ) : (
+          <div
+            key={idx}
+            className="flex items-center justify-center"
+            style={{ background: "rgba(255,255,255,0.12)", borderRadius: 8, aspectRatio: "1 / 1", fontSize: 11, padding: 4, textAlign: "center" }}
+          >
+            <FileIcon size={14} />
+          </div>
+        )
+      )}
+    </div>
+  );
 }
 
 function MessageActions({ text }) {
@@ -134,7 +197,7 @@ function SynaChatInner() {
   const [messages, setMessages] = useState([]);
   const [conversationId, setConversationId] = useState(null);
   const [input, setInput] = useState("");
-  const [pendingAttachment, setPendingAttachment] = useState(null);
+  const [pendingAttachments, setPendingAttachments] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -254,36 +317,63 @@ function SynaChatInner() {
     } catch {}
   }
 
+  // Handles one or more files picked at once (gallery supports multi-select;
+  // camera/file inputs typically hand back one at a time, which this
+  // still supports fine). Respects the MAX_ATTACHMENTS cap across whatever
+  // is already pending.
   function handleFilePicked(e) {
-    const file = e.target.files?.[0];
+    const files = Array.from(e.target.files || []);
     setAttachMenuOpen(false);
-    if (!file) return;
+    if (files.length === 0) return;
     setError("");
 
-    if (file.size > MAX_ATTACHMENT_BYTES) {
-      setError("File is too large — please choose one under 4MB.");
-      e.target.value = "";
-      return;
-    }
+    setPendingAttachments((prev) => {
+      const room = MAX_ATTACHMENTS - prev.length;
+      if (room <= 0) {
+        setError(`You can attach up to ${MAX_ATTACHMENTS} files at a time.`);
+        return prev;
+      }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      setPendingAttachment({ dataUrl: reader.result, name: file.name, type: file.type });
-    };
-    reader.readAsDataURL(file);
+      const toAdd = files.slice(0, room);
+      if (files.length > room) {
+        setError(`Only added ${room} — you can attach up to ${MAX_ATTACHMENTS} files at a time.`);
+      }
+
+      for (const file of toAdd) {
+        if (file.size > MAX_ATTACHMENT_BYTES) {
+          setError("One of your files is too large — please choose files under 4MB.");
+          continue;
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+          setPendingAttachments((current) => [
+            ...current,
+            { dataUrl: reader.result, name: file.name, type: file.type },
+          ]);
+        };
+        reader.readAsDataURL(file);
+      }
+
+      return prev; // actual additions happen asynchronously above as each file loads
+    });
+
     e.target.value = "";
+  }
+
+  function removePendingAttachment(idx) {
+    setPendingAttachments((prev) => prev.filter((_, i) => i !== idx));
   }
 
   async function handleSend(e) {
     e.preventDefault();
     const text = input.trim();
-    if ((!text && !pendingAttachment) || loading) return;
+    if ((!text && pendingAttachments.length === 0) || loading) return;
 
     setError("");
 
     const timer = text ? parseTimerCommand(text) : null;
 
-    if (timer && !pendingAttachment) {
+    if (timer && pendingAttachments.length === 0) {
       const durationText = formatTimerDuration(timer.seconds);
       const userMsg = { role: "user", text };
       const timerReply = { role: "assistant", text: `⏱️ Timer set for **${durationText}**. I'll let you know when it's finished.` };
@@ -291,7 +381,7 @@ function SynaChatInner() {
 
       setMessages(timerMessages);
       setInput("");
-      setPendingAttachment(null);
+      setPendingAttachments([]);
 
       const endAt = Date.now() + timer.seconds * 1000;
       setTimerEndAt(endAt);
@@ -301,11 +391,15 @@ function SynaChatInner() {
       return;
     }
 
-    const userMsg = { role: "user", text, attachment: pendingAttachment || undefined };
+    const userMsg = {
+      role: "user",
+      text,
+      attachments: pendingAttachments.length > 0 ? pendingAttachments : undefined,
+    };
     const nextMessages = [...messages, userMsg];
     setMessages(nextMessages);
     setInput("");
-    setPendingAttachment(null);
+    setPendingAttachments([]);
     setLoading(true);
 
     try {
@@ -352,7 +446,7 @@ function SynaChatInner() {
     setMessages([]);
     setConversationId(null);
     setError("");
-    setPendingAttachment(null);
+    setPendingAttachments([]);
     setHistoryOpen(false);
     setShareCopied(false);
     setFallbackActive(false);
@@ -484,7 +578,7 @@ function SynaChatInner() {
       >
         {messages.length === 0 && (
           <p className="text-sm text-center mt-10" style={{ color: "var(--text-muted)" }}>
-            Ask Syna anything, or attach a photo or file to get started.
+            Ask Syna anything, or attach up to {MAX_ATTACHMENTS} photos or files to get started.
           </p>
         )}
 
@@ -504,25 +598,7 @@ function SynaChatInner() {
                 wordBreak: "break-word",
               }}
             >
-              {m.attachment && (
-                m.attachment.type?.startsWith("image/") ? (
-                  <img
-                    src={m.attachment.dataUrl}
-                    alt={m.attachment.name}
-                    style={{ maxWidth: "100%", borderRadius: 10, marginBottom: m.text ? 8 : 0, display: "block" }}
-                  />
-                ) : (
-                  <div
-                    className="flex items-center gap-2"
-                    style={{
-                      background: "rgba(255,255,255,0.12)", borderRadius: 8, padding: "6px 10px",
-                      marginBottom: m.text ? 8 : 0, fontSize: 12,
-                    }}
-                  >
-                    <FileIcon size={14} /> {m.attachment.name}
-                  </div>
-                )
-              )}
+              <AttachmentGrid attachments={attachmentsOf(m)} bubbleText={m.text} />
               {m.text && (
                 <span style={{ fontSize: 14, lineHeight: 1.5, overflowWrap: "anywhere", wordBreak: "break-word" }}>
                   {m.text}
@@ -541,25 +617,7 @@ function SynaChatInner() {
                 wordBreak: "break-word",
               }}
             >
-              {m.attachment?.dataUrl && (
-                m.attachment.type?.startsWith("image/") !== false ? (
-                  <img
-                    src={m.attachment.dataUrl}
-                    alt={m.attachment.name || "Generated image"}
-                    style={{ maxWidth: "100%", borderRadius: 10, marginBottom: m.text ? 8 : 0, display: "block" }}
-                  />
-                ) : (
-                  <div
-                    className="flex items-center gap-2"
-                    style={{
-                      background: "var(--surface-2)", borderRadius: 8, padding: "6px 10px",
-                      marginBottom: m.text ? 8 : 0, fontSize: 12,
-                    }}
-                  >
-                    <FileIcon size={14} /> {m.attachment.name}
-                  </div>
-                )
-              )}
+              <AttachmentGrid attachments={attachmentsOf(m)} bubbleText={m.text} />
               {m.text && (
                 <>
                   <MarkdownText text={m.text} />
@@ -600,24 +658,27 @@ function SynaChatInner() {
           </div>
         )}
 
-        {pendingAttachment && (
-          <div
-            className="flex items-center justify-between mb-2 p-2 rounded-xl"
-            style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}
-          >
-            <div className="flex items-center gap-2" style={{ minWidth: 0 }}>
-              {pendingAttachment.type?.startsWith("image/") ? (
-                <img src={pendingAttachment.dataUrl} alt="" style={{ width: 36, height: 36, borderRadius: 6, objectFit: "cover" }} />
-              ) : (
-                <FileIcon size={18} style={{ color: "var(--text-muted)" }} />
-              )}
-              <span className="text-xs" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {pendingAttachment.name}
-              </span>
-            </div>
-            <button onClick={() => setPendingAttachment(null)} aria-label="Remove attachment" style={{ color: "var(--text-muted)" }}>
-              <X size={16} />
-            </button>
+        {pendingAttachments.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-2">
+            {pendingAttachments.map((att, idx) => (
+              <div
+                key={idx}
+                className="flex items-center gap-2 p-2 rounded-xl"
+                style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}
+              >
+                {att.type?.startsWith("image/") ? (
+                  <img src={att.dataUrl} alt="" style={{ width: 36, height: 36, borderRadius: 6, objectFit: "cover" }} />
+                ) : (
+                  <FileIcon size={18} style={{ color: "var(--text-muted)" }} />
+                )}
+                <span className="text-xs" style={{ maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {att.name}
+                </span>
+                <button onClick={() => removePendingAttachment(idx)} aria-label="Remove attachment" style={{ color: "var(--text-muted)" }}>
+                  <X size={16} />
+                </button>
+              </div>
+            ))}
           </div>
         )}
 
@@ -626,9 +687,16 @@ function SynaChatInner() {
             <button
               type="button"
               onClick={() => setAttachMenuOpen((v) => !v)}
+              disabled={pendingAttachments.length >= MAX_ATTACHMENTS}
               className="w-11 h-11 rounded-full flex items-center justify-center flex-shrink-0"
-              style={{ background: "var(--surface-2)", color: "var(--text)" }}
+              style={{
+                background: "var(--surface-2)",
+                color: "var(--text)",
+                opacity: pendingAttachments.length >= MAX_ATTACHMENTS ? 0.5 : 1,
+                cursor: pendingAttachments.length >= MAX_ATTACHMENTS ? "not-allowed" : "pointer",
+              }}
               aria-label="Attach"
+              title={pendingAttachments.length >= MAX_ATTACHMENTS ? `Up to ${MAX_ATTACHMENTS} attachments at a time` : undefined}
             >
               <Plus size={18} />
             </button>
@@ -663,9 +731,9 @@ function SynaChatInner() {
                 </button>
               </div>
             )}
-            <input ref={galleryInputRef} type="file" accept="image/*" onChange={handleFilePicked} style={{ display: "none" }} />
+            <input ref={galleryInputRef} type="file" accept="image/*" multiple onChange={handleFilePicked} style={{ display: "none" }} />
             <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" onChange={handleFilePicked} style={{ display: "none" }} />
-            <input ref={fileInputRef} type="file" accept="image/*,application/pdf,.doc,.docx,.txt" onChange={handleFilePicked} style={{ display: "none" }} />
+            <input ref={fileInputRef} type="file" accept="image/*,application/pdf,.doc,.docx,.txt" multiple onChange={handleFilePicked} style={{ display: "none" }} />
           </div>
 
           <textarea
@@ -688,11 +756,11 @@ function SynaChatInner() {
           />
           <button
             type="submit"
-            disabled={loading || (!input.trim() && !pendingAttachment)}
+            disabled={loading || (!input.trim() && pendingAttachments.length === 0)}
             className="w-11 h-11 rounded-full flex items-center justify-center flex-shrink-0"
             style={{
               background: "var(--accent)", color: "white",
-              opacity: loading || (!input.trim() && !pendingAttachment) ? 0.6 : 1,
+              opacity: loading || (!input.trim() && pendingAttachments.length === 0) ? 0.6 : 1,
             }}
             aria-label="Send"
           >
