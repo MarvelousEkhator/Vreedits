@@ -57,6 +57,7 @@ model User {
   projects             Project[]
   ownedBusinesses      Business[]   @relation("BusinessOwner")
   teamMemberships      TeamMember[]
+  hostedCodeRooms      CodeRoom[]   @relation("CodeRoomHost")
 }
 
 model Follow {
@@ -491,6 +492,7 @@ model Business {
   invites   TeamInvite[]
   projects  Project[]
   clients   Client[]
+  codeRooms CodeRoom[]
   createdAt DateTime @default(now())
 }
 
@@ -527,6 +529,7 @@ model Invoice {
   dueDate     DateTime?
   createdAt   DateTime  @default(now())
 }
+
 model CodeRoom {
   id         String    @id @default(uuid())
   businessId String?
