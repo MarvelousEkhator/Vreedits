@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { Loader2, Users, FileText, Plus, ArrowLeft } from "lucide-react";
+import { Loader2, Users, FileText, FolderKanban, Plus, ArrowLeft } from "lucide-react";
 
 function StatusBadge({ status }) {
   const colors = {
@@ -27,12 +27,37 @@ function StatusBadge({ status }) {
   );
 }
 
+function ProjectStatusBadge({ status }) {
+  const colors = {
+    active: "var(--accent)",
+    completed: "#3ba55d",
+    archived: "var(--text-muted)",
+  };
+  return (
+    <span
+      style={{
+        fontSize: 11,
+        fontWeight: 600,
+        color: colors[status] || "var(--text-muted)",
+        background: "var(--surface-2)",
+        borderRadius: 6,
+        padding: "2px 8px",
+        textTransform: "capitalize",
+      }}
+    >
+      {status}
+    </span>
+  );
+}
+
 export default function BusinessDashboard() {
   const [businesses, setBusinesses] = useState([]);
   const [activeBusinessId, setActiveBusinessId] = useState(null);
   const [invoices, setInvoices] = useState([]);
+  const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadingInvoices, setLoadingInvoices] = useState(false);
+  const [loadingProjects, setLoadingProjects] = useState(false);
   const [error, setError] = useState("");
 
   const loadBusinesses = useCallback(async () => {
@@ -65,8 +90,21 @@ export default function BusinessDashboard() {
     }
   }, []);
 
+  const loadProjects = useCallback(async (businessId) => {
+    if (!businessId) return;
+    setLoadingProjects(true);
+    try {
+      const res = await fetch(`/api/projects?businessId=${businessId}`);
+      const data = await res.json();
+      if (res.ok) setProjects(data.projects || []);
+    } finally {
+      setLoadingProjects(false);
+    }
+  }, []);
+
   useEffect(() => { loadBusinesses(); }, [loadBusinesses]);
   useEffect(() => { loadInvoices(activeBusinessId); }, [activeBusinessId, loadInvoices]);
+  useEffect(() => { loadProjects(activeBusinessId); }, [activeBusinessId, loadProjects]);
 
   const activeBusiness = businesses.find((b) => b.id === activeBusinessId);
 
@@ -160,6 +198,43 @@ export default function BusinessDashboard() {
           </span>
         ))}
       </div>
+
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="text-sm font-semibold flex items-center gap-2">
+          <FolderKanban size={14} /> Projects
+        </h2>
+        <Link
+          href={`/business/${activeBusinessId}/projects/new`}
+          className="text-xs flex items-center gap-1"
+          style={{ color: "var(--accent)" }}
+        >
+          <Plus size={13} /> New project
+        </Link>
+      </div>
+
+      {loadingProjects ? (
+        <Loader2 size={16} className="animate-spin" />
+      ) : projects.length === 0 ? (
+        <p className="text-sm mb-6" style={{ color: "var(--text-muted)" }}>No projects yet.</p>
+      ) : (
+        <div className="flex flex-col gap-2 mb-6">
+          {projects.map((p) => (
+            <Link
+              key={p.id}
+              href={`/projects/${p.id}`}
+              className="card p-3 flex items-center justify-between"
+            >
+              <div>
+                <div className="text-sm font-medium">{p.name}</div>
+                <div className="text-xs" style={{ color: "var(--text-muted)" }}>
+                  {p._count?.tasks || 0} task{p._count?.tasks === 1 ? "" : "s"}
+                </div>
+              </div>
+              <ProjectStatusBadge status={p.status} />
+            </Link>
+          ))}
+        </div>
+      )}
 
       <div className="flex items-center justify-between mb-2">
         <h2 className="text-sm font-semibold flex items-center gap-2">
