@@ -443,9 +443,11 @@ model TutorConversation {
 }
 
 model Client {
-  id     String @id @default(uuid())
-  userId String
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  businessId String?
+  business   Business? @relation(fields: [businessId], references: [id], onDelete: SetNull)
   name    String
   company String?
   email   String?
@@ -455,9 +457,11 @@ model Client {
 }
 
 model Project {
-  id     String @id @default(uuid())
-  userId String
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  businessId String?
+  business   Business? @relation(fields: [businessId], references: [id], onDelete: SetNull)
   name        String
   description String? @db.Text
   status      String  @default("active") // "active" | "completed" | "archived"
@@ -485,6 +489,8 @@ model Business {
   members   TeamMember[]
   invoices  Invoice[]
   invites   TeamInvite[]
+  projects  Project[]
+  clients   Client[]
   createdAt DateTime @default(now())
 }
 
