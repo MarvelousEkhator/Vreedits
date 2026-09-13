@@ -4,11 +4,19 @@ import { requireUser } from "@/lib/requireUser";
 
 const LANGUAGE_VERSIONS = {
   javascript: "18.15.0",
+  typescript: "5.0.3",
   python: "3.10.0",
   java: "15.0.2",
-  cpp: "10.2.0",
   c: "10.2.0",
-  typescript: "5.0.3",
+  cpp: "10.2.0",
+  csharp: "6.12.0",
+  go: "1.16.2",
+  rust: "1.68.2",
+  ruby: "3.0.1",
+  php: "8.2.3",
+  kotlin: "1.8.20",
+  swift: "5.3.3",
+  bash: "5.2.0",
 };
 
 export async function POST(req) {
