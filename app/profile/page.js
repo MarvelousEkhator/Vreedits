@@ -132,8 +132,14 @@ export default function ProfilePage() {
 
   const { profile, followerCount, followingCount, likeCount, publicPosts, privatePosts } = data;
 
+  // Posts vs Videos split — both come from the same publicPosts array,
+  // just filtered client-side by mediaType, so no backend change needed.
+  const imagePosts = publicPosts.filter((p) => p.mediaType !== "video");
+  const videoPosts = publicPosts.filter((p) => p.mediaType === "video");
+
   const TABS = [
     { key: "posts", label: "Posts", icon: null },
+    { key: "videos", label: "Videos", icon: null },
     { key: "private", label: "Private", icon: Lock },
     { key: "saved", label: "Saved", icon: Bookmark },
     { key: "liked", label: "Liked", icon: Heart },
@@ -205,7 +211,9 @@ export default function ProfilePage() {
               <Loader2 size={20} className="animate-spin" />
             </div>
           ) : tab === "posts" ? (
-            <PostGrid posts={publicPosts} emptyLabel="No posts yet." />
+            <PostGrid posts={imagePosts} emptyLabel="No posts yet." />
+          ) : tab === "videos" ? (
+            <PostGrid posts={videoPosts} emptyLabel="No videos yet." />
           ) : tab === "private" ? (
             <PostGrid posts={privatePosts} emptyLabel="No private posts." />
           ) : tab === "saved" ? (
