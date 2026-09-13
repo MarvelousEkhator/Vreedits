@@ -84,10 +84,11 @@ export default function FeedSettingsPage() {
           </Link>
         </div>
 
-        {/* Account */}
+        {/* Account — now scoped to feed settings, not the main Vreedits
+            /settings page, so this stays self-contained. */}
         <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--text-muted)" }}>Account</div>
         <div className="card mb-6" style={{ padding: 6 }}>
-          <Link href="/settings" className="flex items-center justify-between p-3 rounded-xl" style={{ borderBottom: "1px solid var(--border)" }}>
+          <Link href="/settings/feed/account" className="flex items-center justify-between p-3 rounded-xl" style={{ borderBottom: "1px solid var(--border)" }}>
             <span className="text-sm font-medium">Account</span>
             <ChevronRight size={16} style={{ color: "var(--text-muted)" }} />
           </Link>
