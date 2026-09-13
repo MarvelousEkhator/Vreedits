@@ -58,6 +58,12 @@ model User {
   ownedBusinesses      Business[]   @relation("BusinessOwner")
   teamMemberships      TeamMember[]
   hostedCodeRooms      CodeRoom[]   @relation("CodeRoomHost")
+
+  // NEW — chat system
+  messages         Message[]
+  messageReactions MessageReaction[]
+  threadMessages   ThreadMessage[]
+  joinEvents       JoinEvent[]
 }
 
 model Follow {
@@ -136,6 +142,14 @@ model Community {
   reports   Report[]
   modActions ModerationAction[]
   applications JoinApplication[]
+
+  // NEW — raid protection
+  verificationLevel    String    @default("none") // "none" | "low" | "medium" | "high"
+  raidProtectionOn     Boolean   @default(true)
+  maxMentionsPerMsg    Int       @default(5)
+  captchaRequiredUntil DateTime?
+  joinLockdown         Boolean   @default(false)
+  joinEvents           JoinEvent[]
 }
 
 model Section {
@@ -171,6 +185,10 @@ model Channel {
   manageAccess  Json?
   createdAt DateTime @default(now())
   posts     Post[]
+
+  // NEW — real chat
+  messages  Message[]
+  threads   Thread[]
 }
 
 model Role {
@@ -544,4 +562,112 @@ model CodeRoom {
   code       String    @db.Text
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
+}
+
+// ─────────────────────────────────────────────
+// NEW — CHAT SYSTEM (messages, reactions, threads, forwarding)
+// ─────────────────────────────────────────────
+
+model Message {
+  id          String    @id @default(uuid())
+  channelId   String
+  channel     Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  authorId    String
+  author      User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  content     String?   @db.Text
+  attachments Json?     // [{ url, type: "image"|"video"|"file", name, size, width?, height? }]
+
+  replyToId   String?
+  replyTo     Message?  @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies     Message[] @relation("MessageReplies")
+
+  threadId    String?   @unique
+  thread      Thread?
+
+  forwardedFromId String?
+  forwardedFrom   Message? @relation("MessageForwards", fields: [forwardedFromId], references: [id], onDelete: SetNull)
+  forwards        Message[] @relation("MessageForwards")
+
+  mentionsUserIds  String[] @default([])
+  mentionsEveryone Boolean  @default(false)
+
+  pinned      Boolean   @default(false)
+  edited      Boolean   @default(false)
+  editedAt    DateTime?
+  deletedAt   DateTime?
+
+  createdAt   DateTime  @default(now())
+
+  reactions   MessageReaction[]
+
+  @@index([channelId, createdAt])
+}
+
+model MessageReaction {
+  id        String   @id @default(uuid())
+  messageId String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emoji     String
+  createdAt DateTime @default(now())
+
+  @@unique([messageId, userId, emoji])
+}
+
+model Thread {
+  id              String    @id @default(uuid())
+  parentMessageId String    @unique
+  parentMessage   Message   @relation(fields: [parentMessageId], references: [id], onDelete: Cascade)
+  channelId       String
+  channel         Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  name            String
+  visibility      String    @default("public") // "public" | "private"
+  archived        Boolean   @default(false)
+  archivedAt      DateTime?
+  autoArchiveMinutes Int    @default(1440)
+  createdAt       DateTime  @default(now())
+  messages        ThreadMessage[]
+  memberIds       String[]  @default([])
+}
+
+model ThreadMessage {
+  id          String   @id @default(uuid())
+  threadId    String
+  thread      Thread   @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  authorId    String
+  author      User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  content     String?  @db.Text
+  attachments Json?
+  edited      Boolean  @default(false)
+  editedAt    DateTime?
+  createdAt   DateTime @default(now())
+  reactions   ThreadMessageReaction[]
+}
+
+model ThreadMessageReaction {
+  id              String        @id @default(uuid())
+  threadMessageId String
+  threadMessage   ThreadMessage @relation(fields: [threadMessageId], references: [id], onDelete: Cascade)
+  userId          String
+  emoji           String
+  createdAt       DateTime      @default(now())
+
+  @@unique([threadMessageId, userId, emoji])
+}
+
+model JoinEvent {
+  id             String    @id @default(uuid())
+  communityId    String
+  community      Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountAgeDays Int
+  hasAvatar      Boolean   @default(false)
+  riskScore      Int       @default(0)
+  flagged        Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+
+  @@index([communityId, createdAt])
 }
