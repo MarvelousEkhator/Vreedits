@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   Heart, MessageCircle, Share2, Bookmark, RotateCw, Plus, X, Send,
   Loader2, Search, User as UserIcon, Download, Trash2, Music2,
+  Volume2, VolumeX,
 } from "lucide-react";
 import CameraCapture from "@/components/CameraCapture";
 
@@ -306,8 +307,33 @@ function CreatePostModal({ open, onClose, onCreated }) {
   );
 }
 
-function PostCard({ post, isOwner, onLike, onSave, onShare, onOpenComments, onLongPress, onOpenProfile }) {
+// Absolute-positioned heart that scales up and fades out, shown briefly
+// at the tap location after a double-tap-to-like.
+function HeartBurst({ x, y }) {
+  return (
+    <div
+      style={{
+        position: "absolute", left: x, top: y, transform: "translate(-50%, -50%)",
+        zIndex: 3, pointerEvents: "none", animation: "vreedits-heart-burst 700ms ease-out forwards",
+      }}
+    >
+      <Heart size={90} color="#ff4d67" fill="#ff4d67" />
+      <style>{`
+        @keyframes vreedits-heart-burst {
+          0% { opacity: 0; transform: translate(-50%, -50%) scale(0.4); }
+          25% { opacity: 1; transform: translate(-50%, -50%) scale(1.15); }
+          40% { transform: translate(-50%, -50%) scale(1); }
+          100% { opacity: 0; transform: translate(-50%, -50%) scale(1); }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onOpenComments, onLongPress, onOpenProfile, registerVideoRef }) {
   const pressTimer = useRef(null);
+  const lastTapRef = useRef(0);
+  const [burst, setBurst] = useState(null); // { x, y, key } | null
 
   function startPress() {
     pressTimer.current = setTimeout(() => onLongPress(post), 500);
@@ -320,8 +346,25 @@ function PostCard({ post, isOwner, onLike, onSave, onShare, onOpenComments, onLo
     onLongPress(post);
   }
 
+  // Double-tap-to-like: two taps within 300ms on the media area (not the
+  // action rail, which has its own buttons) triggers a like (only if not
+  // already liked) plus a heart animation at the tap location.
+  function handleMediaClick(e) {
+    const now = Date.now();
+    const isDoubleTap = now - lastTapRef.current < 300;
+    lastTapRef.current = now;
+
+    if (isDoubleTap) {
+      const rect = e.currentTarget.getBoundingClientRect();
+      setBurst({ x: e.clientX - rect.left, y: e.clientY - rect.top, key: now });
+      setTimeout(() => setBurst((b) => (b?.key === now ? null : b)), 700);
+      if (!post.likedByMe) onLike(post);
+    }
+  }
+
   return (
     <div
+      data-post-id={post.id}
       onTouchStart={startPress}
       onTouchEnd={cancelPress}
       onTouchMove={cancelPress}
@@ -329,6 +372,7 @@ function PostCard({ post, isOwner, onLike, onSave, onShare, onOpenComments, onLo
       onMouseUp={cancelPress}
       onMouseLeave={cancelPress}
       onContextMenu={handleContextMenu}
+      onClick={handleMediaClick}
       style={{
         position: "relative", height: "100%", width: "100%", flexShrink: 0,
         scrollSnapAlign: "start", overflow: "hidden", background: "#000",
@@ -336,10 +380,10 @@ function PostCard({ post, isOwner, onLike, onSave, onShare, onOpenComments, onLo
     >
       {post.mediaType === "video" && post.mediaUrl ? (
         <video
+          ref={(el) => registerVideoRef(post.id, el)}
           src={post.mediaUrl}
-          autoPlay
           loop
-          muted
+          muted={muted}
           playsInline
           style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", display: "block" }}
         />
@@ -364,6 +408,8 @@ function PostCard({ post, isOwner, onLike, onSave, onShare, onOpenComments, onLo
         }}
       />
 
+      {burst && <HeartBurst x={burst.x} y={burst.y} />}
+
       {/* Right-side action rail — TikTok style: avatar+follow, like, comment, save, share, sound disc */}
       <div
         style={{
@@ -372,11 +418,11 @@ function PostCard({ post, isOwner, onLike, onSave, onShare, onOpenComments, onLo
         }}
       >
         <button
-          onClick={() => onOpenProfile(post.author.id)}
+          onClick={(e) => { e.stopPropagation(); onOpenProfile(post.author.id); }}
           aria-label={`View ${post.author.username}'s profile`}
           style={{ position: "relative", marginBottom: 4, background: "none", border: "none", padding: 0 }}
         >
-          <Avatar user={post.author} size={42} />
+          <Avatar user={post.author} size={44} />
           <div
             aria-hidden="true"
             title="Follow isn't wired up yet — no follow system exists in the backend"
@@ -391,25 +437,25 @@ function PostCard({ post, isOwner, onLike, onSave, onShare, onOpenComments, onLo
           </div>
         </button>
 
-        <button onClick={() => onLike(post)} aria-label="Like" style={{ background: "none", border: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-          <Heart size={28} color="white" fill={post.likedByMe ? "#ff4d67" : "none"} stroke={post.likedByMe ? "#ff4d67" : "white"} />
+        <button onClick={(e) => { e.stopPropagation(); onLike(post); }} aria-label="Like" style={{ background: "none", border: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+          <Heart size={30} color="white" fill={post.likedByMe ? "#ff4d67" : "none"} stroke={post.likedByMe ? "#ff4d67" : "white"} />
           <span style={{ color: "white", fontSize: 12, fontWeight: 600 }}>{abbreviateCount(post.likeCount)}</span>
         </button>
-        <button onClick={() => onOpenComments(post)} aria-label="Comments" style={{ background: "none", border: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-          <MessageCircle size={28} color="white" />
+        <button onClick={(e) => { e.stopPropagation(); onOpenComments(post); }} aria-label="Comments" style={{ background: "none", border: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+          <MessageCircle size={30} color="white" />
           <span style={{ color: "white", fontSize: 12, fontWeight: 600 }}>{abbreviateCount(post.commentCount)}</span>
         </button>
-        <button onClick={() => onSave(post)} aria-label="Save" style={{ background: "none", border: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-          <Bookmark size={26} color="white" fill={post.savedByMe ? "white" : "none"} />
+        <button onClick={(e) => { e.stopPropagation(); onSave(post); }} aria-label="Save" style={{ background: "none", border: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+          <Bookmark size={28} color="white" fill={post.savedByMe ? "white" : "none"} />
         </button>
-        <button onClick={() => onShare(post)} aria-label="Share" style={{ background: "none", border: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-          <Share2 size={26} color="white" />
+        <button onClick={(e) => { e.stopPropagation(); onShare(post); }} aria-label="Share" style={{ background: "none", border: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+          <Share2 size={28} color="white" />
         </button>
 
         {/* Decorative sound disc — purely visual, there's no real "sound" entity in the backend to attach */}
         <div
           style={{
-            width: 34, height: 34, borderRadius: "50%", overflow: "hidden",
+            width: 36, height: 36, borderRadius: "50%", overflow: "hidden",
             border: "2px solid rgba(255,255,255,0.8)", marginTop: 4,
             animation: "vreedits-spin 4s linear infinite",
           }}
@@ -428,7 +474,7 @@ function PostCard({ post, isOwner, onLike, onSave, onShare, onOpenComments, onLo
       {/* Bottom-left: username (clickable), caption */}
       <div style={{ position: "absolute", left: 14, right: 90, bottom: 40, zIndex: 2 }}>
         <button
-          onClick={() => onOpenProfile(post.author.id)}
+          onClick={(e) => { e.stopPropagation(); onOpenProfile(post.author.id); }}
           className="flex items-center gap-2.5 mb-2"
           style={{ background: "none", border: "none", padding: 0 }}
         >
@@ -454,7 +500,10 @@ export default function FeedClient({ user }) {
   const [actionsPost, setActionsPost] = useState(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [muted, setMuted] = useState(true); // global sound toggle, TikTok-style
   const scrollRef = useRef(null);
+  const videoRefsMap = useRef(new Map()); // postId -> <video> element
+  const observerRef = useRef(null);
 
   const loadFeed = useCallback(async (cursor) => {
     const url = cursor ? `/api/feed?cursor=${cursor}` : "/api/feed";
@@ -470,6 +519,52 @@ export default function FeedClient({ user }) {
     setLoading(true);
     loadFeed(null).finally(() => setLoading(false));
   }, [loadFeed]);
+
+  // Registers/unregisters each post's <video> element so the
+  // IntersectionObserver below can play only the one centered on screen
+  // and pause the rest — without this, every video autoplays at once.
+  const registerVideoRef = useCallback((postId, el) => {
+    if (el) videoRefsMap.current.set(postId, el);
+    else videoRefsMap.current.delete(postId);
+  }, []);
+
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+
+    observerRef.current?.disconnect();
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const postId = entry.target.getAttribute("data-post-id");
+          const video = videoRefsMap.current.get(postId);
+          if (!video) continue;
+
+          if (entry.isIntersecting && entry.intersectionRatio >= 0.6) {
+            video.currentTime = 0;
+            video.play().catch(() => {}); // autoplay can be blocked before any user gesture
+          } else {
+            video.pause();
+          }
+        }
+      },
+      { root: container, threshold: [0, 0.6, 1] }
+    );
+
+    const cards = container.querySelectorAll("[data-post-id]");
+    cards.forEach((card) => observer.observe(card));
+    observerRef.current = observer;
+
+    return () => observer.disconnect();
+  }, [posts]);
+
+  // Applying the global mute toggle to whichever video is currently playing.
+  useEffect(() => {
+    videoRefsMap.current.forEach((video) => {
+      video.muted = muted;
+    });
+  }, [muted]);
 
   async function handleRefresh() {
     setRefreshing(true);
@@ -556,9 +651,18 @@ export default function FeedClient({ user }) {
         <Link href="/profile" aria-label="My Profile" style={{ background: "none", border: "none", color: "white" }}>
           <UserIcon size={22} />
         </Link>
-        <button aria-label="Search" style={{ background: "none", border: "none", color: "white" }}>
-          <Search size={22} />
-        </button>
+        <div className="flex items-center gap-4">
+          <button
+            onClick={() => setMuted((m) => !m)}
+            aria-label={muted ? "Unmute" : "Mute"}
+            style={{ background: "none", border: "none", color: "white" }}
+          >
+            {muted ? <VolumeX size={22} /> : <Volume2 size={22} />}
+          </button>
+          <button aria-label="Search" style={{ background: "none", border: "none", color: "white" }}>
+            <Search size={22} />
+          </button>
+        </div>
       </div>
 
       {loading ? (
@@ -585,12 +689,14 @@ export default function FeedClient({ user }) {
               key={post.id}
               post={post}
               isOwner={user?.id === post.author.id}
+              muted={muted}
               onLike={handleLike}
               onSave={handleSave}
               onShare={handleShare}
               onOpenComments={setCommentsPost}
               onLongPress={setActionsPost}
               onOpenProfile={handleOpenProfile}
+              registerVideoRef={registerVideoRef}
             />
           ))}
           {loadingMore && (
