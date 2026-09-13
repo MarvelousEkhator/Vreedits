@@ -204,7 +204,7 @@ export default function BusinessDashboard() {
           <FolderKanban size={14} /> Projects
         </h2>
         <Link
-          href={`/business/${activeBusinessId}/projects/new`}
+          href={`/projects/new?businessId=${activeBusinessId}`}
           className="text-xs flex items-center gap-1"
           style={{ color: "var(--accent)" }}
         >
