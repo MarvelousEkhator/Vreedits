@@ -36,6 +36,13 @@ export default function NavShell({ children, user }) {
   const hamburgerRef = useRef(null);
   const profileRef = useRef(null);
 
+  // The account popover's Settings link should follow whichever section
+  // of the app you're actually in — feed pages (including feed settings
+  // itself) go to /settings/feed, everything else goes to the main
+  // Vreedits /settings, instead of always hardcoding one destination.
+  const inFeedSection = pathname.startsWith("/feed") || pathname.startsWith("/settings/feed");
+  const popoverSettingsHref = inFeedSection ? "/settings/feed" : "/settings";
+
   useEffect(() => {
     function handleClick(e) {
       if (
@@ -175,7 +182,7 @@ export default function NavShell({ children, user }) {
               <span className="vreedits-display-name">{user?.displayName || user?.username}</span>
             </div>
             <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 1 }}>
-              @{user?.username}
+              @{user?.username?.toLowerCase()}
             </div>
             <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 3 }}>
               {user?.online ? "Online" : "Offline"}
@@ -188,7 +195,7 @@ export default function NavShell({ children, user }) {
               <Link href="/profile" className="vreedits-popover-item" onClick={() => setProfileMenuOpen(false)}>
                 <User size={15} /> Edit Profile
               </Link>
-              <Link href="/settings" className="vreedits-popover-item" onClick={() => setProfileMenuOpen(false)}>
+              <Link href={popoverSettingsHref} className="vreedits-popover-item" onClick={() => setProfileMenuOpen(false)}>
                 <Settings size={15} /> Settings
               </Link>
               <button className="vreedits-popover-item danger" onClick={handleLogout}>
