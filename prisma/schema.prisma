@@ -415,6 +415,10 @@ model FeedComment {
   authorId String
   author   User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
   content String @db.Text
+  likedBy   String[] @default([])
+  parentId  String?
+  parent    FeedComment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies   FeedComment[] @relation("CommentReplies")
   createdAt DateTime @default(now())
 }
 
