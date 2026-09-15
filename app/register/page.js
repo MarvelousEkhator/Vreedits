@@ -1,7 +1,7 @@
 "use client";
 import BirthdayPicker from "@/components/BirthdayPicker";
-import { useState, useEffect } from "react";import { useRouter } from "next/
-navigation";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Mail, Lock, User, Eye, EyeOff, Loader2, AlertCircle, ChevronLeft, Calendar } from "lucide-react";
 import { PasswordRequirement, UsernameStatus } from "@/components/AuthWidgets";
