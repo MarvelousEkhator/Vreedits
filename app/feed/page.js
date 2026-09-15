@@ -4,6 +4,9 @@ import { prisma } from "@/lib/prisma";
 import NavShell from "@/components/NavShell";
 import FeedClient from "@/components/FeedClient";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default async function FeedPage() {
   const userId = getSessionUserId();
   if (!userId) redirect("/login");
@@ -15,4 +18,4 @@ export default async function FeedPage() {
       <FeedClient user={user} />
     </NavShell>
   );
-    }
+}
