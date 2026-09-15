@@ -50,14 +50,7 @@ model User {
   followers Follow[] @relation("Followers")
   following Follow[] @relation("Following")
   hostedStudyRooms     StudyRoom[]        @relation("StudyRoomHost")
-  studyRoomMemberships StudyRoomMember[]  @relation("StudyRoomMemberships"
-friendRequestsSent     FriendRequest[] @relation("FriendRequestsSent")
-friendRequestsReceived FriendRequest[] @relation("FriendRequestsReceived")
-friendshipsAsA         Friendship[]    @relation("FriendshipUserA")
-friendshipsAsB         Friendship[]    @relation("FriendshipUserB")
-directMessagesSent     DirectMessage[] @relation("DirectMessagesSent")
-directMessagesReceived DirectMessage[] @relation("DirectMessagesReceived"
-)
+  studyRoomMemberships StudyRoomMember[]  @relation("StudyRoomMemberships")
   studyRoomMessages    StudyRoomMessage[] @relation("StudyRoomMessages")
   tutorConversations   TutorConversation[]
   clients              Client[]
@@ -74,6 +67,14 @@ directMessagesReceived DirectMessage[] @relation("DirectMessagesReceived"
 
   // ACTIVE — reactions on the current Post-based chat
   postReactions PostReaction[]
+
+  // ACTIVE — friends & DMs
+  friendRequestsSent     FriendRequest[] @relation("FriendRequestsSent")
+  friendRequestsReceived FriendRequest[] @relation("FriendRequestsReceived")
+  friendshipsAsA         Friendship[]    @relation("FriendshipUserA")
+  friendshipsAsB         Friendship[]    @relation("FriendshipUserB")
+  directMessagesSent     DirectMessage[] @relation("DirectMessagesSent")
+  directMessagesReceived DirectMessage[] @relation("DirectMessagesReceived")
 }
 
 model Follow {
@@ -296,7 +297,6 @@ model Post {
   createdAt DateTime  @default(now())
   comments  Comment[]
 
-  // ACTIVE — reactions
   reactions PostReaction[]
 }
 
@@ -698,13 +698,18 @@ model JoinEvent {
 
   @@index([communityId, createdAt])
 }
+
+// ─────────────────────────────────────────────
+// ACTIVE — friends & direct messages
+// ─────────────────────────────────────────────
+
 model FriendRequest {
   id         String   @id @default(uuid())
   senderId   String
   sender     User     @relation("FriendRequestsSent", fields: [senderId], references: [id], onDelete: Cascade)
   receiverId String
   receiver   User     @relation("FriendRequestsReceived", fields: [receiverId], references: [id], onDelete: Cascade)
-  status     String   @default("pending") // "pending" | "accepted" | "declined"
+  status     String   @default("pending")
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
