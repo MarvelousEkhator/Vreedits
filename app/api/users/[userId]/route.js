@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/requireUser";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(req, { params }) {
   const viewer = await requireUser();
   if (!viewer) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
@@ -11,6 +13,7 @@ export async function GET(req, { params }) {
     select: {
       id: true,
       username: true,
+      displayName: true,
       bio: true,
       avatarDataUrl: true,
       isPublic: true,
@@ -59,6 +62,7 @@ export async function GET(req, { params }) {
     profile: {
       id: target.id,
       username: target.username,
+      displayName: target.displayName,
       bio: target.bio,
       avatarDataUrl: target.avatarDataUrl,
       isPublic: target.isPublic,
@@ -70,10 +74,8 @@ export async function GET(req, { params }) {
     followingCount,
     likeCount,
     canViewPosts,
-    // Visitor-facing combined shape (used by PublicProfileClient)
     postCount: canViewPosts ? publicPosts.length : null,
     posts: publicPosts,
-    // Owner-facing split shape (used by ProfilePage's Posts/Private tabs)
     publicPosts,
     privatePosts,
   });
