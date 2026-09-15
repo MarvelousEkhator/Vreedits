@@ -21,16 +21,16 @@ export async function GET(req, { params }) {
   // its replies nested inside it, one level deep — matching how the
   // comment sheet renders threads (replies don't have their own replies).
   const comments = await prisma.feedComment.findMany({
-    where: { postId: params.id, parentId: null },
-    orderBy: { createdAt: "asc" },
-    include: {
-      author: { select: { id: true, username: true, avatarDataUrl: true } },
-      replies: {
-        orderBy: { createdAt: "asc" },
-        include: { author: { select: { id: true, username: true, avatarDataUrl: true } } },
-      },
+  where: { postId: params.id, parentId: null },
+  orderBy: [{ pinned: "desc" }, { createdAt: "asc" }],
+  include: {
+    author: { select: { id: true, username: true, avatarDataUrl: true } },
+    replies: {
+      orderBy: { createdAt: "asc" },
+      include: { author: { select: { id: true, username: true, avatarDataUrl: true } } },
     },
-  });
+  },
+});
 
   const shaped = comments.map((c) => ({
     ...shapeComment(c, user.id),
