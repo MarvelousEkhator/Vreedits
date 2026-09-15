@@ -416,6 +416,7 @@ model FeedComment {
   author   User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
   content String @db.Text
   likedBy   String[] @default([])
+  pinned    Boolean  @default(false)
   parentId  String?
   parent    FeedComment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
   replies   FeedComment[] @relation("CommentReplies")
