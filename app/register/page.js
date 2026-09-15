@@ -1,6 +1,8 @@
 "use client";
+import BirthdayPicker from "@/components/BirthdayPicker";
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "next/
+navigation";
 import Link from "next/link";
 import { Mail, Lock, User, Eye, EyeOff, Loader2, AlertCircle, ChevronLeft, Calendar } from "lucide-react";
 import { PasswordRequirement, UsernameStatus } from "@/components/AuthWidgets";
@@ -286,26 +288,17 @@ export default function RegisterPage() {
             </>
           )}
 
-          {current === "birthday" && (
-            <div>
-              <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--text-muted)" }}>
-                Date of Birth
-              </label>
-              <div className="relative flex items-center">
-                <Calendar size={15} className="absolute left-3" style={{ color: "var(--text-muted)" }} />
-                <input
-                  className="input"
-                  type="date"
-                  value={form.dateOfBirth}
-                  onChange={(e) => updateField("dateOfBirth", e.target.value)}
-                  autoFocus
-                />
-              </div>
-              <p className="text-xs mt-1.5" style={{ color: "var(--text-muted)" }}>
-                You must be at least 13 years old to use Vreedits.
-              </p>
-            </div>
-          )}
+         {current === "birthday" && (
+  <div>
+    <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--text-muted)" }}>
+      Date of Birth
+    </label>
+    <BirthdayPicker value={form.dateOfBirth} onChange={(v) => updateField("dateOfBirth", v)} />
+    <p className="text-xs mt-1.5" style={{ color: "var(--text-muted)" }}>
+      You must be at least 13 years old to use Vreedits.
+    </p>
+  </div>
+)} 
 
           {current === "terms" && (
             <div>
