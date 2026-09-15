@@ -50,7 +50,14 @@ model User {
   followers Follow[] @relation("Followers")
   following Follow[] @relation("Following")
   hostedStudyRooms     StudyRoom[]        @relation("StudyRoomHost")
-  studyRoomMemberships StudyRoomMember[]  @relation("StudyRoomMemberships")
+  studyRoomMemberships StudyRoomMember[]  @relation("StudyRoomMemberships"
+friendRequestsSent     FriendRequest[] @relation("FriendRequestsSent")
+friendRequestsReceived FriendRequest[] @relation("FriendRequestsReceived")
+friendshipsAsA         Friendship[]    @relation("FriendshipUserA")
+friendshipsAsB         Friendship[]    @relation("FriendshipUserB")
+directMessagesSent     DirectMessage[] @relation("DirectMessagesSent")
+directMessagesReceived DirectMessage[] @relation("DirectMessagesReceived"
+)
   studyRoomMessages    StudyRoomMessage[] @relation("StudyRoomMessages")
   tutorConversations   TutorConversation[]
   clients              Client[]
@@ -690,4 +697,43 @@ model JoinEvent {
   createdAt      DateTime  @default(now())
 
   @@index([communityId, createdAt])
+}
+model FriendRequest {
+  id         String   @id @default(uuid())
+  senderId   String
+  sender     User     @relation("FriendRequestsSent", fields: [senderId], references: [id], onDelete: Cascade)
+  receiverId String
+  receiver   User     @relation("FriendRequestsReceived", fields: [receiverId], references: [id], onDelete: Cascade)
+  status     String   @default("pending") // "pending" | "accepted" | "declined"
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([senderId, receiverId])
+}
+
+model Friendship {
+  id         String   @id @default(uuid())
+  userAId    String
+  userA      User     @relation("FriendshipUserA", fields: [userAId], references: [id], onDelete: Cascade)
+  userBId    String
+  userB      User     @relation("FriendshipUserB", fields: [userBId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@unique([userAId, userBId])
+}
+
+model DirectMessage {
+  id         String    @id @default(uuid())
+  senderId   String
+  sender     User      @relation("DirectMessagesSent", fields: [senderId], references: [id], onDelete: Cascade)
+  receiverId String
+  receiver   User      @relation("DirectMessagesReceived", fields: [receiverId], references: [id], onDelete: Cascade)
+  content    String?   @db.Text
+  attachments Json?
+  read       Boolean   @default(false)
+  readAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([senderId, receiverId, createdAt])
+  @@index([receiverId, senderId, createdAt])
 }
