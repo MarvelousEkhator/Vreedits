@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSessionUserId } from "@/lib/auth";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   const userId = getSessionUserId();
   if (!userId) return NextResponse.json({ user: null });
