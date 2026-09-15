@@ -1,4 +1,5 @@
 "use client";
+import BirthdayPicker from "@/components/BirthdayPicker";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
