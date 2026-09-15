@@ -36,10 +36,6 @@ export default function NavShell({ children, user }) {
   const hamburgerRef = useRef(null);
   const profileRef = useRef(null);
 
-  // The account popover's Settings link should follow whichever section
-  // of the app you're actually in — feed pages (including feed settings
-  // itself) go to /settings/feed, everything else goes to the main
-  // Vreedits /settings, instead of always hardcoding one destination.
   const inFeedSection = pathname.startsWith("/feed") || pathname.startsWith("/settings/feed");
   const popoverSettingsHref = inFeedSection ? "/settings/feed" : "/settings";
 
@@ -74,6 +70,21 @@ export default function NavShell({ children, user }) {
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/login");
+    router.refresh();
+  }
+
+  // Forces Next.js to throw away whatever cached render it has for the
+  // current route and fetch fresh server data before showing the menu —
+  // this is what actually guarantees up-to-date name/avatar here, since
+  // relying on cache-timing config alone wasn't reliably catching every
+  // navigation path.
+  function toggleMenu() {
+    setMenuOpen((v) => !v);
+    router.refresh();
+  }
+
+  function toggleProfileMenu() {
+    setProfileMenuOpen((v) => !v);
     router.refresh();
   }
 
@@ -154,7 +165,7 @@ export default function NavShell({ children, user }) {
       `}</style>
 
       <div className="vreedits-topbar">
-        <button ref={hamburgerRef} className="vreedits-hamburger" onClick={() => setMenuOpen((v) => !v)} aria-label="Open menu">
+        <button ref={hamburgerRef} className="vreedits-hamburger" onClick={toggleMenu} aria-label="Open menu">
           <Menu size={20} />
         </button>
         <span className="vreedits-brand">Vreedits</span>
@@ -170,7 +181,7 @@ export default function NavShell({ children, user }) {
 
         <div className="vreedits-profile-block">
           <div style={{ position: "relative" }} ref={profileRef}>
-            <div className="vreedits-avatar-wrap" onClick={() => setProfileMenuOpen((v) => !v)}>
+            <div className="vreedits-avatar-wrap" onClick={toggleProfileMenu}>
               {user?.avatarDataUrl ? (
                 <img className="vreedits-avatar" src={user.avatarDataUrl} alt="Profile" />
               ) : (
@@ -178,7 +189,7 @@ export default function NavShell({ children, user }) {
               )}
               <span className={`vreedits-status-dot ${user?.online ? "online" : "offline"}`} />
             </div>
-            <div className="vreedits-name-row" onClick={() => setProfileMenuOpen((v) => !v)}>
+            <div className="vreedits-name-row" onClick={toggleProfileMenu}>
               <span className="vreedits-display-name">{user?.displayName || user?.username}</span>
             </div>
             <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 1 }}>
