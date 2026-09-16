@@ -5,16 +5,13 @@ import { generateImage, isImageRequest } from "@/lib/cloudflareImage";
 import { generateTextReply } from "@/lib/cloudflareText";
 import { editImage, isImageEditRequest } from "@/lib/geminiImageEdit";
 
-// Cap attached file size (base64) so one image can't bloat a request or
-// the database it eventually gets persisted into via /api/ai/conversations.
-const MAX_ATTACHMENT_LENGTH = 5_500_000; // ~4MB actual file per image
-const MAX_ATTACHMENTS = 3; // matches the frontend's upload cap
+const MAX_ATTACHMENT_LENGTH = 5_500_000;
+const MAX_ATTACHMENTS = 3;
 
 const GEMINI_MODEL = "gemini-3.1-flash-lite";
 const GEMINI_TIMEOUT_MS = 15_000;
 
-// --- Output sanitizer: catches leaks the prompt instructions miss ---
-const LEAK_CHECK_MIN_WORDS = 6; // a run of 6+ consecutive words matching the prompt is not a coincidence
+const LEAK_CHECK_MIN_WORDS = 6;
 const GENERIC_DECLINE = "I can't share my internal configuration, but I'm happy to help with Vreedits!";
 const TECH_DECLINE = "I don't have access to information about how Vreedits is built — I can help with using the platform, though!";
 
@@ -28,12 +25,9 @@ const SYSTEM_PROMPT_JOINED = SYSTEM_PROMPT_WORDS.join(" ");
 function containsPromptLeak(replyText) {
   const replyWords = replyText.toLowerCase().replace(/\s+/g, " ").trim().split(" ");
   if (replyWords.length < LEAK_CHECK_MIN_WORDS) return false;
-
   for (let i = 0; i <= replyWords.length - LEAK_CHECK_MIN_WORDS; i++) {
     const window = replyWords.slice(i, i + LEAK_CHECK_MIN_WORDS).join(" ");
-    if (SYSTEM_PROMPT_JOINED.includes(window)) {
-      return true;
-    }
+    if (SYSTEM_PROMPT_JOINED.includes(window)) return true;
   }
   return false;
 }
@@ -58,12 +52,7 @@ function sanitizeReply(replyText) {
   if (containsPromptLeak(replyText)) return GENERIC_DECLINE;
   return replyText;
 }
-// --- end sanitizer ---
 
-// Normalizes a message's attachments into an array, whether it came in
-// as the new `attachments` array (multi-image) or the older singular
-// `attachment` field (kept for backward compatibility with messages
-// persisted before multi-image support existed).
 function attachmentsForMessage(m) {
   if (Array.isArray(m?.attachments) && m.attachments.length > 0) return m.attachments;
   if (m?.attachment) return [m.attachment];
@@ -74,14 +63,12 @@ function partsForMessage(m) {
   const parts = [];
   const text = typeof m.text === "string" ? m.text : (typeof m.text?.text === "string" ? m.text.text : "");
   if (text) parts.push({ text });
-
   for (const att of attachmentsForMessage(m)) {
     const match = att?.dataUrl?.match(/^data:([^;]+);base64,(.+)$/);
     if (match) {
       parts.push({ inlineData: { mimeType: match[1], data: match[2] } });
     }
   }
-
   return parts.length > 0 ? parts : [{ text: "" }];
 }
 
