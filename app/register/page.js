@@ -100,6 +100,24 @@ export default function RegisterPage() {
     setStep((s) => Math.max(0, s - 1));
   }
 
+  async function handleGuest() {
+    setError("");
+    setLoading(true);
+    try {
+      const res = await fetch("/api/auth/guest", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Couldn't start guest session.");
+        setLoading(false);
+        return;
+      }
+      router.push("/"); // TODO: adjust to wherever a logged-in user should land
+    } catch {
+      setError("Network error. Please try again.");
+      setLoading(false);
+    }
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     const err = validateStep();
@@ -287,17 +305,17 @@ export default function RegisterPage() {
             </>
           )}
 
-         {current === "birthday" && (
-  <div>
-    <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--text-muted)" }}>
-      Date of Birth
-    </label>
-    <BirthdayPicker value={form.dateOfBirth} onChange={(v) => updateField("dateOfBirth", v)} />
-    <p className="text-xs mt-1.5" style={{ color: "var(--text-muted)" }}>
-      You must be at least 13 years old to use Vreedits.
-    </p>
-  </div>
-)} 
+          {current === "birthday" && (
+            <div>
+              <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--text-muted)" }}>
+                Date of Birth
+              </label>
+              <BirthdayPicker value={form.dateOfBirth} onChange={(v) => updateField("dateOfBirth", v)} />
+              <p className="text-xs mt-1.5" style={{ color: "var(--text-muted)" }}>
+                You must be at least 13 years old to use Vreedits.
+              </p>
+            </div>
+          )}
 
           {current === "terms" && (
             <div>
@@ -330,10 +348,27 @@ export default function RegisterPage() {
         </form>
 
         {step === 0 && (
-          <div className="text-center text-sm mt-4" style={{ color: "var(--text-muted)" }}>
-            Already have an account?{" "}
-            <Link href="/login" className="btn-text">Log in</Link>
-          </div>
+          <>
+            <div className="text-center text-sm mt-4" style={{ color: "var(--text-muted)" }}>
+              Already have an account?{" "}
+              <Link href="/login" className="btn-text">Log in</Link>
+            </div>
+
+            <div className="flex items-center gap-2 my-4">
+              <div style={{ flex: 1, height: 1, background: "var(--surface-2)" }} />
+              <span className="text-xs" style={{ color: "var(--text-muted)" }}>or</span>
+              <div style={{ flex: 1, height: 1, background: "var(--surface-2)" }} />
+            </div>
+
+            <button
+              type="button"
+              onClick={handleGuest}
+              disabled={loading}
+              className="btn-text text-center text-sm w-full"
+            >
+              {loading ? "Starting..." : "Continue as Guest"}
+            </button>
+          </>
         )}
       </div>
     </div>
