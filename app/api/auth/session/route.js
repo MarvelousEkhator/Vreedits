@@ -12,6 +12,13 @@ export async function GET() {
   if (!user || !user.verified) return NextResponse.json({ user: null });
 
   return NextResponse.json({
-    user: { id: user.id, username: user.username, email: user.email, online: user.online },
+    user: {
+      id: user.id,
+      username: user.username,
+      displayName: user.displayName,
+      email: user.email,
+      online: user.online,
+      avatarDataUrl: user.avatarDataUrl,
+    },
   });
 }
