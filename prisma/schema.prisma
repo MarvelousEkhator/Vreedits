@@ -9,12 +9,7 @@ datasource db {
 
 model User {
   id       String @id @default(uuid())
-  // ...existing fields
-  isGuest Boolean @default(false)
-}
-dateOfBirth     DateTime?
-termsAcceptedAt DateTime?
- username String @unique
+  username String @unique
   displayName String?
   email    String @unique
   passwordHash String
@@ -27,6 +22,7 @@ termsAcceptedAt DateTime?
   country       String?
   language      String   @default("English")
   isPublic      Boolean  @default(true)
+  isGuest       Boolean  @default(false)
   verificationCode    String?
   verificationExpires DateTime?
   resetCode    String?
@@ -34,6 +30,8 @@ termsAcceptedAt DateTime?
   lastCodeSentAt DateTime?
   failedLoginAttempts Int       @default(0)
   lockedUntil         DateTime?
+  dateOfBirth     DateTime?
+  termsAcceptedAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   conversations Conversation[]
@@ -80,6 +78,7 @@ termsAcceptedAt DateTime?
   friendshipsAsB         Friendship[]    @relation("FriendshipUserB")
   directMessagesSent     DirectMessage[] @relation("DirectMessagesSent")
   directMessagesReceived DirectMessage[] @relation("DirectMessagesReceived")
+
 }
 
 model Follow {
