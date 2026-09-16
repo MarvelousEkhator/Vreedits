@@ -31,3 +31,13 @@ export async function POST(req) {
 
   return NextResponse.json({ ok: true });
   }
+<button
+  onClick={handleLogout}
+  disabled={loggingOut}
+  className="flex items-center justify-between py-3 w-full"
+  style={{ borderTop: "1px solid var(--border)", color: "var(--danger, #e5484d)" }}
+>
+  <div className="flex items-center gap-2 text-sm font-medium">
+    <LogOut size={16} /> {loggingOut ? "Logging out…" : "Log Out"}
+  </div>
+</button>
