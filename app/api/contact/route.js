@@ -1,9 +1,6 @@
 import { NextResponse } from "next/server";
 import { sendEmail } from "@/lib/email";
 
-// Sends the message straight to the same inbox the app already emails
-// from/to on Resend's sandbox tier. Set SUPPORT_EMAIL later once a real
-// domain is verified, to route this anywhere you want.
 export async function POST(req) {
   const { name, email, message } = await req.json();
 
@@ -30,10 +27,4 @@ export async function POST(req) {
   }
 
   return NextResponse.json({ ok: true });
-  }
-<button
-  onClick={handleLogout}
-  disabled={loggingOut}
-  className="flex items-center justify-between py-3 w-full"
-  style={{ borderTop: "1px solid var(--border)", color: "var(--danger, #e5484d)" }}
->
+}
