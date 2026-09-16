@@ -13,6 +13,53 @@ const MAX_ATTACHMENTS = 3; // matches the frontend's upload cap
 const GEMINI_MODEL = "gemini-3.1-flash-lite";
 const GEMINI_TIMEOUT_MS = 15_000;
 
+// --- Output sanitizer: catches leaks the prompt instructions miss ---
+const LEAK_CHECK_MIN_WORDS = 6; // a run of 6+ consecutive words matching the prompt is not a coincidence
+const GENERIC_DECLINE = "I can't share my internal configuration, but I'm happy to help with Vreedits!";
+const TECH_DECLINE = "I don't have access to information about how Vreedits is built — I can help with using the platform, though!";
+
+const SYSTEM_PROMPT_WORDS = SYNA_SYSTEM_CONTEXT
+  .toLowerCase()
+  .replace(/\s+/g, " ")
+  .trim()
+  .split(" ");
+const SYSTEM_PROMPT_JOINED = SYSTEM_PROMPT_WORDS.join(" ");
+
+function containsPromptLeak(replyText) {
+  const replyWords = replyText.toLowerCase().replace(/\s+/g, " ").trim().split(" ");
+  if (replyWords.length < LEAK_CHECK_MIN_WORDS) return false;
+
+  for (let i = 0; i <= replyWords.length - LEAK_CHECK_MIN_WORDS; i++) {
+    const window = replyWords.slice(i, i + LEAK_CHECK_MIN_WORDS).join(" ");
+    if (SYSTEM_PROMPT_JOINED.includes(window)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+const SENSITIVE_PATTERNS = [
+  /process\.env/i,
+  /\bapi[_-]?key\b\s*[:=]/i,
+  /sk-[a-z0-9]{10,}/i,
+  /\bDATABASE_URL\b/i,
+  /\bJWT_SECRET\b/i,
+  /\bprisma\/schema\.prisma\b/i,
+  /\bgemini-3\.1-flash-lite\b/i,
+  /\bcloudflareimage\.js\b|\bcloudflaretext\.js\b|\bgeminiimageedit\.js\b/i,
+];
+
+function containsSensitivePattern(replyText) {
+  return SENSITIVE_PATTERNS.some((re) => re.test(replyText));
+}
+
+function sanitizeReply(replyText) {
+  if (containsSensitivePattern(replyText)) return TECH_DECLINE;
+  if (containsPromptLeak(replyText)) return GENERIC_DECLINE;
+  return replyText;
+}
+// --- end sanitizer ---
+
 // Normalizes a message's attachments into an array, whether it came in
 // as the new `attachments` array (multi-image) or the older singular
 // `attachment` field (kept for backward compatibility with messages
@@ -25,10 +72,6 @@ function attachmentsForMessage(m) {
 
 function partsForMessage(m) {
   const parts = [];
-  // Defensive: older persisted conversations may contain a message
-  // whose `text` is itself an object (from a pre-fix bug where a full
-  // reply object got saved instead of its text). Unwrap that instead
-  // of sending it to Gemini as-is, which 400s the whole request.
   const text = typeof m.text === "string" ? m.text : (typeof m.text?.text === "string" ? m.text.text : "");
   if (text) parts.push({ text });
 
@@ -46,10 +89,6 @@ function roleForGemini(role) {
   return role === "assistant" ? "model" : "user";
 }
 
-// Wraps the Gemini call with a timeout and tags rate-limit/timeout
-// failures so the caller knows it's safe to fall back to Cloudflare,
-// as opposed to a genuine bad-request error that retrying elsewhere
-// won't fix.
 async function callGemini(contents, apiKey) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
@@ -132,9 +171,6 @@ export async function POST(req) {
 
   const lastImageAttachments = lastAttachments.filter((att) => att?.type?.startsWith("image/"));
 
-  // Image editing branch: an image is attached AND the text reads like
-  // an edit request ("swap the outfit", "change the background") — hand
-  // it to Gemini's image model instead of the chat model.
   if (lastMessage.role !== "assistant" && lastImageAttachments.length > 0 && isImageEditRequest(lastMessage.text)) {
     try {
       const dataUrl = await editImage(lastMessage.text, lastImageAttachments);
@@ -152,9 +188,6 @@ export async function POST(req) {
     }
   }
 
-  // Image generation branch: no image attached, and the text reads like
-  // a "draw me a..." request — skip the chat model entirely and hand
-  // back a freshly generated image instead of a text reply.
   if (lastMessage.role !== "assistant" && lastImageAttachments.length === 0 && isImageRequest(lastMessage.text)) {
     try {
       const dataUrl = await generateImage(lastMessage.text);
@@ -188,17 +221,15 @@ export async function POST(req) {
   try {
     const replyText = await callGemini(contents, apiKey);
     return NextResponse.json({
-      reply: { role: "assistant", text: replyText, usedFallback: false },
+      reply: { role: "assistant", text: sanitizeReply(replyText), usedFallback: false },
     });
   } catch (err) {
     if (err.fallback) {
-      // Gemini is rate-limited or timed out — fall back to Cloudflare
-      // Workers AI so Syna can still reply while Gemini recovers.
       console.error("Gemini unavailable, falling back to Cloudflare:", err.message);
       try {
         const fallbackText = await generateTextReply(messages, SYNA_SYSTEM_CONTEXT);
         return NextResponse.json({
-          reply: { role: "assistant", text: fallbackText, usedFallback: true },
+          reply: { role: "assistant", text: sanitizeReply(fallbackText), usedFallback: true },
         });
       } catch (fallbackErr) {
         console.error("Cloudflare fallback also failed:", fallbackErr);
