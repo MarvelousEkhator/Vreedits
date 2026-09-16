@@ -1,9 +1,11 @@
 "use client";
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   Loader2, User, HelpCircle, Phone, ChevronRight,
   Mail, ShieldCheck, Calendar, Globe, Languages, Lock, Unlock, Circle, ShieldQuestion,
+  LogOut,
 } from "lucide-react";
 import NavShell from "@/components/NavShell";
 
@@ -18,10 +20,12 @@ function formatDate(dateStr) {
 }
 
 export default function SettingsPage() {
+  const router = useRouter();
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [savingLanguage, setSavingLanguage] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -46,6 +50,16 @@ export default function SettingsPage() {
       });
     } finally {
       setSavingLanguage(false);
+    }
+  }
+
+  async function handleLogout() {
+    setLoggingOut(true);
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+      router.push("/login");
+    } catch {
+      setLoggingOut(false);
     }
   }
 
@@ -128,7 +142,7 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          <div className="card p-5">
+          <div className="card p-5 mb-6">
             <Link href="/profile" className="flex items-center justify-between py-3" style={{ borderBottom: "1px solid var(--border)" }}>
               <div className="flex items-center gap-2 text-sm font-medium">
                 <User size={16} /> Edit Profile
@@ -156,6 +170,18 @@ export default function SettingsPage() {
               </div>
               <ChevronRight size={16} style={{ color: "var(--text-muted)" }} />
             </Link>
+          </div>
+
+          <div className="card p-5">
+            <button
+              onClick={handleLogout}
+              disabled={loggingOut}
+              className="flex items-center gap-2 text-sm font-medium w-full py-1"
+              style={{ color: "var(--danger)", background: "none", border: "none", cursor: loggingOut ? "not-allowed" : "pointer" }}
+            >
+              {loggingOut ? <Loader2 size={16} className="animate-spin" /> : <LogOut size={16} />}
+              {loggingOut ? "Logging out…" : "Log Out"}
+            </button>
           </div>
         </div>
       </div>
