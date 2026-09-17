@@ -61,8 +61,9 @@ model User {
   ownedBusinesses      Business[]   @relation("BusinessOwner")
   teamMemberships      TeamMember[]
   hostedCodeRooms      CodeRoom[]   @relation("CodeRoomHost")
-hostedCodeRooms      CodeRoom[]   @relation("CodeRoomHost")
   stories              Story[]
+  pollVotes            PollVote[]
+
   // Future chat system (Message-based) — not yet in use
   messages         Message[]
   messageReactions MessageReaction[]
@@ -332,6 +333,7 @@ model Comment {
   content String @db.Text
   createdAt DateTime @default(now())
 }
+
 model Notification {
   id     String @id @default(uuid())
   userId String
@@ -421,9 +423,11 @@ model FeedPost {
   mediaType String  @default("image")
   isPrivate Boolean @default(false)
   likedBy   String[] @default([])
+  tags      String[] @default([])
   createdAt DateTime @default(now())
   comments  FeedComment[]
   saves     FeedSave[]
+  poll      FeedPoll?
 }
 
 model FeedComment {
@@ -450,6 +454,28 @@ model FeedSave {
   createdAt DateTime @default(now())
 
   @@unique([postId, userId])
+}
+
+model FeedPoll {
+  id        String     @id @default(uuid())
+  postId    String     @unique
+  post      FeedPost   @relation(fields: [postId], references: [id], onDelete: Cascade)
+  question  String     @db.Text
+  options   Json       // [{ id, label }]
+  votes     PollVote[]
+  createdAt DateTime   @default(now())
+}
+
+model PollVote {
+  id        String   @id @default(uuid())
+  pollId    String
+  poll      FeedPoll @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  optionId  String
+  createdAt DateTime @default(now())
+
+  @@unique([pollId, userId])
 }
 
 model StudyRoom {
@@ -753,6 +779,7 @@ model DirectMessage {
   @@index([senderId, receiverId, createdAt])
   @@index([receiverId, senderId, createdAt])
 }
+
 model SuspiciousAiAttempt {
   id        String   @id @default(cuid())
   actorId   String
@@ -805,6 +832,7 @@ model OnboardingCompletion {
 
   @@unique([communityId, userId])
 }
+
 model Story {
   id         String   @id @default(uuid())
   authorId   String
