@@ -79,6 +79,8 @@ model User {
   directMessagesSent     DirectMessage[] @relation("DirectMessagesSent")
   directMessagesReceived DirectMessage[] @relation("DirectMessagesReceived")
 
+  // ACTIVE — Community onboarding
+  onboardingCompletions OnboardingCompletion[]
 }
 
 model Follow {
@@ -164,6 +166,10 @@ model Community {
   captchaRequiredUntil DateTime?
   joinLockdown         Boolean   @default(false)
   joinEvents           JoinEvent[]
+
+  // ACTIVE — Community onboarding
+  onboarding  CommunityOnboarding?
+  onboardingCompletions OnboardingCompletion[]
 }
 
 model Section {
@@ -755,4 +761,46 @@ model SuspiciousAiAttempt {
   createdAt DateTime @default(now())
 
   @@index([actorId, createdAt])
+}
+
+// ─────────────────────────────────────────────
+// ACTIVE — Community Onboarding (Advanced Community Features, Feature 1)
+// ─────────────────────────────────────────────
+
+model CommunityOnboarding {
+  id          String    @id @default(uuid())
+  communityId String    @unique
+  community   Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+
+  enabled     Boolean  @default(false)
+  welcomeTitle String?
+  welcomeBody  String?  @db.Text
+
+  // [{ id, text, type: "single" | "multi" | "text", options: [{ id, label, roleId }] }]
+  questions   Json     @default("[]")
+
+  recommendedChannelIds String[] @default([])
+  requireRulesAck        Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  completions OnboardingCompletion[]
+}
+
+model OnboardingCompletion {
+  id          String  @id @default(uuid())
+  communityId String
+  community   Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  onboardingId String
+  onboarding   CommunityOnboarding @relation(fields: [onboardingId], references: [id], onDelete: Cascade)
+
+  // { [questionId]: optionId | optionId[] | string }
+  answers   Json     @default("{}")
+  createdAt DateTime @default(now())
+
+  @@unique([communityId, userId])
 }
