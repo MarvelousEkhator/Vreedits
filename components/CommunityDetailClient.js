@@ -20,6 +20,10 @@ function relativeTime(dateStr) {
   return new Date(dateStr).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+function genId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
 function Avatar({ user, size = 32 }) {
   if (user?.avatarDataUrl) {
     return <img src={user.avatarDataUrl} alt="" style={{ width: size, height: size, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />;
@@ -208,6 +212,108 @@ function CropModal({ image, aspect, shape, onCancel, onConfirm }) {
         <div className="flex gap-2 mt-3">
           <button onClick={confirm} className="btn-primary">Apply</button>
           <button onClick={onCancel} className="btn-primary" style={{ background: "var(--surface-2)", color: "var(--text)" }}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OnboardingFlowModal({ data, channels, onClose, onSubmit, submitting }) {
+  const [answers, setAnswers] = useState({});
+
+  function setAnswer(questionId, value) {
+    setAnswers((prev) => ({ ...prev, [questionId]: value }));
+  }
+  function toggleMulti(questionId, optionId) {
+    setAnswers((prev) => {
+      const current = Array.isArray(prev[questionId]) ? prev[questionId] : [];
+      const next = current.includes(optionId)
+        ? current.filter((id) => id !== optionId)
+        : [...current, optionId];
+      return { ...prev, [questionId]: next };
+    });
+  }
+
+  const recommendedChannels = channels.filter((c) => data.recommendedChannelIds?.includes(c.id));
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "var(--surface)", zIndex: 250, display: "flex", flexDirection: "column", overflowY: "auto" }}>
+      <div className="p-5" style={{ flex: 1, maxWidth: 480, margin: "0 auto", width: "100%" }}>
+        <h1 className="text-xl font-bold mb-2" style={{ fontFamily: "var(--font-display)" }}>
+          {data.welcomeTitle || "Welcome!"}
+        </h1>
+        {data.welcomeBody && (
+          <p className="text-sm mb-4" style={{ color: "var(--text-muted)", overflowWrap: "anywhere" }}>{data.welcomeBody}</p>
+        )}
+
+        {recommendedChannels.length > 0 && (
+          <div className="mb-4">
+            <h3 className="text-xs font-semibold mb-1.5" style={{ color: "var(--text-muted)" }}>Recommended channels</h3>
+            <div className="space-y-1">
+              {recommendedChannels.map((c) => (
+                <div key={c.id} className="flex items-center gap-1.5 text-sm">
+                  <Hash size={14} style={{ color: "var(--text-muted)" }} /> {c.name}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {(data.questions || []).map((q) => (
+          <div key={q.id} className="mb-4">
+            <p className="text-sm font-semibold mb-2">{q.text}</p>
+            {q.type === "text" && (
+              <input
+                className="input pl-3"
+                value={answers[q.id] || ""}
+                onChange={(e) => setAnswer(q.id, e.target.value)}
+              />
+            )}
+            {q.type === "single" && (
+              <div className="space-y-1.5">
+                {q.options.map((opt) => (
+                  <label key={opt.id} className="flex items-center gap-2 text-sm">
+                    <input
+                      type="radio"
+                      name={q.id}
+                      checked={answers[q.id] === opt.id}
+                      onChange={() => setAnswer(q.id, opt.id)}
+                    />
+                    {opt.label}
+                  </label>
+                ))}
+              </div>
+            )}
+            {q.type === "multi" && (
+              <div className="space-y-1.5">
+                {q.options.map((opt) => (
+                  <label key={opt.id} className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={Array.isArray(answers[q.id]) && answers[q.id].includes(opt.id)}
+                      onChange={() => toggleMulti(q.id, opt.id)}
+                    />
+                    {opt.label}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+
+        {data.requireRulesAck && (
+          <p className="text-xs mb-4" style={{ color: "var(--text-muted)" }}>
+            By continuing you agree to follow this community's rules. You can review them any time from Settings → Rules.
+          </p>
+        )}
+
+        <div className="flex gap-2 mt-2">
+          <button onClick={() => onSubmit(answers)} className="btn-primary" disabled={submitting}>
+            {submitting ? <Loader2 size={14} className="animate-spin" /> : "Get Started"}
+          </button>
+          <button onClick={onClose} className="btn-primary" style={{ background: "var(--surface-2)", color: "var(--text)" }}>
+            Skip for now
+          </button>
         </div>
       </div>
     </div>
@@ -472,16 +578,41 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
   const [reportingId, setReportingId] = useState(null);
   const [reportedIds, setReportedIds] = useState({});
 
+  // ── Onboarding (member-facing status, loaded with the rest of the community) ──
+  const [onboardingStatus, setOnboardingStatus] = useState({
+    enabled: false,
+    completed: false,
+    welcomeTitle: "",
+    welcomeBody: "",
+    questions: [],
+    recommendedChannelIds: [],
+    requireRulesAck: false,
+  });
+  const [onboardingDismissed, setOnboardingDismissed] = useState(false);
+  const [submittingOnboarding, setSubmittingOnboarding] = useState(false);
+
+  // ── Onboarding (admin config editor, loaded only when Settings → Onboarding is open) ──
+  const [onboardingConfigLoading, setOnboardingConfigLoading] = useState(false);
+  const [onboardingEnabled, setOnboardingEnabled] = useState(false);
+  const [onboardingWelcomeTitle, setOnboardingWelcomeTitle] = useState("");
+  const [onboardingWelcomeBody, setOnboardingWelcomeBody] = useState("");
+  const [onboardingQuestions, setOnboardingQuestions] = useState([]);
+  const [onboardingRecommendedChannelIds, setOnboardingRecommendedChannelIds] = useState([]);
+  const [onboardingRequireRulesAck, setOnboardingRequireRulesAck] = useState(false);
+  const [savingOnboarding, setSavingOnboarding] = useState(false);
+  const [onboardingSaveStatus, setOnboardingSaveStatus] = useState("");
+
   const canManage = community && (community.isOwner || community.isAdmin);
 
   const load = useCallback(async () => {
     setLoading(true);
     setLoadError("");
     try {
-      const [cRes, chRes, secRes] = await Promise.all([
+      const [cRes, chRes, secRes, obRes] = await Promise.all([
         fetch(`/api/communities/${communityId}`),
         fetch(`/api/communities/${communityId}/channels`),
         fetch(`/api/communities/${communityId}/sections`),
+        fetch(`/api/communities/${communityId}/onboarding`),
       ]);
       const cData = await cRes.json();
 
@@ -494,6 +625,7 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
 
       const chData = await chRes.json();
       const secData = await secRes.json();
+      const obData = obRes.ok ? await obRes.json() : null;
       const loadedChannels = chRes.ok ? (chData.channels || []) : [];
       const loadedSections = secRes.ok ? (secData.sections || []) : [];
 
@@ -507,6 +639,9 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
       setChannels(loadedChannels);
       setSections(loadedSections);
       setActiveChannelId((prev) => prev || loadedChannels[0]?.id || null);
+      if (obData?.onboarding) {
+        setOnboardingStatus({ ...obData.onboarding, completed: !!obData.completed });
+      }
     } catch (err) {
       setLoadError("Network error loading community.");
       setCommunity(null);
@@ -586,6 +721,25 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
     }
   }, [communityId]);
 
+  const loadOnboardingConfig = useCallback(async () => {
+    setOnboardingConfigLoading(true);
+    try {
+      const res = await fetch(`/api/communities/${communityId}/onboarding`);
+      const data = await res.json();
+      if (res.ok && data.onboarding) {
+        setOnboardingEnabled(data.onboarding.enabled);
+        setOnboardingWelcomeTitle(data.onboarding.welcomeTitle || "");
+        setOnboardingWelcomeBody(data.onboarding.welcomeBody || "");
+        setOnboardingQuestions(data.onboarding.questions || []);
+        setOnboardingRecommendedChannelIds(data.onboarding.recommendedChannelIds || []);
+        setOnboardingRequireRulesAck(!!data.onboarding.requireRulesAck);
+      }
+    } catch (err) {
+    } finally {
+      setOnboardingConfigLoading(false);
+    }
+  }, [communityId]);
+
   useEffect(() => { load(); }, [load]);
   useEffect(() => { if (activeChannelId) loadPosts(activeChannelId); }, [activeChannelId, loadPosts]);
   useEffect(() => { if (view === "events") loadEvents(); }, [view, loadEvents]);
@@ -598,6 +752,12 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
   useEffect(() => { if (settingsPage === "threads") loadThreads(); }, [settingsPage, loadThreads]);
   useEffect(() => { if (settingsPage === "rules") loadRules(); }, [settingsPage, loadRules]);
   useEffect(() => { if (settingsPage === "invites") loadInvites(); }, [settingsPage, loadInvites]);
+  useEffect(() => {
+    if (settingsPage === "onboarding") {
+      loadRoles();
+      loadOnboardingConfig();
+    }
+  }, [settingsPage, loadRoles, loadOnboardingConfig]);
 
   async function toggleMembership() {
     if (community.isMember) {
@@ -1090,6 +1250,92 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
     clearTimeout(pressTimers.current[postId]);
   }
 
+  // ── Onboarding: admin config editor helpers ──
+  function addOnboardingQuestion() {
+    setOnboardingQuestions((prev) => [
+      ...prev,
+      { id: genId(), text: "", type: "single", options: [{ id: genId(), label: "", roleId: null }] },
+    ]);
+  }
+  function removeOnboardingQuestion(id) {
+    setOnboardingQuestions((prev) => prev.filter((q) => q.id !== id));
+  }
+  function updateOnboardingQuestion(id, patch) {
+    setOnboardingQuestions((prev) => prev.map((q) => (q.id === id ? { ...q, ...patch } : q)));
+  }
+  function addOnboardingOption(questionId) {
+    setOnboardingQuestions((prev) =>
+      prev.map((q) =>
+        q.id === questionId ? { ...q, options: [...q.options, { id: genId(), label: "", roleId: null }] } : q
+      )
+    );
+  }
+  function removeOnboardingOption(questionId, optionId) {
+    setOnboardingQuestions((prev) =>
+      prev.map((q) =>
+        q.id === questionId ? { ...q, options: q.options.filter((o) => o.id !== optionId) } : q
+      )
+    );
+  }
+  function updateOnboardingOption(questionId, optionId, patch) {
+    setOnboardingQuestions((prev) =>
+      prev.map((q) =>
+        q.id === questionId
+          ? { ...q, options: q.options.map((o) => (o.id === optionId ? { ...o, ...patch } : o)) }
+          : q
+      )
+    );
+  }
+  function toggleRecommendedChannel(channelId) {
+    setOnboardingRecommendedChannelIds((prev) =>
+      prev.includes(channelId) ? prev.filter((id) => id !== channelId) : [...prev, channelId]
+    );
+  }
+
+  async function handleSaveOnboarding(e) {
+    e.preventDefault();
+    setSavingOnboarding(true);
+    setOnboardingSaveStatus("");
+    const res = await fetch(`/api/communities/${communityId}/onboarding`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        enabled: onboardingEnabled,
+        welcomeTitle: onboardingWelcomeTitle,
+        welcomeBody: onboardingWelcomeBody,
+        questions: onboardingQuestions,
+        recommendedChannelIds: onboardingRecommendedChannelIds,
+        requireRulesAck: onboardingRequireRulesAck,
+      }),
+    });
+    const data = await res.json();
+    setSavingOnboarding(false);
+    if (!res.ok) {
+      setOnboardingSaveStatus(data.error || "Could not save onboarding.");
+      return;
+    }
+    setOnboardingSaveStatus("Saved.");
+    if (data.onboarding) {
+      setOnboardingStatus((prev) => ({ ...prev, ...data.onboarding }));
+    }
+  }
+
+  // ── Onboarding: member-facing flow ──
+  async function handleSubmitOnboarding(answers) {
+    setSubmittingOnboarding(true);
+    const res = await fetch(`/api/communities/${communityId}/onboarding/complete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ answers }),
+    });
+    setSubmittingOnboarding(false);
+    if (res.ok) {
+      setOnboardingStatus((prev) => ({ ...prev, completed: true }));
+      setOnboardingDismissed(true);
+      loadRoles();
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex justify-center py-10" style={{ color: "var(--text-muted)" }}>
@@ -1110,6 +1356,12 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
   const uncategorized = channels.filter((c) => !c.sectionId || !sections.find((s) => s.id === c.sectionId));
   const mustAcknowledgeRules = community.isMember && community.hasRules && !community.hasAcknowledgedRules && !community.isOwner;
   const actionSheetPost = actionSheetPostId ? posts.find((p) => p.id === actionSheetPostId) : null;
+  const showOnboardingFlow =
+    community.isMember &&
+    !community.isOwner &&
+    onboardingStatus.enabled &&
+    !onboardingStatus.completed &&
+    !onboardingDismissed;
 
   function handleSettingsBack() {
     if (settingsPage) {
@@ -1122,7 +1374,8 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
   function openChannel(channelId) {
     setActiveChannelId(channelId);
     setChannelViewOpen(true);
-  }return (
+  }
+  return (
     <div>
       {cropTarget && (
         <CropModal
@@ -1135,6 +1388,16 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
       )}
       <input ref={bannerInputRef} type="file" accept="image/*" onChange={(e) => handleImageFileChange(e, "banner")} style={{ display: "none" }} />
       <input ref={iconInputRef} type="file" accept="image/*" onChange={(e) => handleImageFileChange(e, "icon")} style={{ display: "none" }} />
+
+      {showOnboardingFlow && (
+        <OnboardingFlowModal
+          data={onboardingStatus}
+          channels={channels}
+          onClose={() => setOnboardingDismissed(true)}
+          onSubmit={handleSubmitOnboarding}
+          submitting={submittingOnboarding}
+        />
+      )}
 
       {actionSheetPost && (
         <PostActionSheet
@@ -1662,6 +1925,175 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
               </div>
             )}
 
+            {settingsPage === "onboarding" && (
+              <div>
+                {onboardingConfigLoading ? (
+                  <div className="flex justify-center py-10" style={{ color: "var(--text-muted)" }}>
+                    <Loader2 size={22} className="animate-spin" />
+                  </div>
+                ) : (
+                  <form onSubmit={handleSaveOnboarding} className="space-y-3">
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={onboardingEnabled}
+                        onChange={(e) => setOnboardingEnabled(e.target.checked)}
+                      />
+                      Enable onboarding for new members
+                    </label>
+
+                    <div>
+                      <label className="text-xs" style={{ color: "var(--text-muted)" }}>Welcome title</label>
+                      <input
+                        className="input pl-3 mt-1"
+                        placeholder="Welcome to the community!"
+                        value={onboardingWelcomeTitle}
+                        onChange={(e) => setOnboardingWelcomeTitle(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs" style={{ color: "var(--text-muted)" }}>Welcome message</label>
+                      <textarea
+                        className="input pl-3 mt-1"
+                        style={{ minHeight: 70, resize: "vertical" }}
+                        placeholder="Tell new members what this community is about…"
+                        value={onboardingWelcomeBody}
+                        onChange={(e) => setOnboardingWelcomeBody(e.target.value)}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-semibold" style={{ color: "var(--text-muted)" }}>Recommended channels</label>
+                      <div className="space-y-1 mt-1">
+                        {channels.length === 0 && <p className="text-xs" style={{ color: "var(--text-muted)" }}>No channels yet.</p>}
+                        {channels.map((c) => (
+                          <label key={c.id} className="flex items-center gap-2 text-xs py-0.5">
+                            <input
+                              type="checkbox"
+                              checked={onboardingRecommendedChannelIds.includes(c.id)}
+                              onChange={() => toggleRecommendedChannel(c.id)}
+                            />
+                            <Hash size={12} /> {c.name}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={onboardingRequireRulesAck}
+                        onChange={(e) => setOnboardingRequireRulesAck(e.target.checked)}
+                      />
+                      Require members to acknowledge rules during onboarding
+                    </label>
+
+                    <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12 }}>
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="text-xs font-semibold" style={{ color: "var(--text-muted)" }}>Questions</h3>
+                        <button
+                          type="button"
+                          onClick={addOnboardingQuestion}
+                          className="btn-primary"
+                          style={{ maxWidth: 130, padding: "6px 10px" }}
+                        >
+                          <Plus size={13} /> Add question
+                        </button>
+                      </div>
+
+                      {onboardingQuestions.length === 0 && (
+                        <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                          No questions yet. Add one to ask new members during onboarding.
+                        </p>
+                      )}
+
+                      <div className="space-y-3">
+                        {onboardingQuestions.map((q) => (
+                          <div key={q.id} className="card p-3">
+                            <div className="flex items-center gap-2 mb-2">
+                              <input
+                                className="input pl-3"
+                                style={{ padding: "6px 10px", fontSize: 13, flex: 1 }}
+                                placeholder="Question text"
+                                value={q.text}
+                                onChange={(e) => updateOnboardingQuestion(q.id, { text: e.target.value })}
+                              />
+                              <select
+                                className="input pl-2"
+                                style={{ padding: "6px 8px", fontSize: 12, maxWidth: 120 }}
+                                value={q.type}
+                                onChange={(e) => updateOnboardingQuestion(q.id, { type: e.target.value })}
+                              >
+                                <option value="single">Single choice</option>
+                                <option value="multi">Multi choice</option>
+                                <option value="text">Free text</option>
+                              </select>
+                              <button
+                                type="button"
+                                onClick={() => removeOnboardingQuestion(q.id)}
+                                style={{ background: "none", border: "none", color: "var(--text-muted)" }}
+                                aria-label="Delete question"
+                              >
+                                <XIcon size={14} />
+                              </button>
+                            </div>
+
+                            {q.type !== "text" && (
+                              <div className="space-y-1.5 pl-2">
+                                {q.options.map((opt) => (
+                                  <div key={opt.id} className="flex items-center gap-2">
+                                    <input
+                                      className="input pl-3"
+                                      style={{ padding: "5px 8px", fontSize: 12, flex: 1 }}
+                                      placeholder="Option label"
+                                      value={opt.label}
+                                      onChange={(e) => updateOnboardingOption(q.id, opt.id, { label: e.target.value })}
+                                    />
+                                    <select
+                                      className="input pl-2"
+                                      style={{ padding: "5px 8px", fontSize: 12, maxWidth: 140 }}
+                                      value={opt.roleId || ""}
+                                      onChange={(e) => updateOnboardingOption(q.id, opt.id, { roleId: e.target.value || null })}
+                                    >
+                                      <option value="">No role</option>
+                                      {roles.map((r) => (
+                                        <option key={r.id} value={r.id}>{r.name}</option>
+                                      ))}
+                                    </select>
+                                    <button
+                                      type="button"
+                                      onClick={() => removeOnboardingOption(q.id, opt.id)}
+                                      style={{ background: "none", border: "none", color: "var(--text-muted)" }}
+                                      aria-label="Delete option"
+                                    >
+                                      <XIcon size={12} />
+                                    </button>
+                                  </div>
+                                ))}
+                                <button
+                                  type="button"
+                                  onClick={() => addOnboardingOption(q.id)}
+                                  className="text-xs"
+                                  style={{ background: "none", border: "none", color: "var(--accent)", padding: "2px 0" }}
+                                >
+                                  + Add option
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {onboardingSaveStatus && <div className="text-xs" style={{ color: "var(--text-muted)" }}>{onboardingSaveStatus}</div>}
+                    <button type="submit" className="btn-primary" disabled={savingOnboarding}>
+                      {savingOnboarding ? <Loader2 size={14} className="animate-spin" /> : "Save Onboarding"}
+                    </button>
+                  </form>
+                )}
+              </div>
+            )}
+
             {settingsPage === "danger" && community.isOwner && (
               <div>
                 <p className="text-xs mb-3" style={{ color: "var(--text-muted)" }}>
@@ -1673,7 +2105,7 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
               </div>
             )}
 
-            {settingsPage && !["overview", "members", "invites", "channels", "roles", "danger", "threads", "rules"].includes(settingsPage) && (
+            {settingsPage && !["overview", "members", "invites", "channels", "roles", "danger", "threads", "rules", "onboarding"].includes(settingsPage) && (
               <div className="card p-6 text-center space-y-2" style={{ background: "var(--surface-2)" }}>
                 <SlidersHorizontal size={24} className="mx-auto" style={{ color: "var(--text-muted)" }} />
                 <h3 className="text-sm font-semibold">{SETTINGS_TITLES[settingsPage]}</h3>
@@ -1871,378 +2303,4 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
                   <button
                     key={c.id}
                     onClick={() => openChannel(c.id)}
-                    className="flex items-center gap-2 w-full text-sm py-2 px-2 rounded-lg"
-                    style={{ background: "transparent", color: "var(--text)", border: "none", textAlign: "left" }}
-                  >
-                    <Hash size={15} style={{ color: "var(--text-muted)" }} /> {c.name}
-                  </button>
-                ))}
-              </div>
-            );
-          })}
-          {uncategorized.length > 0 && (
-            <div>
-              {sections.length > 0 && <div className="text-xs font-semibold px-2 py-1" style={{ color: "var(--text-muted)" }}>Channels</div>}
-              {uncategorized.map((c) => (
-                <button
-                  key={c.id}
-                  onClick={() => openChannel(c.id)}
-                  className="flex items-center gap-2 w-full text-sm py-2 px-2 rounded-lg"
-                  style={{ background: "transparent", color: "var(--text)", border: "none", textAlign: "left" }}
-                >
-                  <Hash size={15} style={{ color: "var(--text-muted)" }} /> {c.name}
-                </button>
-              ))}
-            </div>
-          )}
-          {channels.length === 0 && (
-            <p className="text-xs p-2" style={{ color: "var(--text-muted)" }}>
-              No channels yet.{canManage ? " Add one from Settings." : ""}
-            </p>
-          )}
-        </div>
-      )}
-{view === "feed" && channelViewOpen && activeChannel && (
-        <div
-          style={{
-            position: "fixed", inset: 0, background: "var(--surface)", zIndex: 150,
-            display: "flex", flexDirection: "column",
-          }}
-        >
-          <div
-            className="flex items-center gap-3 p-4"
-            style={{ borderBottom: "1px solid var(--border)", flexShrink: 0 }}
-          >
-            <button
-              onClick={() => {
-                if (openForumPostId) {
-                  setOpenForumPostId(null);
-                } else {
-                  setChannelViewOpen(false);
-                  setOpenForumPostId(null);
-                  setShowNewPostForm(false);
-                }
-              }}
-              aria-label="Back"
-              style={{ background: "none", border: "none", color: "var(--text)" }}
-            >
-              <ChevronLeft size={22} />
-            </button>
-            <Hash size={16} style={{ color: "var(--text-muted)" }} />
-            <h1 className="text-base font-semibold" style={{ flex: 1 }}>{activeChannel.name}</h1>
-          </div>
-
-          <div style={{ flex: 1, overflowY: "auto" }} className="p-3">
-            {postsLoading ? (
-              <div className="flex justify-center py-10" style={{ color: "var(--text-muted)" }}>
-                <Loader2 size={22} className="animate-spin" />
-              </div>
-            ) : activeChannel.type === "forum" ? (
-              openForumPostId ? (
-                (() => {
-                  const post = posts.find((p) => p.id === openForumPostId);
-                  if (!post) {
-                    return <p className="text-sm text-center py-8" style={{ color: "var(--text-muted)" }}>Post not found.</p>;
-                  }
-                  return (
-                    <div className="space-y-4">
-                      <div>
-                        <h2 className="text-lg font-bold mb-2">{post.title}</h2>
-                        <div className="flex items-center gap-2 mb-3">
-                          <Avatar user={post.author} size={28} />
-                          <span className="text-sm font-semibold">{post.author.username}</span>
-                          <span className="text-xs" style={{ color: "var(--text-muted)" }}>{relativeTime(post.createdAt)}</span>
-                        </div>
-                        <p className="text-sm mb-3" style={{ overflowWrap: "anywhere", lineHeight: 1.5 }}>{post.content}</p>
-                        <div className="flex items-center gap-3 pb-3" style={{ borderBottom: "1px solid var(--border)" }}>
-                          <button onClick={() => handleLike(post)} className="flex items-center gap-1 text-xs" style={{ color: post.likedByMe ? "var(--danger)" : "var(--text-muted)", background: "none", border: "none" }}>
-                            <Heart size={13} fill={post.likedByMe ? "var(--danger)" : "none"} /> {post.likeCount > 0 && post.likeCount}
-                          </button>
-                          {post.author.id === currentUserId ? (
-                            <button onClick={() => { handleDeletePost(post.id); setOpenForumPostId(null); }} aria-label="Delete post" style={{ color: "var(--text-muted)", background: "none", border: "none" }}>
-                              <Trash2 size={13} />
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => handleReportPost(post)}
-                              disabled={reportingId === post.id || reportedIds[post.id]}
-                              aria-label="Report post"
-                              className="flex items-center gap-1 text-xs"
-                              style={{ color: reportedIds[post.id] ? "var(--text-muted)" : "var(--text-muted)", background: "none", border: "none" }}
-                            >
-                              <Flag size={13} /> {reportedIds[post.id] ? "Reported" : "Report"}
-                            </button>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="space-y-3">
-                        <h3 className="text-xs font-semibold" style={{ color: "var(--text-muted)" }}>
-                          Replies ({post.comments?.length || 0})
-                        </h3>
-                        {post.comments?.map((c) => (
-                          <div key={c.id} className="flex items-start gap-2.5 card p-2.5">
-                            <Avatar user={c.author} size={24} />
-                            <div style={{ minWidth: 0, flex: 1 }}>
-                              <div className="flex items-center justify-between gap-2 mb-0.5">
-                                <span className="text-xs font-semibold">{c.author.username}</span>
-                                {c.author.id !== currentUserId && (
-                                  <button
-                                    onClick={() => handleReportComment(c)}
-                                    disabled={reportingId === c.id || reportedIds[c.id]}
-                                    aria-label="Report reply"
-                                    style={{ color: "var(--text-muted)", background: "none", border: "none" }}
-                                  >
-                                    <Flag size={11} />
-                                  </button>
-                                )}
-                              </div>
-                              <p className="text-xs" style={{ overflowWrap: "anywhere" }}>{c.content}</p>
-                            </div>
-                          </div>
-                        ))}
-
-                        {community.isMember && (
-                          <div className="flex items-center gap-2 mt-2">
-                            <input
-                              className="input pl-3"
-                              style={{ padding: "8px 12px", fontSize: 13, flex: 1 }}
-                              placeholder="Write a reply…"
-                              value={commentDrafts[post.id] || ""}
-                              onChange={(e) => setCommentDrafts((prev) => ({ ...prev, [post.id]: e.target.value }))}
-                              onKeyDown={(e) => e.key === "Enter" && handleAddComment(post.id)}
-                            />
-                            <button onClick={() => handleAddComment(post.id)} className="btn-primary" style={{ width: "auto", padding: "8px 14px" }}>
-                              <Send size={14} />
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })()
-              ) : (
-                <div className="space-y-2">
-                  {posts.length === 0 && (
-                    <p className="text-sm text-center py-8" style={{ color: "var(--text-muted)" }}>No posts yet.</p>
-                  )}
-                  {posts.map((post) => (
-                    <div
-                      key={post.id}
-                      onClick={() => setOpenForumPostId(post.id)}
-                      className="card p-3 transition-opacity hover:opacity-90"
-                      style={{ cursor: "pointer" }}
-                    >
-                      <h3 className="text-sm font-semibold mb-1">{post.title || "Untitled Post"}</h3>
-                      <p className="text-xs mb-2 line-clamp-2" style={{ color: "var(--text-muted)", overflowWrap: "anywhere" }}>{post.content}</p>
-                      <div className="flex items-center justify-between text-xs" style={{ color: "var(--text-muted)" }}>
-                        <div className="flex items-center gap-1.5">
-                          <Avatar user={post.author} size={18} />
-                          <span>{post.author.username}</span>
-                          <span>·</span>
-                          <span>{relativeTime(post.createdAt)}</span>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <span className="flex items-center gap-1"><Heart size={12} /> {post.likeCount}</span>
-                          <span className="flex items-center gap-1"><MessageCircle size={12} /> {post.comments?.length || 0}</span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )
-            ) : (<>
-                {posts.length === 0 && (
-                  <p className="text-sm text-center py-8" style={{ color: "var(--text-muted)" }}>No messages yet.</p>
-                )}
-                {posts.map((post, i) => {
-                  const prev = posts[i - 1];
-                  const grouped = prev && prev.author.id === post.author.id &&
-                    (new Date(post.createdAt) - new Date(prev.createdAt)) < 5 * 60 * 1000;
-                  return (
-                    <div key={post.id} className="px-1" style={{ marginTop: grouped ? 2 : 14 }}>
-                      <div className="flex items-start gap-2.5">
-                        <div style={{ width: 36, flexShrink: 0 }}>
-                          {!grouped && <Avatar user={post.author} size={36} />}
-                        </div>
-                        <div
-                          style={{ minWidth: 0, flex: 1 }}
-                          onTouchStart={() => handlePressStart(post.id)}
-                          onTouchEnd={() => handlePressEnd(post.id)}
-                          onMouseDown={() => handlePressStart(post.id)}
-                          onMouseUp={() => handlePressEnd(post.id)}
-                          onMouseLeave={() => handlePressEnd(post.id)}
-                        >
-                          {!grouped && (
-                            <div className="flex items-center gap-2 mb-0.5">
-                              <span className="text-sm font-semibold">{post.author.username}</span>
-                              <span className="text-xs" style={{ color: "var(--text-muted)" }}>{relativeTime(post.createdAt)}</span>
-                            </div>
-                          )}
-
-                          {post.replyTo && (
-                            <div className="text-xs mb-1 px-2 py-1" style={{ borderLeft: "2px solid var(--accent)", color: "var(--text-muted)", overflowWrap: "anywhere" }}>
-                              <span className="font-semibold">{post.replyTo.author?.username}</span> {post.replyTo.content?.slice(0, 80)}
-                            </div>
-                          )}
-
-                          {editingPostId === post.id ? (
-                            <div className="flex items-center gap-2">
-                              <input
-                                className="input pl-3"
-                                style={{ padding: "6px 10px", fontSize: 13, flex: 1 }}
-                                value={editContent}
-                                onChange={(e) => setEditContent(e.target.value)}
-                                onKeyDown={(e) => e.key === "Enter" && handleEditPost(post.id)}
-                                autoFocus
-                              />
-                              <button onClick={() => handleEditPost(post.id)} style={{ color: "var(--accent)", background: "none", border: "none" }} aria-label="Save edit">
-                                <Send size={14} />
-                              </button>
-                              <button onClick={() => setEditingPostId(null)} style={{ color: "var(--text-muted)", background: "none", border: "none" }} aria-label="Cancel edit">
-                                <XIcon size={14} />
-                              </button>
-                            </div>
-                          ) : (
-                            <p className="text-sm" style={{ overflowWrap: "anywhere", lineHeight: 1.45 }}>{post.content}</p>
-                          )}
-
-                          <PostReactionPills postId={post.id} currentUserId={currentUserId} />
-
-                          {openThreads[post.id] && (
-                            <div className="mt-2 pl-3 py-2" style={{ borderLeft: "2px solid var(--border)" }}>
-                              {post.comments?.map((c) => (
-                                <div key={c.id} className="flex items-start gap-2 mb-2">
-                                  <Avatar user={c.author} size={22} />
-                                  <div className="text-xs" style={{ flex: 1 }}>
-                                    <span className="font-semibold">{c.author.username}</span>{" "}
-                                    <span style={{ color: "var(--text-muted)" }}>{c.content}</span>
-                                  </div>
-                                  {c.author.id !== currentUserId && (
-                                    <button
-                                      onClick={() => handleReportComment(c)}
-                                      disabled={reportingId === c.id || reportedIds[c.id]}
-                                      aria-label="Report reply"
-                                      style={{ color: "var(--text-muted)", background: "none", border: "none" }}
-                                    >
-                                      <Flag size={11} />
-                                    </button>
-                                  )}
-                                </div>
-                              ))}
-                              <div className="flex items-center gap-2 mt-1">
-                                <input
-                                  className="input pl-3"
-                                  style={{ padding: "6px 10px", fontSize: 12 }}
-                                  placeholder="Reply in thread…"
-                                  value={commentDrafts[post.id] || ""}
-                                  onChange={(e) => setCommentDrafts((prev2) => ({ ...prev2, [post.id]: e.target.value }))}
-                                  onKeyDown={(e) => e.key === "Enter" && handleAddComment(post.id)}
-                                />
-                                <button onClick={() => handleAddComment(post.id)} style={{ color: "var(--accent)", background: "none", border: "none" }} aria-label="Send reply">
-                                  <Send size={14} />
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </>
-            )}
-          </div>
-
-          {community.isMember && activeChannel.type === "forum" && !openForumPostId && (
-            <div style={{ borderTop: "1px solid var(--border)", flexShrink: 0 }} className="p-3">
-              {!showNewPostForm ? (
-                <button
-                  onClick={() => setShowNewPostForm(true)}
-                  className="btn-primary w-full"
-                >
-                  <Plus size={15} /> New Post
-                </button>
-              ) : (
-                <form onSubmit={handlePost} className="space-y-2">
-                  {error && <div className="text-xs" style={{ color: "var(--danger, #e55)" }}>{error}</div>}
-                  <input
-                    className="input pl-3"
-                    style={{ padding: "9px 10px", fontSize: 14 }}
-                    placeholder="Post title"
-                    value={newPostTitle}
-                    onChange={(e) => setNewPostTitle(e.target.value)}
-                    autoFocus
-                  />
-                  <textarea
-                    className="input pl-3"
-                    style={{ padding: "9px 10px", fontSize: 14, minHeight: 70, resize: "vertical" }}
-                    placeholder="What's on your mind?"
-                    value={newPost}
-                    onChange={(e) => setNewPost(e.target.value)}
-                  />
-                  <div className="flex gap-2">
-                    <button type="submit" className="btn-primary" disabled={posting || !newPost.trim() || !newPostTitle.trim()}>
-                      {posting ? <Loader2 size={14} className="animate-spin" /> : "Post"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { setShowNewPostForm(false); setNewPost(""); setNewPostTitle(""); setError(""); }}
-                      className="btn-primary"
-                      style={{ background: "var(--surface-2)", color: "var(--text)" }}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </form>
-              )}
-            </div>
-          )}
-
-          {community.isMember && activeChannel.type !== "forum" && (
-            <form onSubmit={handlePost} className="flex flex-col gap-1 p-3" style={{ borderTop: "1px solid var(--border)", flexShrink: 0, position: "relative" }}>
-              {error && (
-                <div className="alert alert-error" style={{ position: "absolute", bottom: "100%", left: 0, right: 0, marginBottom: 8 }}>
-                  <AlertCircle size={14} />{error}
-                </div>
-              )}
-              {replyingTo && (
-                <div className="flex items-center justify-between px-2 py-1" style={{ background: "var(--surface-2)", borderRadius: 8, fontSize: 12, color: "var(--text-muted)" }}>
-                  <span>Replying to <strong>{replyingTo.author.username}</strong></span>
-                  <button onClick={() => setReplyingTo(null)} style={{ background: "none", border: "none", color: "var(--text-muted)" }} aria-label="Cancel reply">
-                    <XIcon size={12} />
-                  </button>
-                </div>
-              )}
-              <div className="flex items-center gap-2">
-                <input
-                  className="input pl-4"
-                  style={{
-                    flex: 1, borderRadius: 999, height: 46,
-                    background: "var(--surface-2)", border: "1px solid var(--border)",
-                  }}
-                  placeholder={`Message #${activeChannel.name}`}
-                  value={newPost}
-                  onChange={(e) => setNewPost(e.target.value)}
-                />
-                <button
-                  type="submit"
-                  aria-label="Send"
-                  disabled={posting || !newPost.trim()}
-                  style={{
-                    width: 46, height: 46, borderRadius: "50%", flexShrink: 0,
-                    background: "var(--accent)", color: "white", border: "none",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    opacity: posting || !newPost.trim() ? 0.5 : 1,
-                  }}
-                >
-                  {posting ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-                </button>
-              </div>
-            </form>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
+            
