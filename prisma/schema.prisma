@@ -420,8 +420,11 @@ model FeedPost {
   author   User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
   caption   String? @db.Text
   mediaUrl  String? @db.Text
+  mediaUrls String[] @default([])
   mediaType String  @default("image")
   isPrivate Boolean @default(false)
+  isDraft   Boolean @default(false)
+  scheduledFor DateTime?
   likedBy   String[] @default([])
   tags      String[] @default([])
   createdAt DateTime @default(now())
