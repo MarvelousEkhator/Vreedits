@@ -804,3 +804,15 @@ model OnboardingCompletion {
 
   @@unique([communityId, userId])
 }
+model Story {
+  id         String   @id @default(uuid())
+  authorId   String
+  author     User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  mediaUrl   String   @db.Text
+  mediaType  String   @default("image") // "image" or "video"
+  caption    String?  @db.Text
+  viewedBy   String[] @default([])
+  createdAt  DateTime @default(now())
+
+  @@index([authorId, createdAt])
+}
