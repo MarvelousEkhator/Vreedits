@@ -2303,4 +2303,194 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
                   <button
                     key={c.id}
                     onClick={() => openChannel(c.id)}
+                    className="w-full text-left text-sm px-3 py-2 rounded-lg mb-0.5"
+                    style={{
+                      background: activeChannelId === c.id ? "var(--accent-soft)" : "transparent",
+                      border: "none", color: "var(--text)",
+                    }}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <Hash size={13} style={{ color: "var(--text-muted)" }} /> {c.name}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            );
+          })}
+
+          {uncategorized.length > 0 && (
+            <div className="mb-2">
+              {sections.length > 0 && (
+                <div className="text-xs font-semibold px-2 py-1" style={{ color: "var(--text-muted)" }}>Channels</div>
+              )}
+              {uncategorized.map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => openChannel(c.id)}
+                  className="w-full text-left text-sm px-3 py-2 rounded-lg mb-0.5"
+                  style={{
+                    background: activeChannelId === c.id ? "var(--accent-soft)" : "transparent",
+                    border: "none", color: "var(--text)",
+                  }}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <Hash size={13} style={{ color: "var(--text-muted)" }} /> {c.name}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {view === "feed" && channelViewOpen && activeChannel && (
+        <div className="card p-0 mb-4" style={{ overflow: "hidden" }}>
+          <div className="flex items-center gap-2 p-3" style={{ borderBottom: "1px solid var(--border)" }}>
+            <button onClick={() => setChannelViewOpen(false)} aria-label="Back" style={{ background: "none", border: "none", color: "var(--text-muted)" }}>
+              <ChevronLeft size={18} />
+            </button>
+            <Hash size={15} style={{ color: "var(--text-muted)" }} />
+            <span className="text-sm font-semibold">{activeChannel.name}</span>
+          </div>
+
+          <div className="p-3" style={{ maxHeight: "60vh", overflowY: "auto" }}>
+            {postsLoading ? (
+              <div className="flex justify-center py-10" style={{ color: "var(--text-muted)" }}>
+                <Loader2 size={22} className="animate-spin" />
+              </div>
+            ) : posts.length === 0 ? (
+              <p className="text-xs text-center py-8" style={{ color: "var(--text-muted)" }}>
+                No messages yet. Be the first to post.
+              </p>
+            ) : (
+              <div className="space-y-4">
+                {posts.filter((p) => !p.replyToId).map((post) => (
+                  <div
+                    key={post.id}
+                    onPointerDown={() => handlePressStart(post.id)}
+                    onPointerUp={() => handlePressEnd(post.id)}
+                    onPointerLeave={() => handlePressEnd(post.id)}
+                  >
+                    <div className="flex items-start gap-2">
+                      <Avatar user={post.author} size={32} />
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-sm font-semibold">{post.author.username}</span>
+                          <span className="text-xs" style={{ color: "var(--text-muted)" }}>{relativeTime(post.createdAt)}</span>
+                        </div>
+                        {activeChannel.type === "forum" && post.title && (
+                          <div className="text-sm font-semibold mt-0.5">{post.title}</div>
+                        )}
+                        {editingPostId === post.id ? (
+                          <div className="mt-1">
+                            <textarea
+                              className="input pl-3"
+                              style={{ fontSize: 13, minHeight: 50 }}
+                              value={editContent}
+                              onChange={(e) => setEditContent(e.target.value)}
+                            />
+                            <div className="flex gap-2 mt-1">
+                              <button onClick={() => handleEditPost(post.id)} className="btn-primary" style={{ maxWidth: 80, padding: "4px 10px" }}>Save</button>
+                              <button onClick={() => setEditingPostId(null)} className="btn-primary" style={{ maxWidth: 80, padding: "4px 10px", background: "var(--surface-2)", color: "var(--text)" }}>Cancel</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-sm mt-0.5" style={{ overflowWrap: "anywhere" }}>{post.content}</p>
+                        )}
+
+                        <div className="flex items-center gap-3 mt-1">
+                          <button onClick={() => handleLike(post)} className="flex items-center gap-1 text-xs" style={{ background: "none", border: "none", color: post.likedByMe ? "var(--accent)" : "var(--text-muted)" }}>
+                            <Heart size={13} fill={post.likedByMe ? "var(--accent)" : "none"} /> {post.likeCount || ""}
+                          </button>
+                          <button onClick={() => setOpenThreads((prev) => ({ ...prev, [post.id]: !prev[post.id] }))} className="flex items-center gap-1 text-xs" style={{ background: "none", border: "none", color: "var(--text-muted)" }}>
+                            <MessageCircle size={13} /> {post.comments?.length || ""}
+                          </button>
+                          <button onClick={() => setReplyingTo(post)} className="flex items-center gap-1 text-xs" style={{ background: "none", border: "none", color: "var(--text-muted)" }}>
+                            <Reply size={13} />
+                          </button>
+                          <button onClick={() => setActionSheetPostId(post.id)} aria-label="More" style={{ background: "none", border: "none", color: "var(--text-muted)" }}>
+                            <ChevronDown size={13} />
+                          </button>
+                        </div>
+
+                        <PostReactionPills postId={post.id} currentUserId={currentUserId} />
+
+                        {openThreads[post.id] && (
+                          <div className="mt-2 pl-3" style={{ borderLeft: "2px solid var(--border)" }}>
+                            {(post.comments || []).map((c) => (
+                              <div key={c.id} className="flex items-start gap-2 mb-2">
+                                <Avatar user={c.author} size={22} />
+                                <div style={{ minWidth: 0, flex: 1 }}>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-xs font-semibold">{c.author.username}</span>
+                                    <span className="text-xs" style={{ color: "var(--text-muted)" }}>{relativeTime(c.createdAt)}</span>
+                                  </div>
+                                  <p className="text-xs" style={{ overflowWrap: "anywhere" }}>{c.content}</p>
+                                </div>
+                              </div>
+                            ))}
+                            <div className="flex items-center gap-2 mt-1">
+                              <input
+                                className="input pl-3"
+                                style={{ padding: "6px 10px", fontSize: 12 }}
+                                placeholder="Reply…"
+                                value={commentDrafts[post.id] || ""}
+                                onChange={(e) => setCommentDrafts((prev) => ({ ...prev, [post.id]: e.target.value }))}
+                                onKeyDown={(e) => { if (e.key === "Enter") handleAddComment(post.id); }}
+                              />
+                              <button onClick={() => handleAddComment(post.id)} aria-label="Send reply" style={{ background: "none", border: "none", color: "var(--accent)" }}>
+                                <Send size={16} />
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {error && (
+            <div className="flex items-center gap-1.5 px-3 text-xs" style={{ color: "var(--danger, #e55)" }}>
+              <AlertCircle size={13} /> {error}
+            </div>
+          )}
+
+          {replyingTo && (
+            <div className="flex items-center justify-between px-3 py-1.5 text-xs" style={{ background: "var(--surface-2)", color: "var(--text-muted)" }}>
+              <span>Replying to {replyingTo.author.username}</span>
+              <button onClick={() => setReplyingTo(null)} aria-label="Cancel reply" style={{ background: "none", border: "none", color: "var(--text-muted)" }}>
+                <XIcon size={13} />
+              </button>
+            </div>
+          )}
+
+          <form onSubmit={handlePost} className="flex items-center gap-2 p-3" style={{ borderTop: "1px solid var(--border)" }}>
+            {activeChannel.type === "forum" && (
+              <input
+                className="input pl-3"
+                style={{ fontSize: 13, maxWidth: 140 }}
+                placeholder="Title"
+                value={newPostTitle}
+                onChange={(e) => setNewPostTitle(e.target.value)}
+              />
+            )}
+            <input
+              className="input pl-3"
+              style={{ fontSize: 13, flex: 1 }}
+              placeholder={`Message #${activeChannel.name}`}
+              value={newPost}
+              onChange={(e) => setNewPost(e.target.value)}
+            />
+            <button type="submit" className="btn-primary" style={{ maxWidth: 70 }} disabled={posting || !newPost.trim()}>
+              {posting ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+            </button>
+          </form>
+        </div>
+      )}
+    </div>
+  );
+}
             
