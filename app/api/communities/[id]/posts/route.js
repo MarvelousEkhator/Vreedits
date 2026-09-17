@@ -1,10 +1,3 @@
-import { NextResponse } from "next/server";
-import { getSessionUserId } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
-import { canViewChannel, canSendInChannel } from "@/lib/channelAccess";
-
-const authorSelect = { id: true, username: true, avatarDataUrl: true };
-
 export async function GET(request, { params }) {
   const userId = getSessionUserId();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -13,10 +6,19 @@ export async function GET(request, { params }) {
   const channelId = searchParams.get("channelId");
 
   try {
+    const community = await prisma.community.findUnique({ where: { id: params.id } });
+    if (!community) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    // Baseline: you must be a member of the community to see any of its
+    // channel content, regardless of that channel's own viewAccess config.
+    // Channel-level permissions only refine visibility among members.
+    if (!community.memberIds.includes(userId)) {
+      return NextResponse.json({ error: "You must join this community to view its channels." }, { status: 403 });
+    }
+
     if (channelId) {
-      const community = await prisma.community.findUnique({ where: { id: params.id } });
       const channel = await prisma.channel.findUnique({ where: { id: channelId } });
-      if (community && channel) {
+      if (channel) {
         const roles = await prisma.role.findMany({ where: { communityId: params.id } });
         if (!canViewChannel(channel, community, roles, userId)) {
           return NextResponse.json({ error: "You don't have access to this channel." }, { status: 403 });
@@ -66,91 +68,6 @@ export async function GET(request, { params }) {
     return NextResponse.json({ posts: formatted });
   } catch (err) {
     console.error("GET /api/communities/[id]/posts error:", err);
-    return NextResponse.json({ error: "Database error, please retry." }, { status: 500 });
-  }
-}
-
-export async function POST(request, { params }) {
-  const userId = getSessionUserId();
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  try {
-    const community = await prisma.community.findUnique({ where: { id: params.id } });
-    if (!community) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    if (!community.memberIds.includes(userId)) {
-      return NextResponse.json({ error: "You must join this community to post." }, { status: 403 });
-    }
-
-    const body = await request.json();
-    const title = (body.title || "").trim();
-    const content = (body.content || "").trim();
-    const imageUrl = body.imageUrl || null;
-    const channelId = body.channelId || null;
-    const replyToId = body.replyToId || null;
-    if (!content && !imageUrl) {
-      return NextResponse.json({ error: "Post content is required." }, { status: 400 });
-    }
-
-    let channel = null;
-    if (channelId) {
-      channel = await prisma.channel.findUnique({ where: { id: channelId } });
-      if (!channel) return NextResponse.json({ error: "Channel not found." }, { status: 404 });
-
-      if (channel.type === "voice") {
-        return NextResponse.json({ error: "Voice channels don't support text posts." }, { status: 400 });
-      }
-      if (channel.type === "forum" && !title) {
-        return NextResponse.json({ error: "Forum posts require a title." }, { status: 400 });
-      }
-
-      const roles = await prisma.role.findMany({ where: { communityId: params.id } });
-      if (!canSendInChannel(channel, community, roles, userId)) {
-        return NextResponse.json({ error: "You don't have permission to post in this channel." }, { status: 403 });
-      }
-      if (imageUrl && !channel.canSendImages) {
-        return NextResponse.json({ error: "Images are disabled in this channel." }, { status: 403 });
-      }
-    }
-
-    if (replyToId) {
-      const target = await prisma.post.findUnique({ where: { id: replyToId } });
-      if (!target || target.channelId !== channelId) {
-        return NextResponse.json({ error: "Original message not found in this channel." }, { status: 400 });
-      }
-    }
-
-    const post = await prisma.post.create({
-      data: {
-        communityId: params.id,
-        channelId,
-        authorId: userId,
-        title: channel?.type === "forum" ? title : null,
-        content,
-        imageUrl,
-        replyToId,
-      },
-      include: { author: { select: authorSelect } },
-    });
-
-    let replyTo = null;
-    if (replyToId) {
-      const target = await prisma.post.findUnique({
-        where: { id: replyToId },
-        select: { id: true, content: true, author: { select: authorSelect } },
-      });
-      replyTo = target;
-    }
-
-    return NextResponse.json({
-      post: {
-        id: post.id, title: post.title, content: post.content, imageUrl: post.imageUrl,
-        createdAt: post.createdAt, channelId: post.channelId, author: post.author,
-        likeCount: 0, likedByMe: false, comments: [],
-        replyToId: post.replyToId, replyTo,
-      },
-    });
-  } catch (err) {
-    console.error("POST /api/communities/[id]/posts error:", err);
     return NextResponse.json({ error: "Database error, please retry." }, { status: 500 });
   }
 }
