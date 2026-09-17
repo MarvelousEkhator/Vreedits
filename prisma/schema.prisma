@@ -61,7 +61,8 @@ model User {
   ownedBusinesses      Business[]   @relation("BusinessOwner")
   teamMemberships      TeamMember[]
   hostedCodeRooms      CodeRoom[]   @relation("CodeRoomHost")
-
+hostedCodeRooms      CodeRoom[]   @relation("CodeRoomHost")
+  stories              Story[]
   // Future chat system (Message-based) — not yet in use
   messages         Message[]
   messageReactions MessageReaction[]
