@@ -746,3 +746,13 @@ model DirectMessage {
   @@index([senderId, receiverId, createdAt])
   @@index([receiverId, senderId, createdAt])
 }
+model SuspiciousAiAttempt {
+  id        String   @id @default(cuid())
+  actorId   String
+  isGuest   Boolean  @default(false)
+  reason    String
+  message   String
+  createdAt DateTime @default(now())
+
+  @@index([actorId, createdAt])
+}
