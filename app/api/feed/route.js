@@ -13,7 +13,8 @@ export async function GET(req) {
 
   // Build the author filter for the active tab. "Following" shows posts
   // from friends + followed accounts (plus your own). "For You" shows
-  // everyone else, so the two tabs don't just duplicate each other.
+  // everyone else, PLUS your own posts — your own content should never
+  // disappear from your main feed regardless of which tab is active.
   const friendships = await prisma.friendship.findMany({
     where: { OR: [{ userAId: user.id }, { userBId: user.id }] },
   });
@@ -26,8 +27,11 @@ export async function GET(req) {
   const followingIds = follows.map((f) => f.followingId);
 
   const knownIds = [...new Set([user.id, ...friendIds, ...followingIds])];
+  const excludeIds = knownIds.filter((id) => id !== user.id);
   const authorFilter =
-    tab === "following" ? { authorId: { in: knownIds } } : { authorId: { notIn: knownIds } };
+    tab === "following"
+      ? { authorId: { in: knownIds } }
+      : { OR: [{ authorId: user.id }, { authorId: { notIn: excludeIds } }] };
 
   const posts = await prisma.feedPost.findMany({
     take: 10,
@@ -35,7 +39,7 @@ export async function GET(req) {
     ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
     orderBy: { createdAt: "desc" },
     include: {
-      author: { select: { id: true, username: true, avatarDataUrl: true, allowDownloads: true } },
+      author: { select: { id: true, username: true, displayName: true, avatarDataUrl: true, allowDownloads: true } },
       _count: { select: { comments: true } },
       saves: { where: { userId: user.id }, select: { id: true } },
     },
@@ -95,7 +99,7 @@ export async function POST(req) {
       tags,
     },
     include: {
-      author: { select: { id: true, username: true, avatarDataUrl: true, allowDownloads: true } },
+      author: { select: { id: true, username: true, displayName: true, avatarDataUrl: true, allowDownloads: true } },
     },
   });
 
@@ -118,5 +122,3 @@ export async function POST(req) {
     },
   });
 }
-  
-    
