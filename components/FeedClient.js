@@ -835,14 +835,19 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
         <style>{`@keyframes vreedits-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
       </div>
 
-      {/* Bottom-left: username (clickable), caption */}
+      {/* Bottom-left: display name (top, bold), @username (below, muted), caption */}
       <div style={{ position: "absolute", left: 14, right: 90, bottom: 40, zIndex: 2 }}>
         <button
           onClick={(e) => { e.stopPropagation(); onOpenProfile(post.author.id); }}
-          className="flex items-center gap-2.5 mb-2"
-          style={{ background: "none", border: "none", padding: 0 }}
+          className="flex flex-col items-start mb-2"
+          style={{ background: "none", border: "none", padding: 0, textAlign: "left" }}
         >
-          <span className="text-sm font-semibold" style={{ color: "white" }}>{post.author.username}</span>
+          <span className="text-sm font-semibold" style={{ color: "white", lineHeight: 1.3 }}>
+            {post.author.displayName || post.author.username}
+          </span>
+          <span className="text-xs" style={{ color: "rgba(255,255,255,0.75)", lineHeight: 1.3 }}>
+            @{post.author.username}
+          </span>
         </button>
         {post.caption && (
           <p className="text-sm" style={{ color: "white", overflowWrap: "anywhere", lineHeight: 1.4 }}>
