@@ -81,12 +81,19 @@ function attachmentsOf(m) {
   return [];
 }
 
+// An attachment counts as an image either because its MIME `type` says so,
+// or — for server-generated images (Syna's image-gen/edit replies), which
+// don't always set `type` — because its dataUrl itself is an image data URI.
+function isImage(att) {
+  return att.type?.startsWith("image/") || /^data:image\//i.test(att.dataUrl || "");
+}
+
 function AttachmentGrid({ attachments, bubbleText }) {
   if (attachments.length === 0) return null;
 
   if (attachments.length === 1) {
     const att = attachments[0];
-    return att.type?.startsWith("image/") ? (
+    return isImage(att) ? (
       <img
         src={att.dataUrl}
         alt={att.name}
@@ -112,7 +119,7 @@ function AttachmentGrid({ attachments, bubbleText }) {
       }}
     >
       {attachments.map((att, idx) =>
-        att.type?.startsWith("image/") ? (
+        isImage(att) ? (
           <img
             key={idx}
             src={att.dataUrl}
