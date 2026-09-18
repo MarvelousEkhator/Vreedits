@@ -2303,194 +2303,318 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
                   <button
                     key={c.id}
                     onClick={() => openChannel(c.id)}
-                    className="w-full text-left text-sm px-3 py-2 rounded-lg mb-0.5"
-                    style={{
-                      background: activeChannelId === c.id ? "var(--accent-soft)" : "transparent",
-                      border: "none", color: "var(--text)",
-                    }}
-                  >
-                    <span className="flex items-center gap-1.5">
-                      <Hash size={13} style={{ color: "var(--text-muted)" }} /> {c.name}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            );
-          })}
-
-          {uncategorized.length > 0 && (
-            <div className="mb-2">
-              {sections.length > 0 && (
-                <div className="text-xs font-semibold px-2 py-1" style={{ color: "var(--text-muted)" }}>Channels</div>
-              )}
-              {uncategorized.map((c) => (
-                <button
-                  key={c.id}
-                  onClick={() => openChannel(c.id)}
-                  className="w-full text-left text-sm px-3 py-2 rounded-lg mb-0.5"
+                              className={`w-full flex items-center justify-between p-2.5 rounded-lg text-left mb-1 transition-colors`}
                   style={{
                     background: activeChannelId === c.id ? "var(--accent-soft)" : "transparent",
-                    border: "none", color: "var(--text)",
+                    color: activeChannelId === c.id ? "var(--accent)" : "var(--text)",
+                    border: "none",
                   }}
                 >
-                  <span className="flex items-center gap-1.5">
-                    <Hash size={13} style={{ color: "var(--text-muted)" }} /> {c.name}
+                  <span className="flex items-center gap-2 text-sm font-medium">
+                    <Hash size={16} style={{ color: "var(--text-muted)" }} />
+                    {c.name}
                   </span>
+                  <ChevronRight size={16} style={{ color: "var(--text-muted)" }} />
                 </button>
               ))}
             </div>
+          );
+        })}
+
+        {uncategorized.length > 0 && (
+          <div className="mb-2">
+            {sections.length > 0 && (
+              <div className="text-xs font-semibold px-2 py-1" style={{ color: "var(--text-muted)" }}>
+                Channels
+              </div>
+            )}
+            {uncategorized.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => openChannel(c.id)}
+                className="w-full flex items-center justify-between p-2.5 rounded-lg text-left mb-1 transition-colors"
+                style={{
+                  background: activeChannelId === c.id ? "var(--accent-soft)" : "transparent",
+                  color: activeChannelId === c.id ? "var(--accent)" : "var(--text)",
+                  border: "none",
+                }}
+              >
+                <span className="flex items-center gap-2 text-sm font-medium">
+                  <Hash size={16} style={{ color: "var(--text-muted)" }} />
+                  {c.name}
+                </span>
+                <ChevronRight size={16} style={{ color: "var(--text-muted)" }} />
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    )}
+
+    {/* ── ACTIVE CHANNEL / FEED VIEW ── */}
+    {view === "feed" && channelViewOpen && activeChannel && (
+      <div className="space-y-4">
+        {/* Channel Header Bar */}
+        <div className="flex items-center justify-between p-3 card">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setChannelViewOpen(false)}
+              aria-label="Back to channels"
+              style={{ background: "none", border: "none", color: "var(--text)", cursor: "pointer" }}
+            >
+              <ChevronLeft size={20} />
+            </button>
+            <Hash size={18} style={{ color: "var(--text-muted)" }} />
+            <span className="font-semibold text-sm">{activeChannel.name}</span>
+            <span
+              className="text-xs px-2 py-0.5 rounded-full"
+              style={{ background: "var(--surface-2)", color: "var(--text-muted)" }}
+            >
+              {activeChannel.type}
+            </span>
+          </div>
+          {activeChannel.type === "forum" && (
+            <button
+              onClick={() => setShowNewPostForm(!showNewPostForm)}
+              className="btn-primary text-xs"
+              style={{ padding: "6px 12px" }}
+            >
+              <Plus size={14} /> New Post
+            </button>
           )}
         </div>
-      )}
 
-      {view === "feed" && channelViewOpen && activeChannel && (
-        <div className="card p-0 mb-4" style={{ overflow: "hidden" }}>
-          <div className="flex items-center gap-2 p-3" style={{ borderBottom: "1px solid var(--border)" }}>
-            <button onClick={() => setChannelViewOpen(false)} aria-label="Back" style={{ background: "none", border: "none", color: "var(--text-muted)" }}>
-              <ChevronLeft size={18} />
-            </button>
-            <Hash size={15} style={{ color: "var(--text-muted)" }} />
-            <span className="text-sm font-semibold">{activeChannel.name}</span>
-          </div>
-
-          <div className="p-3" style={{ maxHeight: "60vh", overflowY: "auto" }}>
-            {postsLoading ? (
-              <div className="flex justify-center py-10" style={{ color: "var(--text-muted)" }}>
-                <Loader2 size={22} className="animate-spin" />
-              </div>
-            ) : posts.length === 0 ? (
-              <p className="text-xs text-center py-8" style={{ color: "var(--text-muted)" }}>
-                No messages yet. Be the first to post.
-              </p>
-            ) : (
-              <div className="space-y-4">
-                {posts.filter((p) => !p.replyToId).map((post) => (
-                  <div
-                    key={post.id}
-                    onPointerDown={() => handlePressStart(post.id)}
-                    onPointerUp={() => handlePressEnd(post.id)}
-                    onPointerLeave={() => handlePressEnd(post.id)}
-                  >
-                    <div className="flex items-start gap-2">
-                      <Avatar user={post.author} size={32} />
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-sm font-semibold">{post.author.username}</span>
-                          <span className="text-xs" style={{ color: "var(--text-muted)" }}>{relativeTime(post.createdAt)}</span>
-                        </div>
-                        {activeChannel.type === "forum" && post.title && (
-                          <div className="text-sm font-semibold mt-0.5">{post.title}</div>
-                        )}
-                        {editingPostId === post.id ? (
-                          <div className="mt-1">
-                            <textarea
-                              className="input pl-3"
-                              style={{ fontSize: 13, minHeight: 50 }}
-                              value={editContent}
-                              onChange={(e) => setEditContent(e.target.value)}
-                            />
-                            <div className="flex gap-2 mt-1">
-                              <button onClick={() => handleEditPost(post.id)} className="btn-primary" style={{ maxWidth: 80, padding: "4px 10px" }}>Save</button>
-                              <button onClick={() => setEditingPostId(null)} className="btn-primary" style={{ maxWidth: 80, padding: "4px 10px", background: "var(--surface-2)", color: "var(--text)" }}>Cancel</button>
-                            </div>
-                          </div>
-                        ) : (
-                          <p className="text-sm mt-0.5" style={{ overflowWrap: "anywhere" }}>{post.content}</p>
-                        )}
-
-                        <div className="flex items-center gap-3 mt-1">
-                          <button onClick={() => handleLike(post)} className="flex items-center gap-1 text-xs" style={{ background: "none", border: "none", color: post.likedByMe ? "var(--accent)" : "var(--text-muted)" }}>
-                            <Heart size={13} fill={post.likedByMe ? "var(--accent)" : "none"} /> {post.likeCount || ""}
-                          </button>
-                          <button onClick={() => setOpenThreads((prev) => ({ ...prev, [post.id]: !prev[post.id] }))} className="flex items-center gap-1 text-xs" style={{ background: "none", border: "none", color: "var(--text-muted)" }}>
-                            <MessageCircle size={13} /> {post.comments?.length || ""}
-                          </button>
-                          <button onClick={() => setReplyingTo(post)} className="flex items-center gap-1 text-xs" style={{ background: "none", border: "none", color: "var(--text-muted)" }}>
-                            <Reply size={13} />
-                          </button>
-                          <button onClick={() => setActionSheetPostId(post.id)} aria-label="More" style={{ background: "none", border: "none", color: "var(--text-muted)" }}>
-                            <ChevronDown size={13} />
-                          </button>
-                        </div>
-
-                        <PostReactionPills postId={post.id} currentUserId={currentUserId} />
-
-                        {openThreads[post.id] && (
-                          <div className="mt-2 pl-3" style={{ borderLeft: "2px solid var(--border)" }}>
-                            {(post.comments || []).map((c) => (
-                              <div key={c.id} className="flex items-start gap-2 mb-2">
-                                <Avatar user={c.author} size={22} />
-                                <div style={{ minWidth: 0, flex: 1 }}>
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="text-xs font-semibold">{c.author.username}</span>
-                                    <span className="text-xs" style={{ color: "var(--text-muted)" }}>{relativeTime(c.createdAt)}</span>
-                                  </div>
-                                  <p className="text-xs" style={{ overflowWrap: "anywhere" }}>{c.content}</p>
-                                </div>
-                              </div>
-                            ))}
-                            <div className="flex items-center gap-2 mt-1">
-                              <input
-                                className="input pl-3"
-                                style={{ padding: "6px 10px", fontSize: 12 }}
-                                placeholder="Reply…"
-                                value={commentDrafts[post.id] || ""}
-                                onChange={(e) => setCommentDrafts((prev) => ({ ...prev, [post.id]: e.target.value }))}
-                                onKeyDown={(e) => { if (e.key === "Enter") handleAddComment(post.id); }}
-                              />
-                              <button onClick={() => handleAddComment(post.id)} aria-label="Send reply" style={{ background: "none", border: "none", color: "var(--accent)" }}>
-                                <Send size={16} />
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {error && (
-            <div className="flex items-center gap-1.5 px-3 text-xs" style={{ color: "var(--danger, #e55)" }}>
-              <AlertCircle size={13} /> {error}
-            </div>
-          )}
-
-          {replyingTo && (
-            <div className="flex items-center justify-between px-3 py-1.5 text-xs" style={{ background: "var(--surface-2)", color: "var(--text-muted)" }}>
-              <span>Replying to {replyingTo.author.username}</span>
-              <button onClick={() => setReplyingTo(null)} aria-label="Cancel reply" style={{ background: "none", border: "none", color: "var(--text-muted)" }}>
-                <XIcon size={13} />
-              </button>
-            </div>
-          )}
-
-          <form onSubmit={handlePost} className="flex items-center gap-2 p-3" style={{ borderTop: "1px solid var(--border)" }}>
-            {activeChannel.type === "forum" && (
-              <input
-                className="input pl-3"
-                style={{ fontSize: 13, maxWidth: 140 }}
-                placeholder="Title"
-                value={newPostTitle}
-                onChange={(e) => setNewPostTitle(e.target.value)}
-              />
-            )}
+        {/* Forum Form */}
+        {activeChannel.type === "forum" && showNewPostForm && (
+          <form onSubmit={handlePost} className="card p-4 space-y-3">
+            <h3 className="text-sm font-semibold">Create Post</h3>
             <input
-              className="input pl-3"
-              style={{ fontSize: 13, flex: 1 }}
-              placeholder={`Message #${activeChannel.name}`}
+              className="input pl-3 text-sm"
+              placeholder="Post title"
+              value={newPostTitle}
+              onChange={(e) => setNewPostTitle(e.target.value)}
+            />
+            <textarea
+              className="input pl-3 text-sm"
+              style={{ minHeight: 80, resize: "vertical" }}
+              placeholder="What's on your mind?"
               value={newPost}
               onChange={(e) => setNewPost(e.target.value)}
             />
-            <button type="submit" className="btn-primary" style={{ maxWidth: 70 }} disabled={posting || !newPost.trim()}>
-              {posting ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-            </button>
+            {error && <div className="text-xs" style={{ color: "var(--danger, #e55)" }}>{error}</div>}
+            <div className="flex gap-2 justify-end">
+              <button
+                type="button"
+                onClick={() => setShowNewPostForm(false)}
+                className="btn-primary"
+                style={{ background: "var(--surface-2)", color: "var(--text)" }}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="btn-primary"
+                disabled={posting || !newPost.trim() || !newPostTitle.trim()}
+              >
+                {posting ? <Loader2 size={14} className="animate-spin" /> : "Publish"}
+              </button>
+            </div>
           </form>
-        </div>
-      )}
-    </div>
-  );
+        )}
+
+        {/* Post Feed */}
+        {postsLoading ? (
+          <div className="flex justify-center py-10" style={{ color: "var(--text-muted)" }}>
+            <Loader2 size={22} className="animate-spin" />
+          </div>
+        ) : posts.length === 0 ? (
+          <div className="card p-8 text-center" style={{ color: "var(--text-muted)" }}>
+            <MessageCircle size={32} className="mx-auto mb-2 opacity-50" />
+            <p className="text-sm font-medium">No messages yet</p>
+            <p className="text-xs">Be the first to say hello in #{activeChannel.name}!</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {posts.map((post) => (
+              <div
+                key={post.id}
+                className="card p-3 space-y-2"
+                onTouchStart={() => handlePressStart(post.id)}
+                onTouchEnd={() => handlePressEnd(post.id)}
+                onMouseDown={() => handlePressStart(post.id)}
+                onMouseUp={() => handlePressEnd(post.id)}
+              >
+                {/* Reply context reference */}
+                {post.replyTo && (
+                  <div
+                    className="flex items-center gap-1.5 text-xs pl-2"
+                    style={{ borderLeft: "2px solid var(--border)", color: "var(--text-muted)" }}
+                  >
+                    <Reply size={12} />
+                    <span className="font-medium">@{post.replyTo.author?.username}</span>
+                    <span className="truncate max-w-[200px]">{post.replyTo.content}</span>
+                  </div>
+                )}
+
+                {/* Author Info */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Avatar user={post.author} size={28} />
+                    <div>
+                      <span className="text-sm font-semibold">{post.author?.username}</span>
+                      <span className="text-xs ml-2" style={{ color: "var(--text-muted)" }}>
+                        {relativeTime(post.createdAt)}
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setActionSheetPostId(post.id)}
+                    style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer" }}
+                    aria-label="Message actions"
+                  >
+                    <SlidersHorizontal size={14} />
+                  </button>
+                </div>
+
+                {/* Forum Title */}
+                {post.title && <h3 className="text-sm font-bold mt-1">{post.title}</h3>}
+
+                {/* Content */}
+                <p className="text-sm whitespace-pre-wrap" style={{ overflowWrap: "anywhere" }}>
+                  {post.content}
+                </p>
+
+                {/* Reactions */}
+                <PostReactionPills postId={post.id} currentUserId={currentUserId} />
+
+                {/* Actions Footer */}
+                <div
+                  className="flex items-center gap-4 pt-2 text-xs"
+                  style={{ borderTop: "1px solid var(--border)", color: "var(--text-muted)" }}
+                >
+                  <button
+                    onClick={() => handleLike(post)}
+                    className="flex items-center gap-1"
+                    style={{ background: "none", border: "none", color: post.likedByMe ? "var(--accent)" : "inherit", cursor: "pointer" }}
+                  >
+                    <Heart size={14} fill={post.likedByMe ? "currentColor" : "none"} />
+                    <span>{post.likeCount || 0}</span>
+                  </button>
+
+                  <button
+                    onClick={() => setReplyingTo(post)}
+                    className="flex items-center gap-1"
+                    style={{ background: "none", border: "none", color: "inherit", cursor: "pointer" }}
+                  >
+                    <Reply size={14} />
+                    <span>Reply</span>
+                  </button>
+
+                  <button
+                    onClick={() => setOpenThreads((prev) => ({ ...prev, [post.id]: !prev[post.id] }))}
+                    className="flex items-center gap-1"
+                    style={{ background: "none", border: "none", color: "inherit", cursor: "pointer" }}
+                  >
+                    <MessageCircle size={14} />
+                    <span>{post.comments?.length || 0} replies</span>
+                  </button>
+                </div>
+
+                {/* Thread / Comment Replies */}
+                {openThreads[post.id] && (
+                  <div
+                    className="mt-3 pt-3 space-y-2 border-t border-[var(--border)]"
+                    style={{ background: "var(--surface-2)", borderRadius: 8, padding: 10 }}
+                  >
+                    <div className="space-y-2 max-h-60 overflow-y-auto">
+                      {post.comments?.map((comment) => (
+                        <div key={comment.id} className="flex items-start justify-between text-xs gap-2">
+                          <div className="flex items-start gap-2">
+                            <Avatar user={comment.author} size={20} />
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-semibold">{comment.author?.username}</span>
+                                <span style={{ color: "var(--text-muted)" }}>{relativeTime(comment.createdAt)}</span>
+                              </div>
+                              <p style={{ overflowWrap: "anywhere" }}>{comment.content}</p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => handleReportComment(comment)}
+                            disabled={reportedIds[comment.id]}
+                            style={{ background: "none", border: "none", color: "var(--text-muted)" }}
+                          >
+                            <Flag size={12} />
+                          </button>
+                        </div>
+                      ))}
+                      {(!post.comments || post.comments.length === 0) && (
+                        <p className="text-xs" style={{ color: "var(--text-muted)" }}>No replies yet.</p>
+                      )}
+                    </div>
+
+                    <div className="flex gap-2 mt-2">
+                      <input
+                        className="input text-xs pl-2 flex-1"
+                        placeholder="Write a reply..."
+                        value={commentDrafts[post.id] || ""}
+                        onChange={(e) => setCommentDrafts({ ...commentDrafts, [post.id]: e.target.value })}
+                        onKeyDown={(e) => e.key === "Enter" && handleAddComment(post.id)}
+                      />
+                      <button
+                        onClick={() => handleAddComment(post.id)}
+                        className="btn-primary text-xs"
+                        style={{ padding: "4px 8px" }}
+                      >
+                        <Send size={12} />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Message Input Bar (Text / Non-forum channels) */}
+        {activeChannel.type !== "forum" && (
+          <form onSubmit={handlePost} className="sticky bottom-2 card p-2 space-y-2" style={{ background: "var(--surface)" }}>
+            {replyingTo && (
+              <div
+                className="flex items-center justify-between text-xs px-2 py-1 rounded"
+                style={{ background: "var(--accent-soft)", color: "var(--accent)" }}
+              >
+                <span className="truncate">Replying to @{replyingTo.author?.username}: {replyingTo.content}</span>
+                <button
+                  type="button"
+                  onClick={() => setReplyingTo(null)}
+                  style={{ background: "none", border: "none", color: "inherit" }}
+                >
+                  <XIcon size={12} />
+                </button>
+              </div>
+            )}
+            {error && <div className="text-xs" style={{ color: "var(--danger, #e55)" }}>{error}</div>}
+            <div className="flex items-center gap-2">
+              <input
+                className="input pl-3 text-sm flex-1"
+                placeholder={`Message #${activeChannel.name}`}
+                value={newPost}
+                onChange={(e) => setNewPost(e.target.value)}
+              />
+              <button
+                type="submit"
+                className="btn-primary"
+                style={{ width: 38, height: 38, padding: 0, borderRadius: 10 }}
+                disabled={posting || !newPost.trim()}
+              >
+                {posting ? <Loader2 size={16} className="animate-spin mx-auto" /> : <Send size={16} className="mx-auto" />}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    )}
+  </div>
+);
 }
-            
