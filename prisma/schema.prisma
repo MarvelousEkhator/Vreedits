@@ -168,7 +168,7 @@ model Community {
   captchaRequiredUntil DateTime?
   joinLockdown         Boolean   @default(false)
   joinEvents           JoinEvent[]
-
+guide       CommunityGuide?
   // ACTIVE — Community onboarding
   onboarding  CommunityOnboarding?
   onboardingCompletions OnboardingCompletion[]
