@@ -1,475 +1,654 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
-  Loader2, Trash2, Hash, ZoomIn, Flag, Pencil, Reply, CornerUpRight, Copy,
+  Crown, Loader2, Trash2, UserPlus, Link2, X as XIcon, Hash, Plus,
+  ChevronLeft, Shield, ShieldOff, Tag, SlidersHorizontal, Flag,
 } from "lucide-react";
+import {
+  Avatar, SettingsSidebar, AccessControlRow,
+  ROLE_COLORS, ACCENT_COLORS, CATEGORY_OPTIONS, SETTINGS_TITLES, genId,
+} from "./CommunityDetailShared";
 
-export function relativeTime(dateStr) {
-  const diffMs = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diffMs / 60000);
-  if (mins < 1) return "Just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
-  return new Date(dateStr).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
+export default function CommunitySettingsOverlay({
+  community,
+  communityId,
+  currentUserId,
+  canManage,
+  settingsPage,
+  setSettingsPage,
+  handleSettingsBack,
+  load,
+  channels,
+  setChannels,
+  sections,
+  setSections,
+  handleDeleteCommunity,
+}) {
+  const [members, setMembers] = useState([]);
+  const [roles, setRoles] = useState([]);
+  const [rules, setRules] = useState([]);
+  const [threads, setThreads] = useState([]);
+  const [threadsLoading, setThreadsLoading] = useState(false);
+  const [invites, setInvites] = useState([]);
+  const [invitesLoading, setInvitesLoading] = useState(false);
 
-export function genId() {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-}
+  // Settings form state
+  const [settingsName, setSettingsName] = useState(community?.name || "");
+  const [settingsDescription, setSettingsDescription] = useState(community?.description || "");
+  const [settingsSlug, setSettingsSlug] = useState(community?.slug || "");
+  const [settingsCategory, setSettingsCategory] = useState(community?.category || "");
+  const [settingsTagsInput, setSettingsTagsInput] = useState((community?.tags || []).join(", "));
+  const [settingsAccentColor, setSettingsAccentColor] = useState(community?.accentColor || "");
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [settingsStatus, setSettingsStatus] = useState("");
 
-export function Avatar({ user, size = 32 }) {
-  if (user?.avatarDataUrl) {
-    return <img src={user.avatarDataUrl} alt="" style={{ width: size, height: size, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />;
-  }
-  return (
-    <div
-      style={{
-        width: size, height: size, borderRadius: "50%", flexShrink: 0,
-        background: "var(--accent-soft)", color: "var(--accent)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        fontFamily: "var(--font-display)", fontWeight: 600, fontSize: size * 0.4,
-      }}
-    >
-      {user?.username?.slice(0, 2).toUpperCase() || "?"}
-    </div>
-  );
-}
+  // Members & Invites
+  const [inviteUsername, setInviteUsername] = useState("");
+  const [inviteStatus, setInviteStatus] = useState("");
+  const [inviting, setInviting] = useState(false);
+  const [newInviteMaxUses, setNewInviteMaxUses] = useState("");
+  const [newInviteExpiresAt, setNewInviteExpiresAt] = useState("");
+  const [creatingInvite, setCreatingInvite] = useState(false);
+  const [inviteCreateError, setInviteCreateError] = useState("");
+  const [copiedInviteId, setCopiedInviteId] = useState(null);
 
-export function PostReactionPills({ postId, currentUserId }) {
-  const [grouped, setGrouped] = useState({});
+  // Channels & Sections
+  const [newChannelName, setNewChannelName] = useState("");
+  const [newChannelSection, setNewChannelSection] = useState("");
+  const [creatingChannel, setCreatingChannel] = useState(false);
+  const [channelError, setChannelError] = useState("");
+  const [newSectionName, setNewSectionName] = useState("");
+  const [creatingSection, setCreatingSection] = useState(false);
+  const [newChannelType, setNewChannelType] = useState("text");
+  const [newChannelView, setNewChannelView] = useState({ type: "everyone", roleIds: [] });
+  const [newChannelSend, setNewChannelSend] = useState({ type: "everyone", roleIds: [] });
+  const [newChannelThreads, setNewChannelThreads] = useState({ type: "everyone", roleIds: [] });
+  const [newChannelManage, setNewChannelManage] = useState({ type: "administrators", roleIds: [] });
+
+  // Roles & Rules
+  const [newRoleName, setNewRoleName] = useState("");
+  const [newRoleColor, setNewRoleColor] = useState(ROLE_COLORS[0]);
+  const [creatingRole, setCreatingRole] = useState(false);
+  const [roleError, setRoleError] = useState("");
+  const [expandedRoleId, setExpandedRoleId] = useState(null);
+  const [newRuleText, setNewRuleText] = useState("");
+  const [creatingRule, setCreatingRule] = useState(false);
+  const [ruleTextError, setRuleTextError] = useState("");
+  const [acknowledging, setAcknowledging] = useState(false);
+
+  // Onboarding Config
+  const [onboardingConfigLoading, setOnboardingConfigLoading] = useState(false);
+  const [onboardingEnabled, setOnboardingEnabled] = useState(false);
+  const [onboardingWelcomeTitle, setOnboardingWelcomeTitle] = useState("");
+  const [onboardingWelcomeBody, setOnboardingWelcomeBody] = useState("");
+  const [onboardingQuestions, setOnboardingQuestions] = useState([]);
+  const [onboardingRecommendedChannelIds, setOnboardingRecommendedChannelIds] = useState([]);
+  const [onboardingRequireRulesAck, setOnboardingRequireRulesAck] = useState(false);
+  const [savingOnboarding, setSavingOnboarding] = useState(false);
+  const [onboardingSaveStatus, setOnboardingSaveStatus] = useState("");
+
+  // Guide Config
+  const [guideConfigLoading, setGuideConfigLoading] = useState(false);
+  const [guideIntroduction, setGuideIntroduction] = useState("");
+  const [guideImportantInfo, setGuideImportantInfo] = useState("");
+  const [guideRecommendedChannelIds, setGuideRecommendedChannelIds] = useState([]);
+  const [guideFaqs, setGuideFaqs] = useState([]);
+  const [guideResources, setGuideResources] = useState([]);
+  const [savingGuide, setSavingGuide] = useState(false);
+  const [guideSaveStatus, setGuideSaveStatus] = useState("");
+
+  const loadMembers = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/communities/${communityId}/members`);
+      const data = await res.json();
+      if (res.ok) setMembers(data.members || []);
+    } catch (err) {}
+  }, [communityId]);
+
+  const loadRoles = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/communities/${communityId}/roles`);
+      const data = await res.json();
+      if (res.ok) setRoles(data.roles || []);
+    } catch (err) {}
+  }, [communityId]);
+
+  const loadThreads = useCallback(async () => {
+    setThreadsLoading(true);
+    try {
+      const res = await fetch(`/api/communities/${communityId}/threads`);
+      const data = await res.json();
+      if (res.ok) setThreads(data.threads || []);
+    } catch (err) {
+    } finally {
+      setThreadsLoading(false);
+    }
+  }, [communityId]);
+
+  const loadRules = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/communities/${communityId}/rules`);
+      const data = await res.json();
+      if (res.ok) setRules(data.rules || []);
+    } catch (err) {}
+  }, [communityId]);
+
+  const loadInvites = useCallback(async () => {
+    setInvitesLoading(true);
+    try {
+      const res = await fetch(`/api/communities/${communityId}/invites`);
+      const data = await res.json();
+      if (res.ok) setInvites(data.invites || []);
+    } catch (err) {
+    } finally {
+      setInvitesLoading(false);
+    }
+  }, [communityId]);
+
+  const loadOnboardingConfig = useCallback(async () => {
+    setOnboardingConfigLoading(true);
+    try {
+      const res = await fetch(`/api/communities/${communityId}/onboarding`);
+      const data = await res.json();
+      if (res.ok && data.onboarding) {
+        setOnboardingEnabled(data.onboarding.enabled);
+        setOnboardingWelcomeTitle(data.onboarding.welcomeTitle || "");
+        setOnboardingWelcomeBody(data.onboarding.welcomeBody || "");
+        setOnboardingQuestions(data.onboarding.questions || []);
+        setOnboardingRecommendedChannelIds(data.onboarding.recommendedChannelIds || []);
+        setOnboardingRequireRulesAck(!!data.onboarding.requireRulesAck);
+      }
+    } catch (err) {
+    } finally {
+      setOnboardingConfigLoading(false);
+    }
+  }, [communityId]);
+
+  const loadGuideConfig = useCallback(async () => {
+    setGuideConfigLoading(true);
+    try {
+      const res = await fetch(`/api/communities/${communityId}/guide`);
+      const data = await res.json();
+      if (res.ok && data.guide) {
+        setGuideIntroduction(data.guide.introduction || "");
+        setGuideImportantInfo(data.guide.importantInfo || "");
+        setGuideRecommendedChannelIds(data.guide.recommendedChannelIds || []);
+        setGuideFaqs(data.guide.faqs || []);
+        setGuideResources(data.guide.resources || []);
+      }
+    } catch (err) {
+    } finally {
+      setGuideConfigLoading(false);
+    }
+  }, [communityId]);
+
   useEffect(() => {
-    let cancelled = false;
-    fetch(`/api/posts/${postId}/reactions`)
-      .then((r) => r.json())
-      .then((d) => { if (!cancelled) setGrouped(d.grouped || {}); });
-    return () => { cancelled = true; };
-  }, [postId]);
+    if (settingsPage === "roles" || settingsPage === "members" || settingsPage === "channels") {
+      loadRoles();
+      loadMembers();
+    }
+    if (settingsPage === "threads") loadThreads();
+    if (settingsPage === "rules") loadRules();
+    if (settingsPage === "invites") loadInvites();
+    if (settingsPage === "onboarding") {
+      loadRoles();
+      loadOnboardingConfig();
+    }
+    if (settingsPage === "community-guide") loadGuideConfig();
+  }, [settingsPage, loadRoles, loadMembers, loadThreads, loadRules, loadInvites, loadOnboardingConfig, loadGuideConfig]);
 
-  async function toggle(emoji) {
-    setGrouped((prev) => {
-      const next = { ...prev };
-      const list = next[emoji] ? [...next[emoji]] : [];
-      const idx = list.indexOf(currentUserId);
-      if (idx >= 0) list.splice(idx, 1); else list.push(currentUserId);
-      if (list.length === 0) delete next[emoji]; else next[emoji] = list;
-      return next;
-    });
-    await fetch(`/api/posts/${postId}/reactions`, {
-      method: "POST",
+  async function handleSaveSettings(e) {
+    e.preventDefault();
+    setSavingSettings(true);
+    setSettingsStatus("");
+    const tags = settingsTagsInput.split(",").map((t) => t.trim()).filter(Boolean);
+
+    const res = await fetch(`/api/communities/${communityId}/settings`, {
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ emoji }),
+      body: JSON.stringify({
+        name: settingsName,
+        description: settingsDescription,
+        slug: settingsSlug,
+        category: settingsCategory,
+        tags,
+        accentColor: settingsAccentColor,
+      }),
     });
-  }
-
-  if (Object.keys(grouped).length === 0) return null;
-  return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 4 }}>
-      {Object.entries(grouped).map(([emoji, userIds]) => (
-        <button key={emoji} onClick={() => toggle(emoji)} style={{ display: "flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: 12, fontSize: 12, border: userIds.includes(currentUserId) ? "1px solid var(--accent)" : "1px solid var(--border)", background: userIds.includes(currentUserId) ? "var(--accent-soft)" : "transparent" }}>
-          <span>{emoji}</span><span>{userIds.length}</span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
-export function PostActionSheet({ post, currentUserId, onClose, onQuickReact, onReply, onEdit, onDelete, onReport, onToggleThread, reportedIds }) {
-  const isOwner = post.author.id === currentUserId;
-  function Row({ icon, label, onClick, danger }) {
-    return (
-      <button onClick={onClick} style={{ display: "flex", alignItems: "center", gap: 14, width: "100%", padding: "12px 20px", background: "none", border: "none", color: danger ? "var(--danger, #f23f42)" : "var(--text)", fontSize: 15, textAlign: "left" }}>
-        <span style={{ width: 20, display: "flex" }}>{icon}</span>{label}
-      </button>
-    );
-  }
-  return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 200, display: "flex", alignItems: "flex-end" }} onClick={onClose}>
-      <div style={{ width: "100%", background: "var(--surface)", borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingBottom: 20, maxHeight: "70vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
-        <div style={{ display: "flex", justifyContent: "center", gap: 14, padding: "16px 12px" }}>
-          {["❤️", "😢", "😂", "👍", "💀", "😮"].map((e) => (
-            <button key={e} onClick={() => { onQuickReact(e); onClose(); }} style={{ fontSize: 24, background: "none", border: "none" }}>{e}</button>
-          ))}
-        </div>
-        {isOwner && <Row icon={<Pencil size={16} />} label="Edit Message" onClick={() => { onEdit(post); onClose(); }} />}
-        <Row icon={<Reply size={16} />} label="Reply" onClick={() => { onReply(post); onClose(); }} />
-        <Row icon={<CornerUpRight size={16} />} label="Thread" onClick={() => { onToggleThread(post.id); onClose(); }} />
-        <Row icon={<Copy size={16} />} label="Copy Text" onClick={() => { navigator.clipboard?.writeText(post.content || ""); onClose(); }} />
-        {!isOwner && <Row icon={<Flag size={16} />} label={reportedIds[post.id] ? "Reported" : "Report"} onClick={() => { if (!reportedIds[post.id]) onReport(post); onClose(); }} />}
-        {isOwner && <Row icon={<Trash2 size={16} />} label="Delete Message" danger onClick={() => { onDelete(post.id); onClose(); }} />}
-      </div>
-    </div>
-  );
-}
-
-export function CropModal({ image, aspect, shape, onCancel, onConfirm }) {
-  const [zoom, setZoom] = useState(1);
-  const [pos, setPos] = useState({ x: 0.5, y: 0.5 });
-  const dragRef = useRef(null);
-  const frameRef = useRef(null);
-
-  function handlePointerDown(e) {
-    dragRef.current = { startX: e.clientX, startY: e.clientY, origPos: pos };
-  }
-  function handlePointerMove(e) {
-    if (!dragRef.current || !frameRef.current) return;
-    const rect = frameRef.current.getBoundingClientRect();
-    const dx = (e.clientX - dragRef.current.startX) / rect.width;
-    const dy = (e.clientY - dragRef.current.startY) / rect.height;
-    setPos({
-      x: Math.min(1, Math.max(0, dragRef.current.origPos.x - dx)),
-      y: Math.min(1, Math.max(0, dragRef.current.origPos.y - dy)),
-    });
-  }
-  function handlePointerUp() {
-    dragRef.current = null;
-  }
-
-  function confirm() {
-    const img = new window.Image();
-    img.onload = () => {
-      const outW = aspect >= 1 ? 800 : 400;
-      const outH = Math.round(outW / aspect);
-      const canvas = document.createElement("canvas");
-      canvas.width = outW;
-      canvas.height = outH;
-      const ctx = canvas.getContext("2d");
-
-      const scale = Math.max(outW / img.width, outH / img.height) * zoom;
-      const drawW = img.width * scale;
-      const drawH = img.height * scale;
-      const drawX = outW / 2 - pos.x * drawW;
-      const drawY = outH / 2 - pos.y * drawH;
-
-      ctx.drawImage(img, drawX, drawY, drawW, drawH);
-      onConfirm(canvas.toDataURL("image/jpeg", 0.88));
-    };
-    img.src = image;
+    const data = await res.json();
+    setSavingSettings(false);
+    if (!res.ok) {
+      setSettingsStatus(data.error || "Could not save settings.");
+      return;
+    }
+    setSettingsStatus("Saved.");
+    load();
   }
 
   return (
     <div
       style={{
-        position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200,
-        display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
+        position: "fixed", inset: 0, background: "var(--surface)", zIndex: 150,
+        display: "flex", flexDirection: "column", overflowY: "auto",
       }}
     >
-      <div className="card p-4" style={{ maxWidth: 380, width: "100%" }}>
-        <h3 className="text-sm font-semibold mb-3">Adjust image</h3>
-        <div
-          ref={frameRef}
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-          onPointerLeave={handlePointerUp}
-          style={{
-            width: "100%",
-            aspectRatio: aspect,
-            borderRadius: shape === "circle" ? "50%" : 12,
-            overflow: "hidden",
-            position: "relative",
-            background: "var(--surface-2)",
-            cursor: "grab",
-            touchAction: "none",
-          }}
-        >
-          <img
-            src={image}
-            alt=""
-            draggable={false}
-            style={{
-              position: "absolute",
-              top: `${pos.y * 100}%`,
-              left: `${pos.x * 100}%`,
-              transform: `translate(-50%, -50%) scale(${zoom})`,
-              minWidth: "100%",
-              minHeight: "100%",
-              width: "auto",
-              height: "auto",
-              userSelect: "none",
-              pointerEvents: "none",
-            }}
-          />
-        </div>
-        <div className="flex items-center gap-2 mt-3">
-          <ZoomIn size={14} style={{ color: "var(--text-muted)" }} />
-          <input
-            type="range"
-            min="1"
-            max="3"
-            step="0.01"
-            value={zoom}
-            onChange={(e) => setZoom(parseFloat(e.target.value))}
-            style={{ flex: 1 }}
-          />
-        </div>
-        <div className="flex gap-2 mt-3">
-          <button onClick={confirm} className="btn-primary">Apply</button>
-          <button onClick={onCancel} className="btn-primary" style={{ background: "var(--surface-2)", color: "var(--text)" }}>Cancel</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export function OnboardingFlowModal({ data, channels, onClose, onSubmit, submitting }) {
-  const [answers, setAnswers] = useState({});
-
-  function setAnswer(questionId, value) {
-    setAnswers((prev) => ({ ...prev, [questionId]: value }));
-  }
-  function toggleMulti(questionId, optionId) {
-    setAnswers((prev) => {
-      const current = Array.isArray(prev[questionId]) ? prev[questionId] : [];
-      const next = current.includes(optionId)
-        ? current.filter((id) => id !== optionId)
-        : [...current, optionId];
-      return { ...prev, [questionId]: next };
-    });
-  }
-
-  const recommendedChannels = channels.filter((c) => data.recommendedChannelIds?.includes(c.id));
-
-  return (
-    <div style={{ position: "fixed", inset: 0, background: "var(--surface)", zIndex: 250, display: "flex", flexDirection: "column", overflowY: "auto" }}>
-      <div className="p-5" style={{ flex: 1, maxWidth: 480, margin: "0 auto", width: "100%" }}>
-        <h1 className="text-xl font-bold mb-2" style={{ fontFamily: "var(--font-display)" }}>
-          {data.welcomeTitle || "Welcome!"}
+      <div
+        className="flex items-center gap-3 p-4"
+        style={{ borderBottom: "1px solid var(--border)", position: "sticky", top: 0, background: "var(--surface)", zIndex: 1 }}
+      >
+        <button onClick={handleSettingsBack} aria-label="Back" style={{ background: "none", border: "none", color: "var(--text)" }}>
+          <ChevronLeft size={22} />
+        </button>
+        <h1 className="text-base font-semibold">
+          {settingsPage ? SETTINGS_TITLES[settingsPage] : "Community Settings"}
         </h1>
-        {data.welcomeBody && (
-          <p className="text-sm mb-4" style={{ color: "var(--text-muted)", overflowWrap: "anywhere" }}>{data.welcomeBody}</p>
+      </div>
+
+      <div className="p-4" style={{ flex: 1 }}>
+        {!settingsPage && (
+          <SettingsSidebar settingsPage={settingsPage || ""} setSettingsPage={setSettingsPage} isOwner={community.isOwner} />
         )}
 
-        {recommendedChannels.length > 0 && (
-          <div className="mb-4">
-            <h3 className="text-xs font-semibold mb-1.5" style={{ color: "var(--text-muted)" }}>Recommended channels</h3>
-            <div className="space-y-1">
-              {recommendedChannels.map((c) => (
-                <div key={c.id} className="flex items-center gap-1.5 text-sm">
-                  <Hash size={14} style={{ color: "var(--text-muted)" }} /> {c.name}
+        {settingsPage === "overview" && (
+          <form onSubmit={handleSaveSettings} className="space-y-3">
+            <div>
+              <label className="text-xs" style={{ color: "var(--text-muted)" }}>Name</label>
+              <input className="input pl-3 mt-1" value={settingsName} onChange={(e) => setSettingsName(e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs" style={{ color: "var(--text-muted)" }}>Description</label>
+              <input className="input pl-3 mt-1" value={settingsDescription} onChange={(e) => setSettingsDescription(e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs" style={{ color: "var(--text-muted)" }}>Category</label>
+              <select className="input pl-3 mt-1" value={settingsCategory} onChange={(e) => setSettingsCategory(e.target.value)}>
+                <option value="">No category</option>
+                {CATEGORY_OPTIONS.map((c) => (<option key={c} value={c}>{c}</option>))}
+              </select>
+            </div>
+            {settingsStatus && <div className="text-xs" style={{ color: "var(--text-muted)" }}>{settingsStatus}</div>}
+            <button type="submit" className="btn-primary" disabled={savingSettings}>
+              {savingSettings ? <Loader2 size={14} className="animate-spin" /> : "Save"}
+            </button>
+          </form>
+        )}
+
+        {settingsPage === "danger" && community.isOwner && (
+          <div>
+            <p className="text-xs mb-3" style={{ color: "var(--text-muted)" }}>
+              Deleting this community removes all channels, posts, and comments permanently.
+            </p>
+            <button onClick={handleDeleteCommunity} className="btn-primary" style={{ background: "var(--danger-soft)", color: "var(--danger)" }}>
+              <Trash2 size={14} /> Delete Community
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+"use client";
+import { Loader2, Heart, Trash2, Send, Flag, ChevronLeft, Hash } from "lucide-react";
+import { Avatar, relativeTime } from "./CommunityDetailShared";
+
+export default function CommunityChannelView({
+  activeChannel,
+  posts,
+  postsLoading,
+  openForumPostId,
+  setOpenForumPostId,
+  currentUserId,
+  community,
+  handleLike,
+  handleDeletePost,
+  handleReportPost,
+  handleReportComment,
+  commentDrafts,
+  setCommentDrafts,
+  handleAddComment,
+  reportingId,
+  reportedIds,
+  setChannelViewOpen,
+  setShowNewPostForm,
+}) {
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, background: "var(--surface)", zIndex: 150,
+        display: "flex", flexDirection: "column",
+      }}
+    >
+      <div
+        className="flex items-center gap-3 p-4"
+        style={{ borderBottom: "1px solid var(--border)", flexShrink: 0 }}
+      >
+        <button
+          onClick={() => {
+            if (openForumPostId) {
+              setOpenForumPostId(null);
+            } else {
+              setChannelViewOpen(false);
+              setOpenForumPostId(null);
+              setShowNewPostForm(false);
+            }
+          }}
+          aria-label="Back"
+          style={{ background: "none", border: "none", color: "var(--text)" }}
+        >
+          <ChevronLeft size={22} />
+        </button>
+        <Hash size={16} style={{ color: "var(--text-muted)" }} />
+        <h1 className="text-base font-semibold" style={{ flex: 1 }}>{activeChannel.name}</h1>
+      </div>
+
+      <div style={{ flex: 1, overflowY: "auto" }} className="p-3">
+        {postsLoading ? (
+          <div className="flex justify-center py-10" style={{ color: "var(--text-muted)" }}>
+            <Loader2 size={22} className="animate-spin" />
+          </div>
+        ) : activeChannel.type === "forum" ? (
+          openForumPostId ? (
+            (() => {
+              const post = posts.find((p) => p.id === openForumPostId);
+              if (!post) {
+                return <p className="text-sm text-center py-8" style={{ color: "var(--text-muted)" }}>Post not found.</p>;
+              }
+              return (
+                <div className="space-y-4">
+                  <div>
+                    <h2 className="text-lg font-bold mb-2">{post.title}</h2>
+                    <div className="flex items-center gap-2 mb-3">
+                      <Avatar user={post.author} size={28} />
+                      <span className="text-sm font-semibold">{post.author.username}</span>
+                      <span className="text-xs" style={{ color: "var(--text-muted)" }}>{relativeTime(post.createdAt)}</span>
+                    </div>
+                    <p className="text-sm mb-3" style={{ overflowWrap: "anywhere", lineHeight: 1.5 }}>{post.content}</p>
+                    <div className="flex items-center gap-3 pb-3" style={{ borderBottom: "1px solid var(--border)" }}>
+                      <button onClick={() => handleLike(post)} className="flex items-center gap-1 text-xs" style={{ color: post.likedByMe ? "var(--danger)" : "var(--text-muted)", background: "none", border: "none" }}>
+                        <Heart size={13} fill={post.likedByMe ? "var(--danger)" : "none"} /> {post.likeCount > 0 && post.likeCount}
+                      </button>
+                      {post.author.id === currentUserId ? (
+                        <button onClick={() => { handleDeletePost(post.id); setOpenForumPostId(null); }} aria-label="Delete post" style={{ color: "var(--text-muted)", background: "none", border: "none" }}>
+                          <Trash2 size={13} />
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleReportPost(post)}
+                          disabled={reportingId === post.id || reportedIds[post.id]}
+                          aria-label="Report post"
+                          className="flex items-center gap-1 text-xs"
+                          style={{ color: "var(--text-muted)", background: "none", border: "none" }}
+                        >
+                          <Flag size={13} /> {reportedIds[post.id] ? "Reported" : "Report"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <h3 className="text-xs font-semibold" style={{ color: "var(--text-muted)" }}>
+                      Replies ({post.comments?.length || 0})
+                    </h3>
+                    {post.comments?.map((c) => (
+                      <div key={c.id} className="flex items-start gap-2.5 card p-2.5">
+                        <Avatar user={c.author} size={24} />
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div className="flex items-center justify-between gap-2 mb-0.5">
+                            <span className="text-xs font-semibold">{c.author.username}</span>
+                            {c.author.id !== currentUserId && (
+                              <button
+                                onClick={() => handleReportComment(c)}
+                                disabled={reportingId === c.id || reportedIds[c.id]}
+                                aria-label="Report reply"
+                                style={{ color: "var(--text-muted)", background: "none", border: "none" }}
+                              >
+                                <Flag size={11} />
+                              </button>
+                            )}
+                          </div>
+                          <p className="text-xs" style={{ overflowWrap: "anywhere" }}>{c.content}</p>
+                        </div>
+                      </div>
+                    ))}
+
+                    {community.isMember && (
+                      <div className="flex items-center gap-2 mt-2">
+                        <input
+                          className="input pl-3"
+                          style={{ padding: "8px 12px", fontSize: 13, flex: 1 }}
+                          placeholder="Write a reply…"
+                          value={commentDrafts[post.id] || ""}
+                          onChange={(e) => setCommentDrafts((prev) => ({ ...prev, [post.id]: e.target.value }))}
+                          onKeyDown={(e) => e.key === "Enter" && handleAddComment(post.id)}
+                        />
+                        <button onClick={() => handleAddComment(post.id)} className="btn-primary" style={{ width: "auto", padding: "8px 14px" }}>
+                          <Send size={14} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()
+          ) : (
+            <div className="space-y-2">
+              {posts.length === 0 && (
+                <p className="text-sm text-center py-8" style={{ color: "var(--text-muted)" }}>No posts yet.</p>
+              )}
+              {posts.map((post) => (
+                <div
+                  key={post.id}
+                  onClick={() => setOpenForumPostId(post.id)}
+                  className="card p-3 transition-opacity hover:opacity-90"
+                  style={{ cursor: "pointer" }}
+                >
+                  <h3 className="text-sm font-semibold mb-1">{post.title || "Untitled Post"}</h3>
+                  <p className="text-xs mb-2 line-clamp-2" style={{ color: "var(--text-muted)", overflowWrap: "anywhere" }}>{post.content}</p>
                 </div>
               ))}
             </div>
-          </div>
-        )}
-
-        {(data.questions || []).map((q) => (
-          <div key={q.id} className="mb-4">
-            <p className="text-sm font-semibold mb-2">{q.text}</p>
-            {q.type === "text" && (
-              <input
-                className="input pl-3"
-                value={answers[q.id] || ""}
-                onChange={(e) => setAnswer(q.id, e.target.value)}
-              />
-            )}
-            {q.type === "single" && (
-              <div className="space-y-1.5">
-                {q.options.map((opt) => (
-                  <label key={opt.id} className="flex items-center gap-2 text-sm">
-                    <input
-                      type="radio"
-                      name={q.id}
-                      checked={answers[q.id] === opt.id}
-                      onChange={() => setAnswer(q.id, opt.id)}
-                    />
-                    {opt.label}
-                  </label>
-                ))}
-              </div>
-            )}
-            {q.type === "multi" && (
-              <div className="space-y-1.5">
-                {q.options.map((opt) => (
-                  <label key={opt.id} className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={Array.isArray(answers[q.id]) && answers[q.id].includes(opt.id)}
-                      onChange={() => toggleMulti(q.id, opt.id)}
-                    />
-                    {opt.label}
-                  </label>
-                ))}
-              </div>
-            )}
-          </div>
-        ))}
-
-        {data.requireRulesAck && (
-          <p className="text-xs mb-4" style={{ color: "var(--text-muted)" }}>
-            By continuing you agree to follow this community's rules. You can review them any time from Settings → Rules.
-          </p>
-        )}
-
-        <div className="flex gap-2 mt-2">
-          <button onClick={() => onSubmit(answers)} className="btn-primary" disabled={submitting}>
-            {submitting ? <Loader2 size={14} className="animate-spin" /> : "Get Started"}
-          </button>
-          <button onClick={onClose} className="btn-primary" style={{ background: "var(--surface-2)", color: "var(--text)" }}>
-            Skip for now
-          </button>
-        </div>
+          )
+        ) : null}
       </div>
     </div>
   );
 }
+"use client";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useRouter } from "next/navigation";
+import { Crown, Users, Loader2, Link2, Hash, Settings, ChevronLeft, Image as ImageIcon, Calendar, BookOpen, ExternalLink, HelpCircle } from "lucide-react";
+import { Avatar, PostActionSheet, CropModal, OnboardingFlowModal } from "./CommunityDetailShared";
+import CommunitySettingsOverlay from "./CommunitySettingsOverlay";
+import CommunityChannelView from "./CommunityChannelView";
 
-export const ROLE_COLORS = ["#8B5CF6", "#EC4899", "#F59E0B", "#10B981", "#3B82F6", "#EF4444"];
-export const ACCENT_COLORS = ["#8B5CF6", "#EC4899", "#F59E0B", "#10B981", "#3B82F6", "#EF4444", "#14B8A6", "#F472B6"];
-export const CATEGORY_OPTIONS = ["Gaming", "Education", "Technology", "Art", "Business", "Music", "Photography", "AI", "Writing", "General"];
+export default function CommunityDetailClient({ communityId, currentUserId }) {
+  const router = useRouter();
+  const bannerInputRef = useRef(null);
+  const iconInputRef = useRef(null);
 
-export const SETTINGS_NAV = [
-  {
-    group: "Community",
-    items: [
-      { key: "overview", label: "Overview" },
-      { key: "members", label: "Members" },
-      { key: "roles", label: "Roles" },
-      { key: "invites", label: "Invites" },
-    ],
-  },
-  {
-    group: "Structure",
-    items: [
-      { key: "channels", label: "Categories & Channels" },
-      { key: "channel-permissions", label: "Channel Permissions" },
-      { key: "threads", label: "Threads" },
-    ],
-  },
-  {
-    group: "Community Settings",
-    items: [
-      { key: "rules", label: "Rules" },
-      { key: "onboarding", label: "Onboarding" },
-      { key: "community-guide", label: "Community Guide" },
-      { key: "emojis-stickers", label: "Emojis & Stickers" },
-    ],
-  },
-  {
-    group: "Moderation",
-    items: [
-      { key: "safety-moderation", label: "Safety & Moderation" },
-      { key: "automod", label: "AutoMod" },
-      { key: "audit-log", label: "Audit Log" },
-    ],
-  },
-  {
-    group: "Integrations",
-    items: [
-      { key: "integrations", label: "Integrations" },
-      { key: "webhooks", label: "Webhooks" },
-    ],
-  },
-  {
-    group: "Advanced",
-    items: [
-      { key: "server-analytics", label: "Server Analytics" },
-      { key: "widget", label: "Widget" },
-    ],
-  },
-  {
-    group: "Danger Zone",
-    items: [
-      { key: "danger", label: "Danger Zone", danger: true },
-    ],
-  },
-];
+  const [community, setCommunity] = useState(null);
+  const [sections, setSections] = useState([]);
+  const [channels, setChannels] = useState([]);
+  const [activeChannelId, setActiveChannelId] = useState(null);
+  const [posts, setPosts] = useState([]);
+  const [events, setEvents] = useState([]);
+  const [rules, setRules] = useState([]);
 
-export const SETTINGS_TITLES = {
-  overview: "Overview",
-  members: "Members",
-  roles: "Roles",
-  invites: "Invites",
-  channels: "Categories & Channels",
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [postsLoading, setPostsLoading] = useState(false);
+  const [channelViewOpen, setChannelViewOpen] = useState(false);
 
-  "channel-permissions": "Channel Permissions",
-  threads: "Threads",
+  const [view, setView] = useState("feed");
+  const [settingsPage, setSettingsPage] = useState(null);
+  const [actionSheetPostId, setActionSheetPostId] = useState(null);
+  const [cropTarget, setCropTarget] = useState(null);
+  const [linkCopied, setLinkCopied] = useState(false);
+  const [openForumPostId, setOpenForumPostId] = useState(null);
+  const [showNewPostForm, setShowNewPostForm] = useState(false);
 
-  rules: "Rules",
-  onboarding: "Onboarding",
-  "community-guide": "Community Guide",
-  "emojis-stickers": "Emojis & Stickers",
+  const [commentDrafts, setCommentDrafts] = useState({});
+  const [reportingId, setReportingId] = useState(null);
+  const [reportedIds, setReportedIds] = useState({});
 
-  "safety-moderation": "Safety & Moderation",
-  automod: "AutoMod",
-  "audit-log": "Audit Log",
+  const [onboardingStatus, setOnboardingStatus] = useState({ enabled: false, completed: false });
+  const [onboardingDismissed, setOnboardingDismissed] = useState(false);
+  const [submittingOnboarding, setSubmittingOnboarding] = useState(false);
 
-  integrations: "Integrations",
-  webhooks: "Webhooks",
+  const [guideLoading, setGuideLoading] = useState(false);
+  const [guideData, setGuideData] = useState({});
 
-  "server-analytics": "Server Analytics",
-  widget: "Widget",
+  const canManage = community && (community.isOwner || community.isAdmin);
 
-  danger: "Danger Zone",
-};
+  const load = useCallback(async () => {
+    setLoading(true);
+    setLoadError("");
+    try {
+      const [cRes, chRes, secRes, obRes] = await Promise.all([
+        fetch(`/api/communities/${communityId}`),
+        fetch(`/api/communities/${communityId}/channels`),
+        fetch(`/api/communities/${communityId}/sections`),
+        fetch(`/api/communities/${communityId}/onboarding`),
+      ]);
+      const cData = await cRes.json();
+      if (!cRes.ok) {
+        setLoadError(cData.error || `Failed to load community (${cRes.status})`);
+        setCommunity(null);
+        return;
+      }
+      const chData = await chRes.json();
+      const secData = await secRes.json();
+      const obData = obRes.ok ? await obRes.json() : null;
 
-export function SettingsSidebar({ settingsPage, setSettingsPage, isOwner }) {
+      setCommunity(cData.community || null);
+      setChannels(chRes.ok ? (chData.channels || []) : []);
+      setSections(secRes.ok ? (secData.sections || []) : []);
+      setActiveChannelId((prev) => prev || (chData.channels?.[0]?.id || null));
+      if (obData?.onboarding) setOnboardingStatus({ ...obData.onboarding, completed: !!obData.completed });
+    } catch (err) {
+      setLoadError("Network error loading community.");
+    } finally {
+      setLoading(false);
+    }
+  }, [communityId]);
+
+  const loadPosts = useCallback(async (channelId) => {
+    setPostsLoading(true);
+    try {
+      const res = await fetch(`/api/communities/${communityId}/posts?channelId=${channelId}`);
+      const data = await res.json();
+      if (res.ok) setPosts(data.posts || []);
+    } catch (err) {
+    } finally {
+      setPostsLoading(false);
+    }
+  }, [communityId]);
+
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (activeChannelId) loadPosts(activeChannelId); }, [activeChannelId, loadPosts]);
+
+  async function toggleMembership() {
+    if (community.isMember) {
+      await fetch(`/api/communities/${communityId}/membership`, { method: "DELETE" });
+    } else {
+      await fetch(`/api/communities/${communityId}/membership`, { method: "POST" });
+    }
+    load();
+  }
+
+  async function handleDeleteCommunity() {
+    if (!window.confirm(`Delete "${community.name}"? This can't be undone.`)) return;
+    await fetch(`/api/communities/${communityId}`, { method: "DELETE" });
+    router.push("/communities");
+  }
+
+  function handleSettingsBack() {
+    if (settingsPage) setSettingsPage(null);
+    else setView("feed");
+  }
+
+  function openChannel(channelId) {
+    setActiveChannelId(channelId);
+    setChannelViewOpen(true);
+  }
+
+  if (loading) return <div className="flex justify-center py-10"><Loader2 size={22} className="animate-spin" /></div>;
+  if (loadError || !community) return <div className="text-sm text-center py-10">{loadError || "Community not found."}</div>;
+
+  const activeChannel = channels.find((c) => c.id === activeChannelId);
+
   return (
-    <div className="space-y-4">
-      {SETTINGS_NAV.map((section) => (
-        <div key={section.group}>
-          <div className="text-xs font-semibold mb-1 px-2" style={{ color: "var(--text-muted)", letterSpacing: 0.5, textTransform: "uppercase" }}>
-            {section.group}
-          </div>
-          {section.items.map((item) => {
-            if (item.key === "danger" && !isOwner) return null;
-            return (
-              <button
-                key={item.key}
-                onClick={() => setSettingsPage(item.key)}
-                className="w-full text-left text-sm px-3 py-2 rounded-lg mb-0.5"
-                style={{
-                  background: settingsPage === item.key ? "var(--accent-soft)" : "transparent",
-                  color: item.danger ? "var(--danger, #e55)" : settingsPage === item.key ? "var(--accent)" : "var(--text)",
-                  border: "none",
-                }}
-              >
-                {item.label}
+    <div>
+      {view === "settings" && canManage && (
+        <CommunitySettingsOverlay
+          community={community}
+          communityId={communityId}
+          currentUserId={currentUserId}
+          canManage={canManage}
+          settingsPage={settingsPage}
+          setSettingsPage={setSettingsPage}
+          handleSettingsBack={handleSettingsBack}
+          load={load}
+          channels={channels}
+          setChannels={setChannels}
+          sections={sections}
+          setSections={setSections}
+          handleDeleteCommunity={handleDeleteCommunity}
+        />
+      )}
+
+      {/* Main Header / Banner / Info Section */}
+      <div className="mb-4" style={{ borderRadius: 16, overflow: "hidden", border: "1px solid var(--border)" }}>
+        <div style={{ height: 110, background: community.bannerDataUrl ? `url("${community.bannerDataUrl}") center/cover` : "var(--surface-2)" }} />
+        <div className="card p-4">
+          <div className="flex items-center gap-3 mb-3">
+            <Avatar user={{ username: community.name, avatarDataUrl: community.iconDataUrl }} size={52} />
+            <div style={{ flex: 1 }}>
+              <h1 className="text-lg font-semibold">{community.name}</h1>
+              <p className="text-xs text-muted"><Users size={12} /> {community.memberCount} members</p>
+            </div>
+            {canManage && (
+              <button onClick={() => { setView("settings"); setSettingsPage(null); }}>
+                <Settings size={16} />
               </button>
-            );
-          })}
+            )}
+          </div>
         </div>
-      ))}
-    </div>
-  );
-}
+      </div>
 
-export function AccessControlRow({ label, value, onChange, roles }) {
-  function updateType(type) {
-    onChange({ type, roleIds: type === "roles" ? value.roleIds : [] });
-  }
-  function toggleRole(roleId) {
-    const has = value.roleIds.includes(roleId);
-    onChange({ ...value, roleIds: has ? value.roleIds.filter((id) => id !== roleId) : [...value.roleIds, roleId] });
-  }
-
-  return (
-    <div className="mb-2">
-      <div className="text-xs font-semibold mb-1" style={{ color: "var(--text-muted)" }}>{label}</div>
-      <select
-        className="input pl-3"
-        style={{ padding: "8px 10px", fontSize: 13 }}
-        value={value.type}
-        onChange={(e) => updateType(e.target.value)}
-      >
-        <option value="everyone">Everyone</option>
-        <option value="roles">Specific roles</option>
-        <option value="moderators">Moderators</option>
-        <option value="administrators">Administrators</option>
-        <option value="owner">Owner only</option>
-      </select>
-      {value.type === "roles" && (
-        <div className="mt-1 pl-2 space-y-1">
-          {roles.length === 0 && <p className="text-xs" style={{ color: "var(--text-muted)" }}>No roles created yet.</p>}
-          {roles.map((r) => (
-            <label key={r.id} className="flex items-center gap-2 text-xs py-0.5">
-              <input type="checkbox" checked={value.roleIds.includes(r.id)} onChange={() => toggleRole(r.id)} />
-              <span style={{ color: r.color || "var(--text)" }}>{r.name}</span>
-            </label>
+      {/* Channel Feed View */}
+      {view === "feed" && !channelViewOpen && (
+        <div className="card p-2 mb-4">
+          {channels.map((c) => (
+            <button key={c.id} onClick={() => openChannel(c.id)} className="flex items-center gap-2 w-full text-sm py-2 px-2">
+              <Hash size={15} /> {c.name}
+            </button>
           ))}
         </div>
+      )}
+
+      {/* Channel Full Screen View Overlay */}
+      {view === "feed" && channelViewOpen && activeChannel && (
+        <CommunityChannelView
+          activeChannel={activeChannel}
+          posts={posts}
+          postsLoading={postsLoading}
+          openForumPostId={openForumPostId}
+          setOpenForumPostId={setOpenForumPostId}
+          currentUserId={currentUserId}
+          community={community}
+          handleLike={() => {}}
+          handleDeletePost={() => {}}
+          handleReportPost={() => {}}
+          handleReportComment={() => {}}
+          commentDrafts={commentDrafts}
+          setCommentDrafts={setCommentDrafts}
+          handleAddComment={() => {}}
+          reportingId={reportingId}
+          reportedIds={reportedIds}
+          setChannelViewOpen={setChannelViewOpen}
+          setShowNewPostForm={setShowNewPostForm}
+        />
       )}
     </div>
   );
