@@ -848,3 +848,21 @@ model Story {
 
   @@index([authorId, createdAt])
 }
+model CommunityGuide {
+  id          String    @id @default(uuid())
+  communityId String    @unique
+  community   Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+
+  introduction  String? @db.Text
+  importantInfo String? @db.Text
+
+  recommendedChannelIds String[] @default([])
+
+  // [{ id, question, answer }]
+  faqs      Json @default("[]")
+  // [{ id, label, url }]
+  resources Json @default("[]")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
