@@ -14,7 +14,7 @@ function Avatar({ user, size = 84 }) {
       display: "flex", alignItems: "center", justifyContent: "center",
       fontWeight: 600, fontSize: size * 0.35, fontFamily: "var(--font-display)",
     }}>
-      {user?.username?.slice(0, 2).toUpperCase() || "?"}
+      {(user?.displayName || user?.username)?.slice(0, 2).toUpperCase() || "?"}
     </div>
   );
 }
@@ -28,7 +28,7 @@ export default function ProfileClient({ profileId }) {
 
   const load = useCallback(async (activeTab) => {
     setLoading(true);
-    const res = await fetch(`/api/users/${profileId}?tab=${activeTab}`);
+    const res = await fetch(`/api/users/\( {profileId}?tab= \){activeTab}`);
     const json = await res.json();
     if (res.ok) {
       setData(json);
@@ -64,6 +64,10 @@ export default function ProfileClient({ profileId }) {
     ? [{ id: "posts", label: "Posts" }, { id: "private", label: "Private" }, { id: "favorites", label: "Favorites" }, { id: "liked", label: "Liked" }]
     : [{ id: "posts", label: "Posts" }];
 
+  // TikTok-style: Display Name on top, @username (lowercase) underneath
+  const displayName = user.displayName || user.username;
+  const handle = (user.username || "").toLowerCase();
+
   return (
     <div className="px-4 pt-6 pb-16" style={{ maxWidth: 480, margin: "0 auto" }}>
       <div className="flex items-center justify-between mb-4">
@@ -84,10 +88,10 @@ export default function ProfileClient({ profileId }) {
       <div className="flex flex-col items-center text-center mb-4">
         <Avatar user={user} />
         <div className="flex items-center gap-1 mt-3">
-          <h1 className="text-lg font-semibold">{user.username}</h1>
+          <h1 className="text-lg font-semibold">{displayName}</h1>
           <ChevronDown size={16} style={{ color: "var(--text-muted)" }} />
         </div>
-        <span className="text-xs" style={{ color: "var(--text-muted)" }}>@{user.username}</span>
+        <span className="text-xs" style={{ color: "var(--text-muted)" }}>@{handle}</span>
       </div>
 
       <div className="flex items-center justify-center gap-8 mb-4">
