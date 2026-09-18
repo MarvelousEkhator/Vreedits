@@ -16,7 +16,7 @@ function Avatar({ user, size = 88 }) {
         fontWeight: 600, fontSize: size * 0.35, fontFamily: "var(--font-display)",
       }}
     >
-      {user?.username?.slice(0, 2).toUpperCase() || "?"}
+      {(user?.displayName || user?.username)?.slice(0, 2).toUpperCase() || "?"}
     </div>
   );
 }
@@ -77,6 +77,10 @@ export default function PublicProfileClient({ userId }) {
 
   const { profile, posts, canViewPosts, isFollowedByMe, followerCount, followingCount, likeCount } = data;
 
+  // TikTok-style: Display Name on top, @username (lowercase) underneath
+  const displayName = profile.displayName || profile.username;
+  const handle = (profile.username || "").toLowerCase();
+
   return (
     <div className="min-h-screen flex flex-col items-center px-4 pb-16">
       <div className="w-full max-w-[480px] mt-10">
@@ -87,9 +91,9 @@ export default function PublicProfileClient({ userId }) {
         <div className="flex flex-col items-center text-center mb-4">
           <Avatar user={profile} />
           <h1 className="text-lg font-semibold mt-3" style={{ fontFamily: "var(--font-display)" }}>
-            {profile.username}
+            {displayName}
           </h1>
-          <span className="text-xs" style={{ color: "var(--text-muted)" }}>@{profile.username}</span>
+          <span className="text-xs" style={{ color: "var(--text-muted)" }}>@{handle}</span>
         </div>
 
         <div className="flex items-center justify-center gap-8 mb-4">
