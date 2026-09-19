@@ -944,3 +944,15 @@ model CommunityWidget {
   inviteCode  String?
   updatedAt   DateTime @updatedAt
 }
+model CommunityEmoji {
+  id           String    @id @default(uuid())
+  communityId  String
+  community    Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  name         String
+  imageDataUrl String    @db.Text
+  type         String    @default("emoji") // "emoji" | "sticker"
+  createdById  String?
+  createdAt    DateTime  @default(now())
+
+  @@unique([communityId, name])
+}
