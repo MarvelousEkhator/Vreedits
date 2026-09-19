@@ -813,24 +813,17 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
       <div style={{ position: "absolute", left: 14, right: 90, bottom: 40, zIndex: 2 }}>
         <button
           onClick={(e) => { e.stopPropagation(); onOpenProfile(post.author.id); }}
-          className="flex flex-col items-start mb-2"
+          className="flex flex-col items-start mb-1"
           style={{ background: "none", border: "none", padding: 0, textAlign: "left" }}
         >
-          {/* Primary Display Name */}
+          {/* ONLY Display Name (Marvy) */}
           <span className="text-base font-bold drop-shadow-md" style={{ color: "white", lineHeight: 1.2 }}>
             {post.author.displayName || post.author.username}
           </span>
-          
-          {/* Smaller @username Handle */}
-          {post.author.displayName && post.author.username && (
-            <span className="text-sm font-medium drop-shadow-md" style={{ color: "rgba(255, 255, 255, 0.85)", marginTop: 2 }}>
-              @{post.author.username.toLowerCase()}
-            </span>
-          )}
         </button>
 
         {post.caption && (
-          <p className="text-sm drop-shadow-md" style={{ color: "white", overflowWrap: "anywhere", lineHeight: 1.4, marginTop: 4 }}>
+          <p className="text-sm drop-shadow-md" style={{ color: "white", overflowWrap: "anywhere", lineHeight: 1.4, marginTop: 2 }}>
             {post.caption}
           </p>
         )}
