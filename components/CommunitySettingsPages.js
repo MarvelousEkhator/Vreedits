@@ -1,6 +1,10 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { Loader2, Plus, Trash2, Copy, RefreshCw } from "lucide-react";
+import {
+  Loader2, Plus, Trash2, Copy, RefreshCw, Lock, ShieldAlert, ScrollText,
+  Bot, Webhook as WebhookIcon, Plug, BarChart3, LayoutTemplate, PartyPopper,
+  Inbox, Users2,
+} from "lucide-react";
 
 // Same permission picker used elsewhere in the community settings.
 function AccessControlRow({ label, value, onChange, roles }) {
@@ -67,7 +71,7 @@ export function resolveSettingsPage(key) {
 }
 
 // ─────────────────────────────────────────────
-// Small shared helpers
+// Small shared helpers (data layer — unchanged)
 // ─────────────────────────────────────────────
 const base = (communityId, feature) => `/api/communities/${communityId}/manage/${feature}`;
 
@@ -140,6 +144,9 @@ function copyText(text) {
   if (typeof navigator !== "undefined" && navigator.clipboard) navigator.clipboard.writeText(text);
 }
 
+// ─────────────────────────────────────────────
+// Redesigned shared primitives
+// ─────────────────────────────────────────────
 function Spinner() {
   return (
     <div className="flex justify-center py-10" style={{ color: "var(--text-muted)" }}>
@@ -148,26 +155,61 @@ function Spinner() {
   );
 }
 
-function Note({ children }) {
+// Page header: icon badge + title-ish description, sits above everything on every page.
+function PageIntro({ icon, children }) {
   return (
-    <p className="text-xs mb-3" style={{ color: "var(--text-muted)", lineHeight: 1.5 }}>
-      {children}
-    </p>
+    <div className="flex items-start gap-3 mb-4">
+      <div
+        style={{
+          width: 36, height: 36, borderRadius: 10, flexShrink: 0,
+          background: "var(--accent-soft)", color: "var(--accent)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}
+      >
+        {icon}
+      </div>
+      <p className="text-sm" style={{ color: "var(--text-muted)", lineHeight: 1.5, paddingTop: 6 }}>
+        {children}
+      </p>
+    </div>
   );
 }
 
-function Heading({ children }) {
+// Groups related fields/content in a bordered card with its own small header,
+// replacing the old bare <Heading> + loose stacked children.
+function SectionCard({ title, action, children, tight }) {
   return (
-    <h3 className="text-xs font-semibold mb-2 mt-4" style={{ color: "var(--text-muted)" }}>
+    <div className="card mb-4" style={{ padding: tight ? 12 : 16 }}>
+      {title && (
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-xs font-semibold" style={{ color: "var(--text-muted)", letterSpacing: 0.3, textTransform: "uppercase" }}>
+            {title}
+          </h3>
+          {action}
+        </div>
+      )}
       {children}
-    </h3>
+    </div>
   );
 }
 
-function Status({ text }) {
+// Real empty state: icon + a friendlier line, instead of one gray sentence.
+function EmptyState({ icon, children }) {
+  return (
+    <div className="text-center py-6">
+      <div style={{ color: "var(--text-muted)", opacity: 0.6, marginBottom: 6 }}>{icon}</div>
+      <p className="text-xs" style={{ color: "var(--text-muted)" }}>{children}</p>
+    </div>
+  );
+}
+
+function Status({ text, tone = "muted" }) {
   if (!text) return null;
   return (
-    <div className="text-xs mt-2" style={{ color: "var(--text-muted)" }}>
+    <div
+      className="text-xs mt-2"
+      style={{ color: tone === "danger" ? "var(--danger, #e55)" : "var(--text-muted)" }}
+    >
       {text}
     </div>
   );
@@ -176,7 +218,7 @@ function Status({ text }) {
 function Field({ label, children }) {
   return (
     <div className="mb-3">
-      <label className="text-xs" style={{ color: "var(--text-muted)" }}>
+      <label className="text-xs font-semibold" style={{ color: "var(--text-muted)" }}>
         {label}
       </label>
       <div className="mt-1">{children}</div>
@@ -184,11 +226,14 @@ function Field({ label, children }) {
   );
 }
 
-function Toggle({ checked, onChange, label }) {
+function Toggle({ checked, onChange, label, hint }) {
   return (
-    <label className="flex items-center gap-2 text-sm py-1">
-      <input type="checkbox" checked={!!checked} onChange={(e) => onChange(e.target.checked)} />
-      {label}
+    <label className="flex items-start gap-2 text-sm py-1.5" style={{ cursor: "pointer" }}>
+      <input type="checkbox" checked={!!checked} onChange={(e) => onChange(e.target.checked)} style={{ marginTop: 2 }} />
+      <span>
+        {label}
+        {hint && <span className="block text-xs" style={{ color: "var(--text-muted)" }}>{hint}</span>}
+      </span>
     </label>
   );
 }
@@ -200,9 +245,41 @@ function IconButton({ onClick, label, children, disabled }) {
       onClick={onClick}
       disabled={disabled}
       aria-label={label}
-      style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer" }}
+      style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", opacity: disabled ? 0.5 : 1 }}
     >
       {children}
+    </button>
+  );
+}
+
+// Small colored status pill — used for on/off, open/resolved, etc.
+function Pill({ tone = "neutral", children }) {
+  const tones = {
+    on: { background: "var(--accent)", color: "white" },
+    neutral: { background: "var(--surface-2)", color: "var(--text)" },
+    open: { background: "var(--accent-soft)", color: "var(--accent)" },
+    resolved: { background: "var(--surface-2)", color: "var(--text-muted)" },
+    danger: { background: "var(--danger-soft)", color: "var(--danger)" },
+  };
+  return (
+    <span
+      className="text-xs font-semibold px-2.5 py-1 rounded-full"
+      style={{ ...tones[tone], whiteSpace: "nowrap" }}
+    >
+      {children}
+    </span>
+  );
+}
+
+function ToggleButton({ on, onClick, onLabel = "On", offLabel = "Off" }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="text-xs font-semibold px-3 py-1 rounded-full"
+      style={on ? { background: "var(--accent)", color: "white", border: "none" } : { background: "var(--surface-2)", color: "var(--text)", border: "none" }}
+    >
+      {on ? onLabel : offLabel}
     </button>
   );
 }
@@ -269,8 +346,11 @@ function ChannelPermissionsPage({ communityId }) {
 
   return (
     <div>
-      <Note>Choose who can see, post in, thread on and manage each channel.</Note>
-      <Field label="Channel">
+      <PageIntro icon={<Lock size={17} />}>
+        Choose who can see, post in, thread on, and manage each channel individually.
+      </PageIntro>
+
+      <SectionCard title="Channel">
         <select className="input pl-3" value={channelId} onChange={(e) => pick(e.target.value)}>
           <option value="">Select a channel…</option>
           {channels.map((c) => (
@@ -279,10 +359,10 @@ function ChannelPermissionsPage({ communityId }) {
             </option>
           ))}
         </select>
-      </Field>
+      </SectionCard>
 
       {draft && (
-        <div>
+        <SectionCard title="Access">
           <AccessControlRow label="Who can view this channel?" value={draft.viewAccess} onChange={(v) => setDraft((p) => ({ ...p, viewAccess: v }))} roles={roles} />
           <AccessControlRow label="Who can send messages?" value={draft.sendAccess} onChange={(v) => setDraft((p) => ({ ...p, sendAccess: v }))} roles={roles} />
           <AccessControlRow label="Who can create threads?" value={draft.threadAccess} onChange={(v) => setDraft((p) => ({ ...p, threadAccess: v }))} roles={roles} />
@@ -291,7 +371,7 @@ function ChannelPermissionsPage({ communityId }) {
           <button onClick={save} className="btn-primary mt-3" disabled={saving}>
             {saving ? <Loader2 size={14} className="animate-spin" /> : "Save Permissions"}
           </button>
-        </div>
+        </SectionCard>
       )}
     </div>
   );
@@ -328,7 +408,7 @@ function SafetyPage({ communityId }) {
   }
 
   if (loading) return <Spinner />;
-  if (error) return <Status text={error} />;
+  if (error) return <Status text={error} tone="danger" />;
   if (!form) return <Spinner />;
 
   const openReports = data.reports.filter((r) => r.status === "open");
@@ -336,123 +416,128 @@ function SafetyPage({ communityId }) {
 
   return (
     <div>
-      <Heading>Protection</Heading>
-      <Field label="Verification level">
-        <select
-          className="input pl-3"
-          value={form.verificationLevel}
-          onChange={(e) => setForm({ ...form, verificationLevel: e.target.value })}
-        >
-          <option value="none">None</option>
-          <option value="low">Low</option>
-          <option value="medium">Medium</option>
-          <option value="high">High</option>
-        </select>
-      </Field>
-      <Toggle
-        checked={form.raidProtectionOn}
-        onChange={(v) => setForm({ ...form, raidProtectionOn: v })}
-        label="Raid protection"
-      />
-      <Toggle
-        checked={form.joinLockdown}
-        onChange={(v) => setForm({ ...form, joinLockdown: v })}
-        label="Lock down joining (no new members)"
-      />
-      <Field label="Max @mentions per message">
-        <input
-          className="input pl-3"
-          type="number"
-          min="1"
-          max="50"
-          value={form.maxMentionsPerMsg}
-          onChange={(e) => setForm({ ...form, maxMentionsPerMsg: e.target.value })}
+      <PageIntro icon={<ShieldAlert size={17} />}>
+        Protection settings, open reports, and recent moderation activity for this community.
+      </PageIntro>
+
+      <SectionCard title="Protection">
+        <Field label="Verification level">
+          <select
+            className="input pl-3"
+            value={form.verificationLevel}
+            onChange={(e) => setForm({ ...form, verificationLevel: e.target.value })}
+          >
+            <option value="none">None</option>
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+          </select>
+        </Field>
+        <Toggle
+          checked={form.raidProtectionOn}
+          onChange={(v) => setForm({ ...form, raidProtectionOn: v })}
+          label="Raid protection"
+          hint="Slows down and flags sudden bursts of new joins."
         />
-      </Field>
-      <button onClick={saveSettings} className="btn-primary" disabled={saving}>
-        {saving ? <Loader2 size={14} className="animate-spin" /> : "Save Safety Settings"}
-      </button>
-      <Status text={status} />
+        <Toggle
+          checked={form.joinLockdown}
+          onChange={(v) => setForm({ ...form, joinLockdown: v })}
+          label="Lock down joining"
+          hint="No new members can join while this is on."
+        />
+        <Field label="Max @mentions per message">
+          <input
+            className="input pl-3"
+            type="number"
+            min="1"
+            max="50"
+            value={form.maxMentionsPerMsg}
+            onChange={(e) => setForm({ ...form, maxMentionsPerMsg: e.target.value })}
+          />
+        </Field>
+        <Status text={status} />
+        <button onClick={saveSettings} className="btn-primary mt-2" disabled={saving}>
+          {saving ? <Loader2 size={14} className="animate-spin" /> : "Save Safety Settings"}
+        </button>
+      </SectionCard>
 
-      <Heading>Open reports ({openReports.length})</Heading>
-      {openReports.length === 0 && (
-        <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-          No open reports. 🎉
-        </p>
-      )}
-      <div className="space-y-2">
-        {openReports.map((r) => (
-          <div key={r.id} className="card p-3">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-semibold" style={{ textTransform: "capitalize" }}>
-                {r.targetType} report
-              </span>
-              <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-                {fmtTime(r.createdAt)}
-              </span>
-            </div>
-            <p className="text-sm mb-1" style={{ overflowWrap: "anywhere" }}>
-              “{r.preview}”
-            </p>
-            <p className="text-xs mb-2" style={{ color: "var(--text-muted)", overflowWrap: "anywhere" }}>
-              @{r.reporter}: {r.reason}
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <button
-                className="btn-primary"
-                style={{ width: "auto", padding: "6px 12px" }}
-                disabled={busyId === r.id}
-                onClick={() => actOnReport(r.id, { status: "resolved" })}
-              >
-                Resolve
-              </button>
-              <button
-                className="btn-primary"
-                style={{ width: "auto", padding: "6px 12px", background: "var(--surface-2)", color: "var(--text)" }}
-                disabled={busyId === r.id}
-                onClick={() => actOnReport(r.id, { status: "dismissed" })}
-              >
-                Dismiss
-              </button>
-              {(r.targetType === "post" || r.targetType === "comment") && (
-                <button
-                  className="btn-primary"
-                  style={{ width: "auto", padding: "6px 12px", background: "var(--danger-soft)", color: "var(--danger)" }}
-                  disabled={busyId === r.id}
-                  onClick={() => {
-                    if (window.confirm("Delete the reported content and resolve this report?")) {
-                      actOnReport(r.id, { removeContent: true });
-                    }
-                  }}
-                >
-                  Remove content
-                </button>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {closedReports.length > 0 && (
-        <div>
-          <Heading>Closed reports</Heading>
-          <div className="space-y-1">
-            {closedReports.slice(0, 10).map((r) => (
-              <div key={r.id} className="flex items-center justify-between text-xs" style={{ color: "var(--text-muted)" }}>
-                <span style={{ overflowWrap: "anywhere" }}>
-                  {r.targetType}: {r.preview.slice(0, 40)}
-                </span>
-                <span style={{ textTransform: "capitalize" }}>{r.status}</span>
+      <SectionCard title={`Open Reports (${openReports.length})`}>
+        {openReports.length === 0 ? (
+          <EmptyState icon={<PartyPopper size={26} />}>Nothing open — you're all caught up.</EmptyState>
+        ) : (
+          <div className="space-y-2">
+            {openReports.map((r) => (
+              <div key={r.id} className="card p-3" style={{ background: "var(--surface-2)" }}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-semibold" style={{ textTransform: "capitalize" }}>
+                    {r.targetType} report
+                  </span>
+                  <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+                    {fmtTime(r.createdAt)}
+                  </span>
+                </div>
+                <p className="text-sm mb-1" style={{ overflowWrap: "anywhere" }}>
+                  “{r.preview}”
+                </p>
+                <p className="text-xs mb-2" style={{ color: "var(--text-muted)", overflowWrap: "anywhere" }}>
+                  @{r.reporter}: {r.reason}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    className="btn-primary"
+                    style={{ width: "auto", padding: "6px 12px" }}
+                    disabled={busyId === r.id}
+                    onClick={() => actOnReport(r.id, { status: "resolved" })}
+                  >
+                    Resolve
+                  </button>
+                  <button
+                    className="btn-primary"
+                    style={{ width: "auto", padding: "6px 12px", background: "var(--surface)", color: "var(--text)" }}
+                    disabled={busyId === r.id}
+                    onClick={() => actOnReport(r.id, { status: "dismissed" })}
+                  >
+                    Dismiss
+                  </button>
+                  {(r.targetType === "post" || r.targetType === "comment") && (
+                    <button
+                      className="btn-primary"
+                      style={{ width: "auto", padding: "6px 12px", background: "var(--danger-soft)", color: "var(--danger)" }}
+                      disabled={busyId === r.id}
+                      onClick={() => {
+                        if (window.confirm("Delete the reported content and resolve this report?")) {
+                          actOnReport(r.id, { removeContent: true });
+                        }
+                      }}
+                    >
+                      Remove content
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
           </div>
-        </div>
+        )}
+      </SectionCard>
+
+      {closedReports.length > 0 && (
+        <SectionCard title="Closed Reports" tight>
+          <div className="space-y-1.5">
+            {closedReports.slice(0, 10).map((r) => (
+              <div key={r.id} className="flex items-center justify-between text-xs">
+                <span style={{ color: "var(--text-muted)", overflowWrap: "anywhere" }}>
+                  {r.targetType}: {r.preview.slice(0, 40)}
+                </span>
+                <Pill tone="resolved">{r.status}</Pill>
+              </div>
+            ))}
+          </div>
+        </SectionCard>
       )}
 
       {data.joins.length > 0 && (
-        <div>
-          <Heading>Recent flagged joins</Heading>
-          <div className="space-y-1">
+        <SectionCard title="Recent Flagged Joins" tight>
+          <div className="space-y-1.5">
             {data.joins.map((j) => (
               <div key={j.id} className="flex items-center justify-between text-xs">
                 <span>@{j.username}</span>
@@ -462,13 +547,12 @@ function SafetyPage({ communityId }) {
               </div>
             ))}
           </div>
-        </div>
+        </SectionCard>
       )}
 
       {data.actions.length > 0 && (
-        <div>
-          <Heading>Recent moderation actions</Heading>
-          <div className="space-y-1">
+        <SectionCard title="Recent Moderation Actions" tight>
+          <div className="space-y-1.5">
             {data.actions.map((a) => (
               <div key={a.id} className="text-xs" style={{ color: "var(--text-muted)", overflowWrap: "anywhere" }}>
                 {a.moderator} → @{a.target}: {a.action}
@@ -476,7 +560,7 @@ function SafetyPage({ communityId }) {
               </div>
             ))}
           </div>
-        </div>
+        </SectionCard>
       )}
     </div>
   );
@@ -489,39 +573,40 @@ function AuditLogPage({ communityId }) {
   const { data, loading, error, reload } = useFeature(communityId, "audit");
 
   if (loading) return <Spinner />;
-  if (error) return <Status text={error} />;
+  if (error) return <Status text={error} tone="danger" />;
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-3">
-        <Note>Recent admin and moderation activity.</Note>
+      <PageIntro icon={<ScrollText size={17} />}>Recent admin and moderation activity, newest first.</PageIntro>
+
+      <div className="flex justify-end mb-2">
         <IconButton onClick={() => reload(true)} label="Refresh">
           <RefreshCw size={15} />
         </IconButton>
       </div>
-      {data.entries.length === 0 && (
-        <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-          Nothing has been logged yet.
-        </p>
-      )}
-      <div className="space-y-2">
-        {data.entries.map((e) => (
-          <div key={e.source + e.id} className="card p-3">
-            <div className="flex items-center justify-between mb-0.5">
-              <span className="text-xs font-semibold">{e.action}</span>
-              <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-                {fmtTime(e.createdAt)}
-              </span>
+
+      {data.entries.length === 0 ? (
+        <EmptyState icon={<ScrollText size={26} />}>Nothing has been logged yet.</EmptyState>
+      ) : (
+        <div className="space-y-2">
+          {data.entries.map((e) => (
+            <div key={e.source + e.id} className="card p-3">
+              <div className="flex items-center justify-between mb-0.5">
+                <span className="text-xs font-semibold">{e.action}</span>
+                <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+                  {fmtTime(e.createdAt)}
+                </span>
+              </div>
+              <p className="text-sm" style={{ overflowWrap: "anywhere" }}>
+                {e.summary}
+              </p>
+              <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                by @{e.actor}
+              </p>
             </div>
-            <p className="text-sm" style={{ overflowWrap: "anywhere" }}>
-              {e.summary}
-            </p>
-            <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-              by @{e.actor}
-            </p>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -604,106 +689,102 @@ function AutoModPage({ communityId }) {
   }
 
   if (loading) return <Spinner />;
-  if (error) return <Status text={error} />;
+  if (error) return <Status text={error} tone="danger" />;
 
   return (
     <div>
-      <Note>Rules are checked against new messages. “Block” stops the message; “Flag” only records it.</Note>
-      <div className="space-y-2 mb-4">
-        {data.rules.length === 0 && (
-          <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-            No AutoMod rules yet.
-          </p>
-        )}
-        {data.rules.map((rule) => (
-          <div key={rule.id} className="card p-3">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-sm font-semibold">{rule.name}</span>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => toggle(rule)}
-                  className="text-xs font-semibold px-3 py-1 rounded-full"
-                  style={
-                    rule.enabled
-                      ? { background: "var(--accent)", color: "white" }
-                      : { background: "var(--surface-2)", color: "var(--text)" }
-                  }
-                >
-                  {rule.enabled ? "On" : "Off"}
-                </button>
-                <IconButton onClick={() => remove(rule)} label="Delete rule">
-                  <Trash2 size={14} />
-                </IconButton>
-              </div>
-            </div>
-            <p className="text-xs" style={{ color: "var(--text-muted)", overflowWrap: "anywhere" }}>
-              {RULE_TYPES[rule.type] || rule.type} · {rule.action === "flag" ? "Flag" : "Block"}
-            </p>
-            <p className="text-xs" style={{ color: "var(--text-muted)", overflowWrap: "anywhere" }}>
-              {describeRule(rule)}
-            </p>
-          </div>
-        ))}
-      </div>
+      <PageIntro icon={<Bot size={17} />}>
+        Rules are checked against new messages. “Block” stops the message; “Flag” only records it.
+      </PageIntro>
 
-      <Heading>New rule</Heading>
-      <form onSubmit={create}>
-        <Field label="Name">
-          <input className="input pl-3" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. No slurs" />
-        </Field>
-        <Field label="What to catch">
-          <select className="input pl-3" value={type} onChange={(e) => setType(e.target.value)}>
-            {Object.entries(RULE_TYPES).map(([k, label]) => (
-              <option key={k} value={k}>
-                {label}
-              </option>
+      <SectionCard title={`Rules (${data.rules.length})`}>
+        {data.rules.length === 0 ? (
+          <EmptyState icon={<Bot size={26} />}>No AutoMod rules yet — add one below.</EmptyState>
+        ) : (
+          <div className="space-y-2">
+            {data.rules.map((rule) => (
+              <div key={rule.id} className="card p-3" style={{ background: "var(--surface-2)" }}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-sm font-semibold">{rule.name}</span>
+                  <div className="flex items-center gap-2">
+                    <ToggleButton on={rule.enabled} onClick={() => toggle(rule)} />
+                    <IconButton onClick={() => remove(rule)} label="Delete rule">
+                      <Trash2 size={14} />
+                    </IconButton>
+                  </div>
+                </div>
+                <p className="text-xs" style={{ color: "var(--text-muted)", overflowWrap: "anywhere" }}>
+                  {RULE_TYPES[rule.type] || rule.type} · {rule.action === "flag" ? "Flag" : "Block"}
+                </p>
+                <p className="text-xs" style={{ color: "var(--text-muted)", overflowWrap: "anywhere" }}>
+                  {describeRule(rule)}
+                </p>
+              </div>
             ))}
-          </select>
-        </Field>
-        {type === "keywords" && (
-          <Field label="Words (comma separated)">
-            <textarea
-              className="input pl-3"
-              style={{ minHeight: 60, resize: "vertical" }}
-              value={words}
-              onChange={(e) => setWords(e.target.value)}
-            />
-          </Field>
+          </div>
         )}
-        {type === "links" && (
-          <Field label="Allowed domains (optional, comma separated)">
-            <input className="input pl-3" value={allowed} onChange={(e) => setAllowed(e.target.value)} placeholder="youtube.com, github.com" />
+      </SectionCard>
+
+      <SectionCard title="New Rule">
+        <form onSubmit={create}>
+          <Field label="Name">
+            <input className="input pl-3" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. No slurs" />
           </Field>
-        )}
-        {type === "caps" && (
-          <Field label="Max % capital letters (default 70)">
-            <input className="input pl-3" type="number" value={number} onChange={(e) => setNumber(e.target.value)} />
+          <Field label="What to catch">
+            <select className="input pl-3" value={type} onChange={(e) => setType(e.target.value)}>
+              {Object.entries(RULE_TYPES).map(([k, label]) => (
+                <option key={k} value={k}>
+                  {label}
+                </option>
+              ))}
+            </select>
           </Field>
-        )}
-        {type === "mentions" && (
-          <Field label="Max @mentions (default 5)">
-            <input className="input pl-3" type="number" value={number} onChange={(e) => setNumber(e.target.value)} />
+          {type === "keywords" && (
+            <Field label="Words (comma separated)">
+              <textarea
+                className="input pl-3"
+                style={{ minHeight: 60, resize: "vertical" }}
+                value={words}
+                onChange={(e) => setWords(e.target.value)}
+              />
+            </Field>
+          )}
+          {type === "links" && (
+            <Field label="Allowed domains (optional, comma separated)">
+              <input className="input pl-3" value={allowed} onChange={(e) => setAllowed(e.target.value)} placeholder="youtube.com, github.com" />
+            </Field>
+          )}
+          {type === "caps" && (
+            <Field label="Max % capital letters (default 70)">
+              <input className="input pl-3" type="number" value={number} onChange={(e) => setNumber(e.target.value)} />
+            </Field>
+          )}
+          {type === "mentions" && (
+            <Field label="Max @mentions (default 5)">
+              <input className="input pl-3" type="number" value={number} onChange={(e) => setNumber(e.target.value)} />
+            </Field>
+          )}
+          {type === "spam" && (
+            <Field label="Max repeated characters in a row (default 6)">
+              <input className="input pl-3" type="number" value={number} onChange={(e) => setNumber(e.target.value)} />
+            </Field>
+          )}
+          <Field label="Action">
+            <select className="input pl-3" value={action} onChange={(e) => setAction(e.target.value)}>
+              <option value="block">Block the message</option>
+              <option value="flag">Flag only</option>
+            </select>
           </Field>
-        )}
-        {type === "spam" && (
-          <Field label="Max repeated characters in a row (default 6)">
-            <input className="input pl-3" type="number" value={number} onChange={(e) => setNumber(e.target.value)} />
-          </Field>
-        )}
-        <Field label="Action">
-          <select className="input pl-3" value={action} onChange={(e) => setAction(e.target.value)}>
-            <option value="block">Block the message</option>
-            <option value="flag">Flag only</option>
-          </select>
-        </Field>
-        <button type="submit" className="btn-primary" disabled={busy || !name.trim()}>
-          {busy ? <Loader2 size={14} className="animate-spin" /> : <><Plus size={14} /> Add Rule</>}
-        </button>
-        <Status text={status} />
-      </form>
+          <Status text={status} />
+          <button type="submit" className="btn-primary mt-1" disabled={busy || !name.trim()}>
+            {busy ? <Loader2 size={14} className="animate-spin" /> : <><Plus size={14} /> Add Rule</>}
+          </button>
+        </form>
+      </SectionCard>
     </div>
   );
 }
+
 // ─────────────────────────────────────────────
 // 5. Webhooks
 // ─────────────────────────────────────────────
@@ -751,70 +832,70 @@ function WebhooksPage({ communityId }) {
   }
 
   if (loading) return <Spinner />;
-  if (error) return <Status text={error} />;
+  if (error) return <Status text={error} tone="danger" />;
 
   const channelName = (id) => (channels.find((c) => c.id === id) || {}).name || "deleted-channel";
 
   return (
     <div>
-      <Note>
-        A webhook lets another app post into a channel. Send a POST request with JSON like
-        {' {"content": "Hello"}'} to the webhook URL. Treat the URL like a password.
-      </Note>
+      <PageIntro icon={<WebhookIcon size={17} />}>
+        A webhook lets another app post into a channel — send a POST request with JSON like
+        {' {"content": "Hello"} '} to the webhook URL. Treat the URL like a password.
+      </PageIntro>
 
-      <div className="space-y-2 mb-4">
-        {data.webhooks.length === 0 && (
-          <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-            No webhooks yet.
-          </p>
-        )}
-        {data.webhooks.map((w) => (
-          <div key={w.id} className="card p-3">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-sm font-semibold">{w.name}</span>
-              <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-                #{channelName(w.channelId)}
-              </span>
-            </div>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => copyUrl(w)}
-                className="btn-primary"
-                style={{ width: "auto", padding: "6px 12px", background: "var(--surface-2)", color: "var(--text)" }}
-              >
-                <Copy size={13} /> {copiedId === w.id ? "Copied!" : "Copy URL"}
-              </button>
-              <IconButton onClick={() => regenerate(w)} label="Regenerate URL">
-                <RefreshCw size={14} />
-              </IconButton>
-              <IconButton onClick={() => remove(w)} label="Delete webhook">
-                <Trash2 size={14} />
-              </IconButton>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <Heading>New webhook</Heading>
-      <form onSubmit={create}>
-        <Field label="Name">
-          <input className="input pl-3" value={name} onChange={(e) => setName(e.target.value)} placeholder="GitHub updates" />
-        </Field>
-        <Field label="Post into">
-          <select className="input pl-3" value={channelId} onChange={(e) => setChannelId(e.target.value)}>
-            <option value="">Select a channel…</option>
-            {channels.map((c) => (
-              <option key={c.id} value={c.id}>
-                #{c.name}
-              </option>
+      <SectionCard title={`Webhooks (${data.webhooks.length})`}>
+        {data.webhooks.length === 0 ? (
+          <EmptyState icon={<WebhookIcon size={26} />}>No webhooks yet — create one below.</EmptyState>
+        ) : (
+          <div className="space-y-2">
+            {data.webhooks.map((w) => (
+              <div key={w.id} className="card p-3" style={{ background: "var(--surface-2)" }}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-sm font-semibold">{w.name}</span>
+                  <Pill>#{channelName(w.channelId)}</Pill>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => copyUrl(w)}
+                    className="btn-primary"
+                    style={{ width: "auto", padding: "6px 12px", background: "var(--surface)", color: "var(--text)" }}
+                  >
+                    <Copy size={13} /> {copiedId === w.id ? "Copied!" : "Copy URL"}
+                  </button>
+                  <IconButton onClick={() => regenerate(w)} label="Regenerate URL">
+                    <RefreshCw size={14} />
+                  </IconButton>
+                  <IconButton onClick={() => remove(w)} label="Delete webhook">
+                    <Trash2 size={14} />
+                  </IconButton>
+                </div>
+              </div>
             ))}
-          </select>
-        </Field>
-        <button type="submit" className="btn-primary" disabled={busy || !name.trim() || !channelId}>
-          {busy ? <Loader2 size={14} className="animate-spin" /> : <><Plus size={14} /> Create Webhook</>}
-        </button>
-        <Status text={status} />
-      </form>
+          </div>
+        )}
+      </SectionCard>
+
+      <SectionCard title="New Webhook">
+        <form onSubmit={create}>
+          <Field label="Name">
+            <input className="input pl-3" value={name} onChange={(e) => setName(e.target.value)} placeholder="GitHub updates" />
+          </Field>
+          <Field label="Post into">
+            <select className="input pl-3" value={channelId} onChange={(e) => setChannelId(e.target.value)}>
+              <option value="">Select a channel…</option>
+              {channels.map((c) => (
+                <option key={c.id} value={c.id}>
+                  #{c.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Status text={status} />
+          <button type="submit" className="btn-primary mt-1" disabled={busy || !name.trim() || !channelId}>
+            {busy ? <Loader2 size={14} className="animate-spin" /> : <><Plus size={14} /> Create Webhook</>}
+          </button>
+        </form>
+      </SectionCard>
     </div>
   );
 }
@@ -867,87 +948,79 @@ function IntegrationsPage({ communityId }) {
   }
 
   if (loading) return <Spinner />;
-  if (error) return <Status text={error} />;
+  if (error) return <Status text={error} tone="danger" />;
 
   const channelName = (id) => (channels.find((c) => c.id === id) || {}).name;
 
   return (
     <div>
-      <Note>
+      <PageIntro icon={<Plug size={17} />}>
         Save the accounts and feeds you want linked to this community. Automatic posting of new
         items into channels isn't switched on yet, so for now this stores the links.
-      </Note>
+      </PageIntro>
 
-      <div className="space-y-2 mb-4">
-        {data.integrations.length === 0 && (
-          <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-            No integrations yet.
-          </p>
-        )}
-        {data.integrations.map((i) => (
-          <div key={i.id} className="card p-3">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-sm font-semibold">{i.label}</span>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => toggle(i)}
-                  className="text-xs font-semibold px-3 py-1 rounded-full"
-                  style={
-                    i.enabled
-                      ? { background: "var(--accent)", color: "white" }
-                      : { background: "var(--surface-2)", color: "var(--text)" }
-                  }
-                >
-                  {i.enabled ? "On" : "Paused"}
-                </button>
-                <IconButton onClick={() => remove(i)} label="Remove integration">
-                  <Trash2 size={14} />
-                </IconButton>
+      <SectionCard title={`Integrations (${data.integrations.length})`}>
+        {data.integrations.length === 0 ? (
+          <EmptyState icon={<Plug size={26} />}>No integrations yet — add one below.</EmptyState>
+        ) : (
+          <div className="space-y-2">
+            {data.integrations.map((i) => (
+              <div key={i.id} className="card p-3" style={{ background: "var(--surface-2)" }}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-sm font-semibold">{i.label}</span>
+                  <div className="flex items-center gap-2">
+                    <ToggleButton on={i.enabled} onClick={() => toggle(i)} onLabel="On" offLabel="Paused" />
+                    <IconButton onClick={() => remove(i)} label="Remove integration">
+                      <Trash2 size={14} />
+                    </IconButton>
+                  </div>
+                </div>
+                <p className="text-xs" style={{ color: "var(--text-muted)", overflowWrap: "anywhere" }}>
+                  {PROVIDER_LABELS[i.provider] || i.provider}
+                  {i.channelId && channelName(i.channelId) ? ` · #${channelName(i.channelId)}` : ""}
+                </p>
+                <p className="text-xs" style={{ color: "var(--text-muted)", overflowWrap: "anywhere" }}>
+                  {i.url}
+                </p>
               </div>
-            </div>
-            <p className="text-xs" style={{ color: "var(--text-muted)", overflowWrap: "anywhere" }}>
-              {PROVIDER_LABELS[i.provider] || i.provider}
-              {i.channelId && channelName(i.channelId) ? ` · #${channelName(i.channelId)}` : ""}
-            </p>
-            <p className="text-xs" style={{ color: "var(--text-muted)", overflowWrap: "anywhere" }}>
-              {i.url}
-            </p>
+            ))}
           </div>
-        ))}
-      </div>
+        )}
+      </SectionCard>
 
-      <Heading>Add integration</Heading>
-      <form onSubmit={create}>
-        <Field label="Service">
-          <select className="input pl-3" value={provider} onChange={(e) => setProvider(e.target.value)}>
-            {Object.entries(PROVIDER_LABELS).map(([k, l]) => (
-              <option key={k} value={k}>
-                {l}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Label">
-          <input className="input pl-3" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Our GitHub repo" />
-        </Field>
-        <Field label="Link or feed URL">
-          <input className="input pl-3" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…" />
-        </Field>
-        <Field label="Channel (optional)">
-          <select className="input pl-3" value={channelId} onChange={(e) => setChannelId(e.target.value)}>
-            <option value="">No channel</option>
-            {channels.map((c) => (
-              <option key={c.id} value={c.id}>
-                #{c.name}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <button type="submit" className="btn-primary" disabled={busy || !label.trim() || !url.trim()}>
-          {busy ? <Loader2 size={14} className="animate-spin" /> : <><Plus size={14} /> Add Integration</>}
-        </button>
-        <Status text={status} />
-      </form>
+      <SectionCard title="Add Integration">
+        <form onSubmit={create}>
+          <Field label="Service">
+            <select className="input pl-3" value={provider} onChange={(e) => setProvider(e.target.value)}>
+              {Object.entries(PROVIDER_LABELS).map(([k, l]) => (
+                <option key={k} value={k}>
+                  {l}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Label">
+            <input className="input pl-3" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Our GitHub repo" />
+          </Field>
+          <Field label="Link or feed URL">
+            <input className="input pl-3" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…" />
+          </Field>
+          <Field label="Channel (optional)">
+            <select className="input pl-3" value={channelId} onChange={(e) => setChannelId(e.target.value)}>
+              <option value="">No channel</option>
+              {channels.map((c) => (
+                <option key={c.id} value={c.id}>
+                  #{c.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Status text={status} />
+          <button type="submit" className="btn-primary mt-1" disabled={busy || !label.trim() || !url.trim()}>
+            {busy ? <Loader2 size={14} className="animate-spin" /> : <><Plus size={14} /> Add Integration</>}
+          </button>
+        </form>
+      </SectionCard>
     </div>
   );
 }
@@ -980,7 +1053,7 @@ function AnalyticsPage({ communityId }) {
   const { data, loading, error } = useFeature(communityId, "analytics");
 
   if (loading) return <Spinner />;
-  if (error) return <Status text={error} />;
+  if (error) return <Status text={error} tone="danger" />;
 
   const t = data.totals;
   const stats = [
@@ -996,6 +1069,8 @@ function AnalyticsPage({ communityId }) {
 
   return (
     <div>
+      <PageIntro icon={<BarChart3 size={17} />}>A snapshot of activity across this community.</PageIntro>
+
       <div className="grid gap-2 mb-4" style={{ gridTemplateColumns: "1fr 1fr" }}>
         {stats.map(([label, value]) => (
           <div key={label} className="card p-3">
@@ -1007,43 +1082,46 @@ function AnalyticsPage({ communityId }) {
         ))}
       </div>
 
-      <Heading>Messages per day (last 14 days)</Heading>
-      <div className="card p-3 mb-2">
+      <SectionCard title="Messages Per Day (Last 14 Days)">
         <Bars items={data.postsByDay} />
-      </div>
+      </SectionCard>
 
-      <Heading>New members per day (last 14 days)</Heading>
-      <div className="card p-3 mb-2">
+      <SectionCard title="New Members Per Day (Last 14 Days)">
         <Bars items={data.joinsByDay} />
         <p className="text-xs mt-2" style={{ color: "var(--text-muted)" }}>
           Counts joins that were recorded by the join system.
         </p>
-      </div>
+      </SectionCard>
 
-      <Heading>Most active channels</Heading>
-      <div className="space-y-1">
-        {data.topChannels.length === 0 && (
-          <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-            No messages in the last 30 days.
-          </p>
+      <SectionCard title="Most Active Channels" tight>
+        {data.topChannels.length === 0 ? (
+          <EmptyState icon={<BarChart3 size={22} />}>No messages in the last 30 days.</EmptyState>
+        ) : (
+          <div className="space-y-1.5">
+            {data.topChannels.map((c) => (
+              <div key={c.name} className="flex items-center justify-between text-sm">
+                <span>#{c.name}</span>
+                <span style={{ color: "var(--text-muted)" }}>{c.count}</span>
+              </div>
+            ))}
+          </div>
         )}
-        {data.topChannels.map((c) => (
-          <div key={c.name} className="flex items-center justify-between text-sm">
-            <span>#{c.name}</span>
-            <span style={{ color: "var(--text-muted)" }}>{c.count}</span>
-          </div>
-        ))}
-      </div>
+      </SectionCard>
 
-      <Heading>Top posters</Heading>
-      <div className="space-y-1">
-        {data.topPosters.map((p) => (
-          <div key={p.username} className="flex items-center justify-between text-sm">
-            <span>@{p.username}</span>
-            <span style={{ color: "var(--text-muted)" }}>{p.count}</span>
+      <SectionCard title="Top Posters" tight>
+        {data.topPosters.length === 0 ? (
+          <EmptyState icon={<Users2 size={22} />}>No posts yet.</EmptyState>
+        ) : (
+          <div className="space-y-1.5">
+            {data.topPosters.map((p) => (
+              <div key={p.username} className="flex items-center justify-between text-sm">
+                <span>@{p.username}</span>
+                <span style={{ color: "var(--text-muted)" }}>{p.count}</span>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        )}
+      </SectionCard>
     </div>
   );
 }
@@ -1076,7 +1154,7 @@ function WidgetPage({ communityId }) {
   }
 
   if (loading) return <Spinner />;
-  if (error) return <Status text={error} />;
+  if (error) return <Status text={error} tone="danger" />;
   if (!form) return <Spinner />;
 
   const origin = typeof window !== "undefined" ? window.location.origin : "";
@@ -1085,62 +1163,65 @@ function WidgetPage({ communityId }) {
 
   return (
     <div>
-      <Note>Put a small join card for this community on any website.</Note>
-      <Toggle checked={form.enabled} onChange={(v) => setForm({ ...form, enabled: v })} label="Enable the widget" />
-      <Toggle checked={form.showMembers} onChange={(v) => setForm({ ...form, showMembers: v })} label="Show member count" />
-      <Field label="Theme">
-        <select className="input pl-3" value={form.theme} onChange={(e) => setForm({ ...form, theme: e.target.value })}>
-          <option value="dark">Dark</option>
-          <option value="light">Light</option>
-        </select>
-      </Field>
-      <Field label="Join button uses invite">
-        <select
-          className="input pl-3"
-          value={form.inviteCode || ""}
-          onChange={(e) => setForm({ ...form, inviteCode: e.target.value })}
-        >
-          <option value="">Community page (no invite)</option>
-          {data.invites.map((code) => (
-            <option key={code} value={code}>
-              {code}
-            </option>
-          ))}
-        </select>
-      </Field>
-      <button onClick={save} className="btn-primary" disabled={saving}>
-        {saving ? <Loader2 size={14} className="animate-spin" /> : "Save Widget"}
-      </button>
-      <Status text={status} />
+      <PageIntro icon={<LayoutTemplate size={17} />}>Put a small join card for this community on any website.</PageIntro>
 
-      <Heading>Embed code</Heading>
-      <textarea
-        readOnly
-        className="input pl-3"
-        style={{ minHeight: 80, fontSize: 12, fontFamily: "monospace" }}
-        value={embed}
-      />
-      <button
-        onClick={() => {
-          copyText(embed);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 2000);
-        }}
-        className="btn-primary mt-2"
-        style={{ background: "var(--surface-2)", color: "var(--text)" }}
-      >
-        <Copy size={14} /> {copied ? "Copied!" : "Copy embed code"}
-      </button>
+      <SectionCard title="Settings">
+        <Toggle checked={form.enabled} onChange={(v) => setForm({ ...form, enabled: v })} label="Enable the widget" />
+        <Toggle checked={form.showMembers} onChange={(v) => setForm({ ...form, showMembers: v })} label="Show member count" />
+        <Field label="Theme">
+          <select className="input pl-3" value={form.theme} onChange={(e) => setForm({ ...form, theme: e.target.value })}>
+            <option value="dark">Dark</option>
+            <option value="light">Light</option>
+          </select>
+        </Field>
+        <Field label="Join button uses invite">
+          <select
+            className="input pl-3"
+            value={form.inviteCode || ""}
+            onChange={(e) => setForm({ ...form, inviteCode: e.target.value })}
+          >
+            <option value="">Community page (no invite)</option>
+            {data.invites.map((code) => (
+              <option key={code} value={code}>
+                {code}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Status text={status} />
+        <button onClick={save} className="btn-primary mt-1" disabled={saving}>
+          {saving ? <Loader2 size={14} className="animate-spin" /> : "Save Widget"}
+        </button>
+      </SectionCard>
+
+      <SectionCard title="Embed Code">
+        <textarea
+          readOnly
+          className="input pl-3"
+          style={{ minHeight: 80, fontSize: 12, fontFamily: "monospace" }}
+          value={embed}
+        />
+        <button
+          onClick={() => {
+            copyText(embed);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+          }}
+          className="btn-primary mt-2"
+          style={{ background: "var(--surface-2)", color: "var(--text)" }}
+        >
+          <Copy size={14} /> {copied ? "Copied!" : "Copy embed code"}
+        </button>
+      </SectionCard>
 
       {form.enabled && (
-        <div>
-          <Heading>Preview (save first to see changes)</Heading>
+        <SectionCard title="Preview (save first to see changes)">
           <iframe
             src={widgetUrl}
             title="Widget preview"
             style={{ width: "100%", maxWidth: 350, height: 420, border: 0, borderRadius: 12 }}
           />
-        </div>
+        </SectionCard>
       )}
     </div>
   );
