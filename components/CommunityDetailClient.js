@@ -812,9 +812,7 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
     } finally {
       setEmojisLoading(false);
     }
-  }, [communityId]);
-
-  useEffect(() => { load(); }, [load]);
+  }, [communityId]);useEffect(() => { load(); }, [load]);
   useEffect(() => { loadEmojis(); }, [loadEmojis]);
   useEffect(() => { if (activeChannelId) loadPosts(activeChannelId); }, [activeChannelId, loadPosts]);
   useEffect(() => { if (view === "events") loadEvents(); }, [view, loadEvents]);
@@ -1626,8 +1624,7 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
             <h1 className="text-base font-semibold">
               {settingsPage ? SETTINGS_TITLES[settingsPage] : "Community Settings"}
             </h1>
-          </div>
-          <div className="p-4" style={{ flex: 1 }}>
+          </div><div className="p-4" style={{ flex: 1 }}>
             {!settingsPage && (
               <SettingsSidebar settingsPage={settingsPage || ""} setSettingsPage={setSettingsPage} isOwner={community.isOwner} />
             )}
@@ -2458,10 +2455,7 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
                   <button type="submit" className="btn-primary" disabled={creatingEmoji}>
                     {creatingEmoji ? <Loader2 size={14} className="animate-spin" /> : <><Plus size={14} /> Upload</>}
                   </button>
-                </form>
-
-
-                {emojisLoading ? (
+                </form>{emojisLoading ? (
                   <div className="flex justify-center py-10" style={{ color: "var(--text-muted)" }}>
                     <Loader2 size={22} className="animate-spin" />
                   </div>
@@ -2515,6 +2509,10 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
               </div>
             )}
 
+            {resolveSettingsPage(settingsPage) && (
+              <CommunitySettingsPage page={resolveSettingsPage(settingsPage)} communityId={communityId} />
+            )}
+
             {settingsPage === "danger" && community.isOwner && (
               <div>
                 <p className="text-xs mb-3" style={{ color: "var(--text-muted)" }}>
@@ -2526,7 +2524,7 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
               </div>
             )}
 
-            {settingsPage && !["overview", "members", "invites", "channels", "roles", "danger", "threads", "rules", "onboarding", "community-guide", "emojis-stickers"].includes(settingsPage) && (
+            {settingsPage && !resolveSettingsPage(settingsPage) && !["overview", "members", "invites", "channels", "roles", "danger", "threads", "rules", "onboarding", "community-guide", "emojis-stickers"].includes(settingsPage) && (
               <div className="card p-6 text-center space-y-2" style={{ background: "var(--surface-2)" }}>
                 <SlidersHorizontal size={24} className="mx-auto" style={{ color: "var(--text-muted)" }} />
                 <h3 className="text-sm font-semibold">{SETTINGS_TITLES[settingsPage]}</h3>
@@ -3258,3 +3256,7 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
     </div>
   );
 }
+
+// New settings pages (Channel Permissions, Safety & Moderation, AutoMod, Audit Log, Integrations, Webhooks, Server Analytics, Widget).
+// Imports are hoisted, so this works even though it sits at the end of the file.
+import CommunitySettingsPage, { resolveSettingsPage } from "./CommunitySettingsPages";
