@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUserId } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { canViewChannel } from "@/lib/channelAccess";
+import { canViewChannel, canSendInChannel } from "@/lib/channelAccess";
 
 const authorSelect = {
   id: true,
@@ -80,6 +80,87 @@ export async function GET(request, { params }) {
     return NextResponse.json({ posts: formatted });
   } catch (err) {
     console.error("GET /api/communities/[id]/posts error:", err);
+    return NextResponse.json({ error: "Database error, please retry." }, { status: 500 });
+  }
+}
+
+export async function POST(request, { params }) {
+  const userId = getSessionUserId();
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const body = await request.json().catch(() => ({}));
+  const { channelId, content, imageUrl, title, replyToId } = body;
+
+  if (!content || typeof content !== "string" || !content.trim()) {
+    return NextResponse.json({ error: "Message can't be empty." }, { status: 400 });
+  }
+
+  try {
+    const community = await prisma.community.findUnique({ where: { id: params.id } });
+    if (!community) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    if (!community.memberIds.includes(userId)) {
+      return NextResponse.json({ error: "You must join this community to post here." }, { status: 403 });
+    }
+
+    if (channelId) {
+      const channel = await prisma.channel.findUnique({ where: { id: channelId } });
+      if (!channel) {
+        return NextResponse.json({ error: "Channel not found." }, { status: 404 });
+      }
+      const roles = await prisma.role.findMany({ where: { communityId: params.id } });
+      if (!canSendInChannel(channel, community, roles, userId)) {
+        return NextResponse.json({ error: "You don't have permission to send messages in this channel." }, { status: 403 });
+      }
+    }
+
+    if (replyToId) {
+      const replyTarget = await prisma.post.findUnique({ where: { id: replyToId } });
+      if (!replyTarget || replyTarget.communityId !== params.id) {
+        return NextResponse.json({ error: "The message you're replying to no longer exists." }, { status: 400 });
+      }
+    }
+
+    const post = await prisma.post.create({
+      data: {
+        communityId: params.id,
+        channelId: channelId || null,
+        authorId: userId,
+        title: title || null,
+        content: content.trim(),
+        imageUrl: imageUrl || null,
+        replyToId: replyToId || null,
+      },
+      include: {
+        author: { select: authorSelect },
+      },
+    });
+
+    const replyTo = replyToId
+      ? await prisma.post.findUnique({
+          where: { id: replyToId },
+          select: { id: true, content: true, author: { select: authorSelect } },
+        })
+      : null;
+
+    return NextResponse.json({
+      post: {
+        id: post.id,
+        title: post.title,
+        content: post.content,
+        imageUrl: post.imageUrl,
+        createdAt: post.createdAt,
+        channelId: post.channelId,
+        author: post.author,
+        likeCount: 0,
+        likedByMe: false,
+        comments: [],
+        replyToId: post.replyToId,
+        replyTo,
+      },
+    });
+  } catch (err) {
+    console.error("POST /api/communities/[id]/posts error:", err);
     return NextResponse.json({ error: "Database error, please retry." }, { status: 500 });
   }
 }
