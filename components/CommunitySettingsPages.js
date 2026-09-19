@@ -1,7 +1,46 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { Loader2, Plus, Trash2, Copy, RefreshCw } from "lucide-react";
-import { AccessControlRow } from "./CommunityDetailShared";
+
+// Same permission picker used elsewhere in the community settings.
+function AccessControlRow({ label, value, onChange, roles }) {
+  function updateType(type) {
+    onChange({ type, roleIds: type === "roles" ? value.roleIds : [] });
+  }
+  function toggleRole(roleId) {
+    const has = value.roleIds.includes(roleId);
+    onChange({ ...value, roleIds: has ? value.roleIds.filter((id) => id !== roleId) : [...value.roleIds, roleId] });
+  }
+
+  return (
+    <div className="mb-2">
+      <div className="text-xs font-semibold mb-1" style={{ color: "var(--text-muted)" }}>{label}</div>
+      <select
+        className="input pl-3"
+        style={{ padding: "8px 10px", fontSize: 13 }}
+        value={value.type}
+        onChange={(e) => updateType(e.target.value)}
+      >
+        <option value="everyone">Everyone</option>
+        <option value="roles">Specific roles</option>
+        <option value="moderators">Moderators</option>
+        <option value="administrators">Administrators</option>
+        <option value="owner">Owner only</option>
+      </select>
+      {value.type === "roles" && (
+        <div className="mt-1 pl-2 space-y-1">
+          {roles.length === 0 && <p className="text-xs" style={{ color: "var(--text-muted)" }}>No roles created yet.</p>}
+          {roles.map((r) => (
+            <label key={r.id} className="flex items-center gap-2 text-xs py-0.5">
+              <input type="checkbox" checked={value.roleIds.includes(r.id)} onChange={() => toggleRole(r.id)} />
+              <span style={{ color: r.color || "var(--text)" }}>{r.name}</span>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ─────────────────────────────────────────────
 // Which settings-menu keys open which page.
@@ -664,4 +703,460 @@ function AutoModPage({ communityId }) {
       </form>
     </div>
   );
+}
+// ─────────────────────────────────────────────
+// 5. Webhooks
+// ─────────────────────────────────────────────
+function WebhooksPage({ communityId }) {
+  const { data, loading, error, reload } = useFeature(communityId, "webhooks");
+  const channels = useChannels(communityId);
+  const [name, setName] = useState("");
+  const [channelId, setChannelId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState("");
+  const [copiedId, setCopiedId] = useState(null);
+
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+
+  async function create(e) {
+    e.preventDefault();
+    setBusy(true);
+    setStatus("");
+    const r = await request(base(communityId, "webhooks"), "POST", { name, channelId });
+    setBusy(false);
+    if (!r.ok) {
+      setStatus(r.data.error || "Could not create the webhook.");
+      return;
+    }
+    setName("");
+    reload(true);
+  }
+
+  async function regenerate(w) {
+    if (!window.confirm("Make a new URL? The old one will stop working.")) return;
+    await request(base(communityId, "webhooks"), "PATCH", { webhookId: w.id, regenerate: true });
+    reload(true);
+  }
+
+  async function remove(w) {
+    if (!window.confirm(`Delete the webhook "${w.name}"?`)) return;
+    await request(`${base(communityId, "webhooks")}?id=${w.id}`, "DELETE");
+    reload(true);
+  }
+
+  function copyUrl(w) {
+    copyText(`${origin}/api/webhooks/${w.id}/${w.token}`);
+    setCopiedId(w.id);
+    setTimeout(() => setCopiedId(null), 2000);
+  }
+
+  if (loading) return <Spinner />;
+  if (error) return <Status text={error} />;
+
+  const channelName = (id) => (channels.find((c) => c.id === id) || {}).name || "deleted-channel";
+
+  return (
+    <div>
+      <Note>
+        A webhook lets another app post into a channel. Send a POST request with JSON like
+        {' {"content": "Hello"}'} to the webhook URL. Treat the URL like a password.
+      </Note>
+
+      <div className="space-y-2 mb-4">
+        {data.webhooks.length === 0 && (
+          <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+            No webhooks yet.
+          </p>
+        )}
+        {data.webhooks.map((w) => (
+          <div key={w.id} className="card p-3">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-sm font-semibold">{w.name}</span>
+              <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+                #{channelName(w.channelId)}
+              </span>
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => copyUrl(w)}
+                className="btn-primary"
+                style={{ width: "auto", padding: "6px 12px", background: "var(--surface-2)", color: "var(--text)" }}
+              >
+                <Copy size={13} /> {copiedId === w.id ? "Copied!" : "Copy URL"}
+              </button>
+              <IconButton onClick={() => regenerate(w)} label="Regenerate URL">
+                <RefreshCw size={14} />
+              </IconButton>
+              <IconButton onClick={() => remove(w)} label="Delete webhook">
+                <Trash2 size={14} />
+              </IconButton>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <Heading>New webhook</Heading>
+      <form onSubmit={create}>
+        <Field label="Name">
+          <input className="input pl-3" value={name} onChange={(e) => setName(e.target.value)} placeholder="GitHub updates" />
+        </Field>
+        <Field label="Post into">
+          <select className="input pl-3" value={channelId} onChange={(e) => setChannelId(e.target.value)}>
+            <option value="">Select a channel…</option>
+            {channels.map((c) => (
+              <option key={c.id} value={c.id}>
+                #{c.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <button type="submit" className="btn-primary" disabled={busy || !name.trim() || !channelId}>
+          {busy ? <Loader2 size={14} className="animate-spin" /> : <><Plus size={14} /> Create Webhook</>}
+        </button>
+        <Status text={status} />
+      </form>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// 6. Integrations
+// ─────────────────────────────────────────────
+const PROVIDER_LABELS = {
+  github: "GitHub",
+  youtube: "YouTube",
+  twitch: "Twitch",
+  twitter: "X / Twitter",
+  rss: "RSS feed",
+};
+
+function IntegrationsPage({ communityId }) {
+  const { data, loading, error, reload } = useFeature(communityId, "integrations");
+  const channels = useChannels(communityId);
+  const [provider, setProvider] = useState("github");
+  const [label, setLabel] = useState("");
+  const [url, setUrl] = useState("");
+  const [channelId, setChannelId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState("");
+
+  async function create(e) {
+    e.preventDefault();
+    setBusy(true);
+    setStatus("");
+    const r = await request(base(communityId, "integrations"), "POST", { provider, label, url, channelId });
+    setBusy(false);
+    if (!r.ok) {
+      setStatus(r.data.error || "Could not save the integration.");
+      return;
+    }
+    setLabel("");
+    setUrl("");
+    reload(true);
+  }
+
+  async function toggle(i) {
+    await request(base(communityId, "integrations"), "PATCH", { integrationId: i.id, enabled: !i.enabled });
+    reload(true);
+  }
+
+  async function remove(i) {
+    if (!window.confirm(`Remove "${i.label}"?`)) return;
+    await request(`${base(communityId, "integrations")}?id=${i.id}`, "DELETE");
+    reload(true);
+  }
+
+  if (loading) return <Spinner />;
+  if (error) return <Status text={error} />;
+
+  const channelName = (id) => (channels.find((c) => c.id === id) || {}).name;
+
+  return (
+    <div>
+      <Note>
+        Save the accounts and feeds you want linked to this community. Automatic posting of new
+        items into channels isn't switched on yet, so for now this stores the links.
+      </Note>
+
+      <div className="space-y-2 mb-4">
+        {data.integrations.length === 0 && (
+          <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+            No integrations yet.
+          </p>
+        )}
+        {data.integrations.map((i) => (
+          <div key={i.id} className="card p-3">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-sm font-semibold">{i.label}</span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => toggle(i)}
+                  className="text-xs font-semibold px-3 py-1 rounded-full"
+                  style={
+                    i.enabled
+                      ? { background: "var(--accent)", color: "white" }
+                      : { background: "var(--surface-2)", color: "var(--text)" }
+                  }
+                >
+                  {i.enabled ? "On" : "Paused"}
+                </button>
+                <IconButton onClick={() => remove(i)} label="Remove integration">
+                  <Trash2 size={14} />
+                </IconButton>
+              </div>
+            </div>
+            <p className="text-xs" style={{ color: "var(--text-muted)", overflowWrap: "anywhere" }}>
+              {PROVIDER_LABELS[i.provider] || i.provider}
+              {i.channelId && channelName(i.channelId) ? ` · #${channelName(i.channelId)}` : ""}
+            </p>
+            <p className="text-xs" style={{ color: "var(--text-muted)", overflowWrap: "anywhere" }}>
+              {i.url}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      <Heading>Add integration</Heading>
+      <form onSubmit={create}>
+        <Field label="Service">
+          <select className="input pl-3" value={provider} onChange={(e) => setProvider(e.target.value)}>
+            {Object.entries(PROVIDER_LABELS).map(([k, l]) => (
+              <option key={k} value={k}>
+                {l}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Label">
+          <input className="input pl-3" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Our GitHub repo" />
+        </Field>
+        <Field label="Link or feed URL">
+          <input className="input pl-3" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…" />
+        </Field>
+        <Field label="Channel (optional)">
+          <select className="input pl-3" value={channelId} onChange={(e) => setChannelId(e.target.value)}>
+            <option value="">No channel</option>
+            {channels.map((c) => (
+              <option key={c.id} value={c.id}>
+                #{c.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <button type="submit" className="btn-primary" disabled={busy || !label.trim() || !url.trim()}>
+          {busy ? <Loader2 size={14} className="animate-spin" /> : <><Plus size={14} /> Add Integration</>}
+        </button>
+        <Status text={status} />
+      </form>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// 7. Server Analytics
+// ─────────────────────────────────────────────
+function Bars({ items }) {
+  const max = Math.max(1, ...items.map((i) => i.value));
+  return (
+    <div className="flex items-end gap-1" style={{ height: 80 }}>
+      {items.map((i) => (
+        <div
+          key={i.label}
+          title={`${i.label}: ${i.value}`}
+          style={{
+            flex: 1,
+            height: `${Math.max(4, (i.value / max) * 100)}%`,
+            background: "var(--accent)",
+            borderRadius: 3,
+            opacity: i.value ? 1 : 0.25,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function AnalyticsPage({ communityId }) {
+  const { data, loading, error } = useFeature(communityId, "analytics");
+
+  if (loading) return <Spinner />;
+  if (error) return <Status text={error} />;
+
+  const t = data.totals;
+  const stats = [
+    ["Members", t.members],
+    ["Channels", t.channels],
+    ["Roles", t.roles],
+    ["Messages (30d)", t.posts30d],
+    ["Joins (30d)", t.joins30d],
+    ["Invite uses", t.inviteUses],
+    ["Open reports", t.openReports],
+    ["Upcoming events", t.upcomingEvents],
+  ];
+
+  return (
+    <div>
+      <div className="grid gap-2 mb-4" style={{ gridTemplateColumns: "1fr 1fr" }}>
+        {stats.map(([label, value]) => (
+          <div key={label} className="card p-3">
+            <div className="text-xl font-semibold">{value}</div>
+            <div className="text-xs" style={{ color: "var(--text-muted)" }}>
+              {label}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <Heading>Messages per day (last 14 days)</Heading>
+      <div className="card p-3 mb-2">
+        <Bars items={data.postsByDay} />
+      </div>
+
+      <Heading>New members per day (last 14 days)</Heading>
+      <div className="card p-3 mb-2">
+        <Bars items={data.joinsByDay} />
+        <p className="text-xs mt-2" style={{ color: "var(--text-muted)" }}>
+          Counts joins that were recorded by the join system.
+        </p>
+      </div>
+
+      <Heading>Most active channels</Heading>
+      <div className="space-y-1">
+        {data.topChannels.length === 0 && (
+          <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+            No messages in the last 30 days.
+          </p>
+        )}
+        {data.topChannels.map((c) => (
+          <div key={c.name} className="flex items-center justify-between text-sm">
+            <span>#{c.name}</span>
+            <span style={{ color: "var(--text-muted)" }}>{c.count}</span>
+          </div>
+        ))}
+      </div>
+
+      <Heading>Top posters</Heading>
+      <div className="space-y-1">
+        {data.topPosters.map((p) => (
+          <div key={p.username} className="flex items-center justify-between text-sm">
+            <span>@{p.username}</span>
+            <span style={{ color: "var(--text-muted)" }}>{p.count}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// 8. Widget
+// ─────────────────────────────────────────────
+function WidgetPage({ communityId }) {
+  const { data, loading, error } = useFeature(communityId, "widget");
+  const [form, setForm] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (data && data.widget && !form) setForm(data.widget);
+  }, [data, form]);
+
+  async function save() {
+    setSaving(true);
+    setStatus("");
+    const r = await request(base(communityId, "widget"), "PATCH", {
+      enabled: form.enabled,
+      theme: form.theme,
+      showMembers: form.showMembers,
+      inviteCode: form.inviteCode || null,
+    });
+    setSaving(false);
+    setStatus(r.ok ? "Saved." : r.data.error || "Could not save.");
+  }
+
+  if (loading) return <Spinner />;
+  if (error) return <Status text={error} />;
+  if (!form) return <Spinner />;
+
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  const widgetUrl = `${origin}/widget/${communityId}`;
+  const embed = `<iframe src="${widgetUrl}" width="350" height="420" style="border:0;border-radius:12px" title="Community widget"></iframe>`;
+
+  return (
+    <div>
+      <Note>Put a small join card for this community on any website.</Note>
+      <Toggle checked={form.enabled} onChange={(v) => setForm({ ...form, enabled: v })} label="Enable the widget" />
+      <Toggle checked={form.showMembers} onChange={(v) => setForm({ ...form, showMembers: v })} label="Show member count" />
+      <Field label="Theme">
+        <select className="input pl-3" value={form.theme} onChange={(e) => setForm({ ...form, theme: e.target.value })}>
+          <option value="dark">Dark</option>
+          <option value="light">Light</option>
+        </select>
+      </Field>
+      <Field label="Join button uses invite">
+        <select
+          className="input pl-3"
+          value={form.inviteCode || ""}
+          onChange={(e) => setForm({ ...form, inviteCode: e.target.value })}
+        >
+          <option value="">Community page (no invite)</option>
+          {data.invites.map((code) => (
+            <option key={code} value={code}>
+              {code}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <button onClick={save} className="btn-primary" disabled={saving}>
+        {saving ? <Loader2 size={14} className="animate-spin" /> : "Save Widget"}
+      </button>
+      <Status text={status} />
+
+      <Heading>Embed code</Heading>
+      <textarea
+        readOnly
+        className="input pl-3"
+        style={{ minHeight: 80, fontSize: 12, fontFamily: "monospace" }}
+        value={embed}
+      />
+      <button
+        onClick={() => {
+          copyText(embed);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+        }}
+        className="btn-primary mt-2"
+        style={{ background: "var(--surface-2)", color: "var(--text)" }}
+      >
+        <Copy size={14} /> {copied ? "Copied!" : "Copy embed code"}
+      </button>
+
+      {form.enabled && (
+        <div>
+          <Heading>Preview (save first to see changes)</Heading>
+          <iframe
+            src={widgetUrl}
+            title="Widget preview"
+            style={{ width: "100%", maxWidth: 350, height: 420, border: 0, borderRadius: 12 }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// Entry point used by CommunityDetailClient
+// ─────────────────────────────────────────────
+export default function CommunitySettingsPage({ page, communityId }) {
+  if (page === "channel-permissions") return <ChannelPermissionsPage communityId={communityId} />;
+  if (page === "safety") return <SafetyPage communityId={communityId} />;
+  if (page === "audit") return <AuditLogPage communityId={communityId} />;
+  if (page === "automod") return <AutoModPage communityId={communityId} />;
+  if (page === "webhooks") return <WebhooksPage communityId={communityId} />;
+  if (page === "integrations") return <IntegrationsPage communityId={communityId} />;
+  if (page === "analytics") return <AnalyticsPage communityId={communityId} />;
+  if (page === "widget") return <WidgetPage communityId={communityId} />;
+  return null;
 }
