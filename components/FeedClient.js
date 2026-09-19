@@ -223,8 +223,7 @@ function CommentRow({ comment, postId, isReply, isPostOwner, currentUserId, onLi
                 currentUserId={currentUserId}
                 onLike={onLike}
                 onReplySubmitted={onReplySubmitted}
-                onPinToggled={onPinToggled}
-                onDeleted={onDeleted}
+                onPinToggled={onDeleted}
               />
             ))}
           </div>
@@ -257,7 +256,6 @@ function CommentRow({ comment, postId, isReply, isPostOwner, currentUserId, onLi
     </div>
   );
 }
-
 function CommentsSheet({ postId, postAuthorId, currentUserId, open, onClose }) {
   const [comments, setComments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -483,7 +481,9 @@ function PostActionsSheet({ post, open, isOwner, onClose, onDownload, onShare, o
       </div>
     </>
   );
-}function CreatePostModal({ open, onClose, onCreated }) {
+}
+
+function CreatePostModal({ open, onClose, onCreated }) {
   const [caption, setCaption] = useState("");
   const [media, setMedia] = useState(null);
   const [cameraOpen, setCameraOpen] = useState(false);
@@ -603,7 +603,6 @@ function PostActionsSheet({ post, open, isOwner, onClose, onDownload, onShare, o
     </div>
   );
 }
-
 function HeartBurst({ x, y }) {
   return (
     <div
@@ -820,9 +819,6 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
           <span className="text-sm font-semibold" style={{ color: "white", lineHeight: 1.3 }}>
             {post.author.displayName || post.author.username}
           </span>
-          <span className="text-xs" style={{ color: "rgba(255,255,255,0.75)", lineHeight: 1.3 }}>
-            @{(post.author.username || "").toLowerCase()}
-          </span>
         </button>
         {post.caption && (
           <p className="text-sm" style={{ color: "white", overflowWrap: "anywhere", lineHeight: 1.4 }}>
@@ -832,7 +828,8 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
       </div>
     </div>
   );
-}export default function FeedClient({ user }) {
+}
+export default function FeedClient({ user }) {
   const router = useRouter();
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1014,7 +1011,9 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
 
   function handleOpenProfile(userId) {
     router.push(`/profile/${userId}`);
-  }return (
+  }
+
+  return (
     <div style={{ position: "relative", width: "100%", height: "100%", background: "#000" }}>
       <div
         style={{
