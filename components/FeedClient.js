@@ -5,7 +5,7 @@ import Link from "next/link";
 import {
   Heart, MessageCircle, Share2, Bookmark, RotateCw, Plus, X, Send,
   Loader2, Search, User as UserIcon, Download, Trash2, Music2,
-  Volume2, VolumeX, Check, Play, Pin, Languages, Copy,
+  Volume2, VolumeX, Check, Play, Pause, Pin, Languages, Copy, ArrowLeft,
 } from "lucide-react";
 import CameraCapture from "@/components/CameraCapture";
 
@@ -255,8 +255,7 @@ function CommentRow({ comment, postId, isReply, isPostOwner, currentUserId, onLi
       />
     </div>
   );
-}
-function CommentsSheet({ postId, postAuthorId, currentUserId, open, onClose }) {
+}function CommentsSheet({ postId, postAuthorId, currentUserId, open, onClose }) {
   const [comments, setComments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [input, setInput] = useState("");
@@ -602,8 +601,383 @@ function CreatePostModal({ open, onClose, onCreated }) {
       </div>
     </div>
   );
+}function SoundMarquee({ text }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, maxWidth: "100%" }}>
+      <Music2 size={13} color="white" style={{ flexShrink: 0 }} />
+      <div style={{ overflow: "hidden", flex: 1, minWidth: 0 }}>
+        <div style={{ display: "inline-block", whiteSpace: "nowrap", animation: "vreedits-marquee 9s linear infinite" }}>
+          <span style={{ color: "white", fontSize: 13 }}>{text}</span>
+          <span style={{ color: "white", fontSize: 13, padding: "0 20px" }}>•</span>
+          <span style={{ color: "white", fontSize: 13 }}>{text}</span>
+          <span style={{ color: "white", fontSize: 13, padding: "0 20px" }}>•</span>
+        </div>
+      </div>
+      <style>{`@keyframes vreedits-marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }`}</style>
+    </div>
+  );
 }
-function HeartBurst({ x, y }) {
+
+function SoundSheet({ post, onClose, onOpenProfile }) {
+  const videoRef = useRef(null);
+  const [playing, setPlaying] = useState(false);
+
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const onPlay = () => setPlaying(true);
+    const onPause = () => setPlaying(false);
+    v.addEventListener("play", onPlay);
+    v.addEventListener("pause", onPause);
+    return () => {
+      v.removeEventListener("play", onPlay);
+      v.removeEventListener("pause", onPause);
+      v.pause();
+    };
+  }, []);
+
+  function togglePlay() {
+    const v = videoRef.current;
+    if (!v) return;
+    if (v.paused) v.play().catch(() => {});
+    else v.pause();
+  }
+
+  const handle = (post.author.username || "").toLowerCase();
+  const name = post.author.displayName || post.author.username;
+  const soundName = `original sound - ${handle}`;
+
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, zIndex: 230,
+        background: "var(--surface)", color: "var(--text)", overflowY: "auto",
+      }}
+    >
+      <div
+        className="flex items-center gap-3 px-4"
+        style={{
+          height: 56, borderBottom: "1px solid var(--border)",
+          position: "sticky", top: 0, background: "var(--surface)", zIndex: 1,
+        }}
+      >
+        <button onClick={onClose} aria-label="Back" style={{ background: "none", border: "none", color: "var(--text)" }}>
+          <ArrowLeft size={22} />
+        </button>
+        <h2 className="text-sm font-semibold">Sound</h2>
+      </div>
+
+      <div className="flex items-center gap-4 p-4">
+        <button
+          onClick={togglePlay}
+          aria-label={playing ? "Pause sound" : "Play sound"}
+          style={{
+            position: "relative", width: 110, height: 110, borderRadius: 16,
+            overflow: "hidden", border: "none", padding: 0, flexShrink: 0,
+            background: "var(--surface-2)",
+          }}
+        >
+          <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <Avatar user={post.author} size={88} />
+          </div>
+          <div
+            style={{
+              position: "absolute", inset: 0, display: "flex",
+              alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.3)",
+            }}
+          >
+            {playing ? (
+              <Pause size={30} color="white" fill="white" />
+            ) : (
+              <Play size={30} color="white" fill="white" style={{ marginLeft: 3 }} />
+            )}
+          </div>
+        </button>
+
+        <div style={{ minWidth: 0 }}>
+          <div className="text-base font-bold" style={{ overflowWrap: "anywhere" }}>{soundName}</div>
+          <button
+            onClick={() => onOpenProfile(post.author.id)}
+            className="text-sm"
+            style={{ background: "none", border: "none", padding: 0, color: "var(--text-muted)", textAlign: "left" }}
+          >
+            {name} · @{handle}
+          </button>
+          <div className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>1 video</div>
+        </div>
+      </div>
+
+      <div className="px-4 mb-5">
+        <button disabled className="btn-primary" style={{ opacity: 0.55, cursor: "not-allowed" }}>
+          Use this sound · coming soon
+        </button>
+      </div>
+
+      <div className="px-4 pb-10">
+        <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--text-muted)" }}>
+          Videos with this sound
+        </h3>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 4 }}>
+          <button
+            onClick={togglePlay}
+            aria-label="Play video"
+            style={{
+              position: "relative", aspectRatio: "9/16", borderRadius: 8,
+              overflow: "hidden", background: "#000", border: "none", padding: 0,
+            }}
+          >
+            <video
+              ref={videoRef}
+              src={post.mediaUrl}
+              loop
+              playsInline
+              preload="metadata"
+              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SearchOverlay({ onClose, onOpenProfile }) {
+  const [query, setQuery] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [results, setResults] = useState(null);
+  const [preview, setPreview] = useState(null);
+  const reqIdRef = useRef(0);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    const q = query.trim();
+    const myReq = ++reqIdRef.current;
+    if (!q) {
+      setResults(null);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/feed?q=${encodeURIComponent(q)}`);
+        const data = await res.json();
+        if (reqIdRef.current !== myReq) return;
+        setResults(
+          res.ok
+            ? { users: data.users || [], posts: data.posts || [] }
+            : { users: [], posts: [] }
+        );
+      } catch {
+        if (reqIdRef.current === myReq) setResults({ users: [], posts: [] });
+      } finally {
+        if (reqIdRef.current === myReq) setLoading(false);
+      }
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  const q = query.trim();
+  const noResults = results && results.users.length === 0 && results.posts.length === 0;
+
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, zIndex: 240,
+        background: "var(--surface)", color: "var(--text)",
+        display: "flex", flexDirection: "column",
+      }}
+    >
+      <div
+        className="flex items-center gap-2 px-3"
+        style={{ height: 56, borderBottom: "1px solid var(--border)", flexShrink: 0 }}
+      >
+        <button onClick={onClose} aria-label="Close search" style={{ background: "none", border: "none", color: "var(--text)" }}>
+          <ArrowLeft size={22} />
+        </button>
+        <div style={{ position: "relative", flex: 1 }}>
+          <Search
+            size={16}
+            style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)" }}
+          />
+          <input
+            ref={inputRef}
+            className="input"
+            style={{ paddingLeft: 36, paddingRight: 34 }}
+            placeholder="Search people, videos, #tags"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          {query && (
+            <button
+              onClick={() => setQuery("")}
+              aria-label="Clear"
+              style={{
+                position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)",
+                background: "none", border: "none", color: "var(--text-muted)",
+              }}
+            >
+              <X size={16} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="p-4" style={{ flex: 1, overflowY: "auto" }}>
+        {!q && (
+          <p className="text-sm text-center py-10" style={{ color: "var(--text-muted)" }}>
+            Search for people, videos, and hashtags.
+          </p>
+        )}
+
+        {q && loading && (
+          <div className="flex justify-center py-10" style={{ color: "var(--text-muted)" }}>
+            <Loader2 size={20} className="animate-spin" />
+          </div>
+        )}
+
+        {q && !loading && noResults && (
+          <p className="text-sm text-center py-10" style={{ color: "var(--text-muted)" }}>
+            No results found.
+          </p>
+        )}
+
+        {q && !loading && results?.users.length > 0 && (
+          <div className="mb-6">
+            <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--text-muted)" }}>
+              People
+            </h3>
+            {results.users.map((u) => (
+              <button
+                key={u.id}
+                onClick={() => onOpenProfile(u.id)}
+                className="flex items-center gap-3 w-full"
+                style={{ background: "none", border: "none", padding: "8px 0", textAlign: "left", color: "var(--text)" }}
+              >
+                <Avatar user={u} size={44} />
+                <div style={{ minWidth: 0 }}>
+                  <div
+                    className="text-sm font-semibold"
+                    style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                  >
+                    {u.displayName || u.username}
+                  </div>
+                  <div className="text-xs" style={{ color: "var(--text-muted)" }}>
+                    @{(u.username || "").toLowerCase()}
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {q && !loading && results?.posts.length > 0 && (
+          <div>
+            <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--text-muted)" }}>
+              Videos & posts
+            </h3>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 4 }}>
+              {results.posts.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => setPreview(p)}
+                  style={{
+                    position: "relative", aspectRatio: "9/16", borderRadius: 8,
+                    overflow: "hidden", background: "var(--surface-2)", border: "none", padding: 0,
+                  }}
+                >
+                  {p.mediaUrl ? (
+                    p.mediaType === "video" ? (
+                      <video
+                        src={p.mediaUrl}
+                        muted
+                        playsInline
+                        preload="metadata"
+                        style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                      />
+                    ) : (
+                      <img src={p.mediaUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    )
+                  ) : (
+                    <div
+                      className="text-xs"
+                      style={{
+                        width: "100%", height: "100%", padding: 8, color: "var(--text)",
+                        background: "linear-gradient(160deg, var(--accent-soft), var(--surface-2))",
+                        overflow: "hidden", textAlign: "left",
+                      }}
+                    >
+                      {p.caption}
+                    </div>
+                  )}
+                  {p.mediaType === "video" && (
+                    <Play size={14} color="white" fill="white" style={{ position: "absolute", top: 6, right: 6 }} />
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {preview && (
+        <div
+          style={{
+            position: "fixed", inset: 0, zIndex: 250, background: "#000",
+            display: "flex", flexDirection: "column",
+          }}
+        >
+          <div className="flex items-center justify-between px-4" style={{ height: 56, flexShrink: 0 }}>
+            <button
+              onClick={() => onOpenProfile(preview.author.id)}
+              className="flex items-center gap-2"
+              style={{ background: "none", border: "none", color: "white" }}
+            >
+              <Avatar user={preview.author} size={30} />
+              <span className="text-sm font-semibold">{preview.author.displayName || preview.author.username}</span>
+            </button>
+            <button
+              onClick={() => setPreview(null)}
+              aria-label="Close preview"
+              style={{ background: "none", border: "none", color: "white" }}
+            >
+              <X size={22} />
+            </button>
+          </div>
+
+          <div style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            {preview.mediaUrl ? (
+              preview.mediaType === "video" ? (
+                <video
+                  src={preview.mediaUrl}
+                  controls
+                  autoPlay
+                  loop
+                  playsInline
+                  style={{ width: "100%", height: "100%", objectFit: "contain" }}
+                />
+              ) : (
+                <img src={preview.mediaUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+              )
+            ) : (
+              <p className="text-base px-6 text-center" style={{ color: "white" }}>{preview.caption}</p>
+            )}
+          </div>
+
+          {preview.mediaUrl && preview.caption && (
+            <p className="text-sm px-4 py-3" style={{ color: "white", overflowWrap: "anywhere" }}>
+              {preview.caption}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}function HeartBurst({ x, y }) {
   return (
     <div
       style={{
@@ -624,11 +998,12 @@ function HeartBurst({ x, y }) {
   );
 }
 
-function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onOpenComments, onLongPress, onOpenProfile, registerVideoRef }) {
+function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onOpenComments, onLongPress, onOpenProfile, onOpenSound, registerVideoRef }) {
   const pressTimer = useRef(null);
   const lastTapRef = useRef(0);
   const singleTapTimerRef = useRef(null);
   const videoElRef = useRef(null);
+  const touchStartRef = useRef(null);
   const [burst, setBurst] = useState(null);
   const [isPaused, setIsPaused] = useState(false);
 
@@ -641,6 +1016,35 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
   function handleContextMenu(e) {
     e.preventDefault();
     onLongPress(post);
+  }
+
+  // Touch handling: long-press opens the actions sheet,
+  // a sideways swipe opens the creator's profile.
+  function handleTouchStart(e) {
+    const t = e.touches[0];
+    touchStartRef.current = t ? { x: t.clientX, y: t.clientY } : null;
+    startPress();
+  }
+  function handleTouchMove() {
+    cancelPress();
+  }
+  function handleTouchCancel() {
+    touchStartRef.current = null;
+    cancelPress();
+  }
+  function handleTouchEnd(e) {
+    cancelPress();
+    const start = touchStartRef.current;
+    touchStartRef.current = null;
+    if (!start) return;
+    const t = e.changedTouches[0];
+    if (!t) return;
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+    if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      clearTimeout(singleTapTimerRef.current);
+      onOpenProfile(post.author.id);
+    }
   }
 
   function combinedVideoRef(el) {
@@ -687,12 +1091,16 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
     }
   }
 
+  const isVideo = post.mediaType === "video" && !!post.mediaUrl;
+  const soundLabel = `original sound - ${(post.author.username || "").toLowerCase()}`;
+
   return (
     <div
       data-post-id={post.id}
-      onTouchStart={startPress}
-      onTouchEnd={cancelPress}
-      onTouchMove={cancelPress}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      onTouchMove={handleTouchMove}
+      onTouchCancel={handleTouchCancel}
       onMouseDown={startPress}
       onMouseUp={cancelPress}
       onMouseLeave={cancelPress}
@@ -701,6 +1109,7 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
       style={{
         position: "relative", height: "100%", width: "100%", flexShrink: 0,
         scrollSnapAlign: "start", overflow: "hidden", background: "#000",
+        touchAction: "pan-y",
       }}
     >
       {post.mediaType === "video" && post.mediaUrl ? (
@@ -792,21 +1201,28 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
           <Share2 size={28} color="white" />
         </button>
 
-        <div
-          style={{
-            width: 36, height: 36, borderRadius: "50%", overflow: "hidden",
-            border: "2px solid rgba(255,255,255,0.8)", marginTop: 4,
-            animation: "vreedits-spin 4s linear infinite",
-          }}
-        >
-          {post.mediaType !== "video" && post.mediaUrl ? (
-            <img src={post.mediaUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-          ) : (
-            <div style={{ width: "100%", height: "100%", background: "var(--accent-soft)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <Music2 size={14} color="var(--accent)" />
+        {isVideo && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onOpenSound(post); }}
+            aria-label="Open sound"
+            style={{ background: "none", border: "none", padding: 0, marginTop: 4 }}
+          >
+            <div
+              style={{
+                width: 44, height: 44, borderRadius: "50%",
+                background: "linear-gradient(135deg, #2a2a2a, #000)",
+                border: "2px solid rgba(255,255,255,0.25)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                animation: "vreedits-spin 5s linear infinite",
+                animationPlayState: isPaused ? "paused" : "running",
+              }}
+            >
+              <div style={{ width: 26, height: 26, borderRadius: "50%", overflow: "hidden" }}>
+                <Avatar user={post.author} size={26} />
+              </div>
             </div>
-          )}
-        </div>
+          </button>
+        )}
         <style>{`@keyframes vreedits-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
       </div>
 
@@ -816,7 +1232,6 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
           className="flex flex-col items-start mb-1"
           style={{ background: "none", border: "none", padding: 0, textAlign: "left" }}
         >
-          {/* ONLY Display Name (Marvy) */}
           <span className="text-base font-bold drop-shadow-md" style={{ color: "white", lineHeight: 1.2 }}>
             {post.author.displayName || post.author.username}
           </span>
@@ -827,11 +1242,20 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
             {post.caption}
           </p>
         )}
+
+        {isVideo && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onOpenSound(post); }}
+            aria-label="Open sound"
+            style={{ background: "none", border: "none", padding: 0, marginTop: 8, width: "100%", textAlign: "left" }}
+          >
+            <SoundMarquee text={soundLabel} />
+          </button>
+        )}
       </div>
     </div>
   );
-}
-export default function FeedClient({ user }) {
+}export default function FeedClient({ user }) {
   const router = useRouter();
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -844,6 +1268,9 @@ export default function FeedClient({ user }) {
   const [refreshing, setRefreshing] = useState(false);
   const [muted, setMuted] = useState(true);
   const [activeTab, setActiveTab] = useState("for-you");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [soundPost, setSoundPost] = useState(null);
+  const overlayPausedRef = useRef([]);
   const scrollRef = useRef(null);
   const videoRefsMap = useRef(new Map());
   const observerRef = useRef(null);
@@ -861,6 +1288,46 @@ export default function FeedClient({ user }) {
     if (post && wasPlayingBeforeActionsRef.current) {
       videoRefsMap.current.get(post.id)?.play().catch(() => {});
     }
+  }
+
+  // Pause every playing feed video while a full-screen overlay is open,
+  // then resume the same ones when it closes.
+  function pauseFeedVideos() {
+    const ids = [];
+    videoRefsMap.current.forEach((video, id) => {
+      if (!video.paused) {
+        ids.push(id);
+        video.pause();
+      }
+    });
+    overlayPausedRef.current = ids;
+  }
+
+  function resumeFeedVideos() {
+    overlayPausedRef.current.forEach((id) => {
+      videoRefsMap.current.get(id)?.play().catch(() => {});
+    });
+    overlayPausedRef.current = [];
+  }
+
+  function openSearch() {
+    pauseFeedVideos();
+    setSearchOpen(true);
+  }
+
+  function closeSearch() {
+    setSearchOpen(false);
+    resumeFeedVideos();
+  }
+
+  function openSound(post) {
+    pauseFeedVideos();
+    setSoundPost(post);
+  }
+
+  function closeSound() {
+    setSoundPost(null);
+    resumeFeedVideos();
   }
 
   const loadFeed = useCallback(async (cursor, tab) => {
@@ -1035,7 +1502,11 @@ export default function FeedClient({ user }) {
             >
               {muted ? <VolumeX size={22} /> : <Volume2 size={22} />}
             </button>
-            <button aria-label="Search" style={{ background: "none", border: "none", color: "white" }}>
+            <button
+              onClick={openSearch}
+              aria-label="Search"
+              style={{ background: "none", border: "none", color: "white" }}
+            >
               <Search size={22} />
             </button>
           </div>
@@ -1095,6 +1566,7 @@ export default function FeedClient({ user }) {
               onOpenComments={setCommentsPost}
               onLongPress={handleLongPress}
               onOpenProfile={handleOpenProfile}
+              onOpenSound={openSound}
               registerVideoRef={registerVideoRef}
             />
           ))}
@@ -1147,6 +1619,12 @@ export default function FeedClient({ user }) {
           onShare={handleShare}
           onDelete={handleDeletePost}
         />
+      )}
+      {soundPost && (
+        <SoundSheet post={soundPost} onClose={closeSound} onOpenProfile={handleOpenProfile} />
+      )}
+      {searchOpen && (
+        <SearchOverlay onClose={closeSearch} onOpenProfile={handleOpenProfile} />
       )}
       <CreatePostModal open={createOpen} onClose={() => setCreateOpen(false)} onCreated={handlePostCreated} />
     </div>
