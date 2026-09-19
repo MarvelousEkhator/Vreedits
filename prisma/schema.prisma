@@ -20,6 +20,7 @@ model User {
   bio           String?  @db.Text
   allowDownloads Boolean @default(true)
   country       String?
+  school        String?
   language      String   @default("English")
   isPublic      Boolean  @default(true)
   isGuest       Boolean  @default(false)
