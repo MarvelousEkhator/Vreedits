@@ -956,3 +956,29 @@ model CommunityEmoji {
 
   @@unique([communityId, name])
 }
+model CommunityBan {
+  id          String    @id @default(uuid())
+  communityId String
+  community   Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  userId      String
+  username    String
+  reason      String?   @db.Text
+  bannedById  String
+  createdAt   DateTime  @default(now())
+
+  @@unique([communityId, userId])
+}
+
+model MemberRestriction {
+  id             String    @id @default(uuid())
+  communityId    String
+  community      Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  userId         String
+  username       String
+  reason         String?   @db.Text
+  expiresAt      DateTime
+  restrictedById String
+  createdAt      DateTime  @default(now())
+
+  @@unique([communityId, userId])
+}
