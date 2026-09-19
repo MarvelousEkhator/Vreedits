@@ -28,7 +28,7 @@ export default function ProfileClient({ profileId }) {
 
   const load = useCallback(async (activeTab) => {
     setLoading(true);
-    const res = await fetch(`/api/users/\( {profileId}?tab= \){activeTab}`);
+    const res = await fetch(`/api/users/${profileId}?tab=${activeTab}`);
     const json = await res.json();
     if (res.ok) {
       setData(json);
