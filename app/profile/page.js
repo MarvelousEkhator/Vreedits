@@ -17,7 +17,7 @@ function Avatar({ user, size = 88 }) {
         fontWeight: 600, fontSize: size * 0.35, fontFamily: "var(--font-display)",
       }}
     >
-      {user?.username?.slice(0, 2).toUpperCase() || "?"}
+      {(user?.displayName || user?.username)?.slice(0, 2).toUpperCase() || "?"}
     </div>
   );
 }
@@ -132,6 +132,11 @@ export default function ProfilePage() {
 
   const { profile, followerCount, followingCount, likeCount, publicPosts, privatePosts } = data;
 
+  // Display name on top (falls back to the username if none is set),
+  // username below it in lowercase with an @.
+  const displayName = profile.displayName || profile.username;
+  const handle = (profile.username || "").toLowerCase();
+
   // Posts vs Videos split — both come from the same publicPosts array,
   // just filtered client-side by mediaType, so no backend change needed.
   const imagePosts = publicPosts.filter((p) => p.mediaType !== "video");
@@ -157,14 +162,16 @@ export default function ProfilePage() {
 
           <div className="flex flex-col items-center text-center mb-4">
             <Avatar user={profile} />
-            <div className="flex items-center gap-2 mt-3">
-              <h1 className="text-lg font-semibold" style={{ fontFamily: "var(--font-display)" }}>
-                {profile.username}
-              </h1>
-              <Link href="/profile/edit" className="btn-primary" style={{ padding: "5px 14px", fontSize: 13, width: "auto" }}>
-                Edit
-              </Link>
-            </div>
+
+            {/* Bold display name */}
+            <h1 className="text-xl font-bold mt-3" style={{ fontFamily: "var(--font-display)", lineHeight: 1.2 }}>
+              {displayName}
+            </h1>
+
+            {/* Small muted lowercase @username */}
+            <span className="text-sm mt-0.5" style={{ color: "var(--text-muted)" }}>
+              @{handle}
+            </span>
 
             <div className="flex items-center gap-6 mt-4">
               <div className="text-center">
@@ -180,6 +187,14 @@ export default function ProfilePage() {
                 <div className="text-xs" style={{ color: "var(--text-muted)" }}>Likes</div>
               </div>
             </div>
+
+            <Link
+              href="/profile/edit"
+              className="btn-primary mt-4"
+              style={{ padding: "8px 28px", fontSize: 14, width: "auto" }}
+            >
+              Edit profile
+            </Link>
 
             {profile.bio && (
               <p className="text-sm mt-3" style={{ color: "var(--text)", overflowWrap: "anywhere" }}>
