@@ -169,10 +169,13 @@ model Community {
   captchaRequiredUntil DateTime?
   joinLockdown         Boolean   @default(false)
   joinEvents           JoinEvent[]
-guide       CommunityGuide?
+  guide       CommunityGuide?
   // ACTIVE — Community onboarding
   onboarding  CommunityOnboarding?
   onboardingCompletions OnboardingCompletion[]
+  emojis      CommunityEmoji[]
+  bans        CommunityBan[]
+  restrictions MemberRestriction[]
 }
 
 model Section {
@@ -849,6 +852,7 @@ model Story {
 
   @@index([authorId, createdAt])
 }
+
 model CommunityGuide {
   id          String    @id @default(uuid())
   communityId String    @unique
@@ -867,6 +871,7 @@ model CommunityGuide {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
 // ─────────────────────────────────────────────
 // ACTIVE — Community admin tools (Audit Log, AutoMod, Emojis, Webhooks, Integrations, Widget)
 // ─────────────────────────────────────────────
@@ -898,15 +903,16 @@ model AutoModRule {
 }
 
 model CommunityEmoji {
-  id           String   @id @default(uuid())
+  id           String    @id @default(uuid())
   communityId  String
-  kind         String   @default("emoji")
+  community    Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
   name         String
-  imageDataUrl String   @db.Text
-  createdById  String
-  createdAt    DateTime @default(now())
+  imageDataUrl String    @db.Text
+  type         String    @default("emoji") // "emoji" | "sticker"
+  createdById  String?
+  createdAt    DateTime  @default(now())
 
-  @@unique([communityId, kind, name])
+  @@unique([communityId, name])
 }
 
 model CommunityWebhook {
@@ -944,18 +950,7 @@ model CommunityWidget {
   inviteCode  String?
   updatedAt   DateTime @updatedAt
 }
-model CommunityEmoji {
-  id           String    @id @default(uuid())
-  communityId  String
-  community    Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
-  name         String
-  imageDataUrl String    @db.Text
-  type         String    @default("emoji") // "emoji" | "sticker"
-  createdById  String?
-  createdAt    DateTime  @default(now())
 
-  @@unique([communityId, name])
-}
 model CommunityBan {
   id          String    @id @default(uuid())
   communityId String
