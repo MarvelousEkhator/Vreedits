@@ -844,6 +844,7 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
   const [createOpen, setCreateOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [muted, setMuted] = useState(true);
+  const [activeTab, setActiveTab] = useState("for-you");
   const scrollRef = useRef(null);
   const videoRefsMap = useRef(new Map());
   const observerRef = useRef(null);
@@ -863,20 +864,26 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
     }
   }
 
-  const loadFeed = useCallback(async (cursor) => {
-    const url = cursor ? `/api/feed?cursor=${cursor}` : "/api/feed";
-    const res = await fetch(url);
+  const loadFeed = useCallback(async (cursor, tab) => {
+    const params = new URLSearchParams();
+    if (cursor) params.set("cursor", cursor);
+    params.set("tab", tab || activeTab);
+    const res = await fetch(`/api/feed?${params.toString()}`);
     const data = await res.json();
     if (res.ok) {
       setPosts((prev) => (cursor ? [...prev, ...data.posts] : data.posts));
       setNextCursor(data.nextCursor);
     }
-  }, []);
+  }, [activeTab]);
 
   useEffect(() => {
     setLoading(true);
-    loadFeed(null).finally(() => setLoading(false));
-  }, [loadFeed]);
+    setPosts([]);
+    setNextCursor(null);
+    scrollRef.current?.scrollTo({ top: 0 });
+    loadFeed(null, activeTab).finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
 
   const registerVideoRef = useCallback((postId, el) => {
     if (el) videoRefsMap.current.set(postId, el);
@@ -923,7 +930,7 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
   async function handleRefresh() {
     setRefreshing(true);
     scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
-    await loadFeed(null);
+    await loadFeed(null, activeTab);
     setRefreshing(false);
   }
 
@@ -932,7 +939,7 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
     if (!el || loadingMore || !nextCursor) return;
     if (el.scrollTop + el.clientHeight >= el.scrollHeight - 200) {
       setLoadingMore(true);
-      await loadFeed(nextCursor);
+      await loadFeed(nextCursor, activeTab);
       setLoadingMore(false);
     }
   }
@@ -1007,31 +1014,51 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
 
   function handleOpenProfile(userId) {
     router.push(`/profile/${userId}`);
-  }
-
-  return (
+  }return (
     <div style={{ position: "relative", width: "100%", height: "100%", background: "#000" }}>
       <div
-        className="flex items-center justify-between px-4"
         style={{
-          position: "absolute", top: 0, left: 0, right: 0, zIndex: 10, height: 56,
+          position: "absolute", top: 0, left: 0, right: 0, zIndex: 10,
           background: "linear-gradient(to bottom, rgba(0,0,0,0.55), rgba(0,0,0,0))",
         }}
       >
-        <Link href="/profile" aria-label="My Profile" style={{ background: "none", border: "none", color: "white" }}>
-          <UserIcon size={22} />
-        </Link>
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => setMuted((m) => !m)}
-            aria-label={muted ? "Unmute" : "Mute"}
-            style={{ background: "none", border: "none", color: "white" }}
-          >
-            {muted ? <VolumeX size={22} /> : <Volume2 size={22} />}
-          </button>
-          <button aria-label="Search" style={{ background: "none", border: "none", color: "white" }}>
-            <Search size={22} />
-          </button>
+        <div className="flex items-center justify-between px-4" style={{ height: 56 }}>
+          <Link href="/profile" aria-label="My Profile" style={{ background: "none", border: "none", color: "white" }}>
+            <UserIcon size={22} />
+          </Link>
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setMuted((m) => !m)}
+              aria-label={muted ? "Unmute" : "Mute"}
+              style={{ background: "none", border: "none", color: "white" }}
+            >
+              {muted ? <VolumeX size={22} /> : <Volume2 size={22} />}
+            </button>
+            <button aria-label="Search" style={{ background: "none", border: "none", color: "white" }}>
+              <Search size={22} />
+            </button>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-center gap-5 pb-2">
+          {[
+            { id: "school", label: "School" },
+            { id: "following", label: "Following" },
+            { id: "for-you", label: "For You" },
+          ].map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setActiveTab(t.id)}
+              style={{
+                background: "none", border: "none", padding: "4px 0",
+                fontSize: 14, fontWeight: activeTab === t.id ? 700 : 500,
+                color: activeTab === t.id ? "white" : "rgba(255,255,255,0.6)",
+                borderBottom: activeTab === t.id ? "2px solid white" : "2px solid transparent",
+              }}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
       </div>
 
