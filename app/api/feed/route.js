@@ -9,12 +9,9 @@ export async function GET(req) {
 
   const { searchParams } = new URL(req.url);
   const cursor = searchParams.get("cursor");
-  const tab = searchParams.get("tab") === "following" ? "following" : "for-you";
+  const rawTab = searchParams.get("tab");
+  const tab = ["school", "following"].includes(rawTab) ? rawTab : "for-you";
 
-  // Build the author filter for the active tab. "Following" shows posts
-  // from friends + followed accounts (plus your own). "For You" shows
-  // everyone else, PLUS your own posts — your own content should never
-  // disappear from your main feed regardless of which tab is active.
   const friendships = await prisma.friendship.findMany({
     where: { OR: [{ userAId: user.id }, { userBId: user.id }] },
   });
@@ -28,10 +25,19 @@ export async function GET(req) {
 
   const knownIds = [...new Set([user.id, ...friendIds, ...followingIds])];
   const excludeIds = knownIds.filter((id) => id !== user.id);
-  const authorFilter =
-    tab === "following"
-      ? { authorId: { in: knownIds } }
-      : { OR: [{ authorId: user.id }, { authorId: { notIn: excludeIds } }] };
+
+  let authorFilter;
+  if (tab === "following") {
+    authorFilter = { authorId: { in: knownIds } };
+  } else if (tab === "school") {
+    // Only meaningful if the viewer has set a school; otherwise nobody
+    // matches and the tab just shows empty rather than erroring.
+    authorFilter = user.school
+      ? { author: { school: user.school } }
+      : { authorId: { in: [] } };
+  } else {
+    authorFilter = { OR: [{ authorId: user.id }, { authorId: { notIn: excludeIds } }] };
+  }
 
   const posts = await prisma.feedPost.findMany({
     take: 10,
@@ -39,14 +45,12 @@ export async function GET(req) {
     ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
     orderBy: { createdAt: "desc" },
     include: {
-      author: { select: { id: true, username: true, displayName: true, avatarDataUrl: true, allowDownloads: true } },
+      author: { select: { id: true, username: true, displayName: true, avatarDataUrl: true, allowDownloads: true, school: true } },
       _count: { select: { comments: true } },
       saves: { where: { userId: user.id }, select: { id: true } },
     },
   });
 
-  // Batch-check which of these authors the current user already follows,
-  // instead of one query per post.
   const authorIds = [...new Set(posts.map((p) => p.authorId))];
   const authorFollows = await prisma.follow.findMany({
     where: { followerId: user.id, followingId: { in: authorIds } },
@@ -66,14 +70,13 @@ export async function GET(req) {
     likedByMe: p.likedBy.includes(user.id),
     commentCount: p._count.comments,
     savedByMe: p.saves.length > 0,
-    // Following yourself isn't a thing — the button is hidden for your
-    // own posts in the UI, but this keeps the API response consistent.
     followedByMe: p.authorId === user.id ? true : followedIds.has(p.authorId),
   }));
 
   return NextResponse.json({
     posts: shaped,
     tab,
+    viewerSchool: user.school || null,
     nextCursor: posts.length === 10 ? posts[posts.length - 1].id : null,
   });
 }
@@ -99,7 +102,7 @@ export async function POST(req) {
       tags,
     },
     include: {
-      author: { select: { id: true, username: true, displayName: true, avatarDataUrl: true, allowDownloads: true } },
+      author: { select: { id: true, username: true, displayName: true, avatarDataUrl: true, allowDownloads: true, school: true } },
     },
   });
 
