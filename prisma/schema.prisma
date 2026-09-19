@@ -977,3 +977,68 @@ model MemberRestriction {
 
   @@unique([communityId, userId])
 }
+// ─────────────────────────────────────────────
+// ACTIVE — Community admin tools (Audit Log, AutoMod, Webhooks, Integrations, Widget)
+// ─────────────────────────────────────────────
+
+model AuditLogEntry {
+  id          String   @id @default(uuid())
+  communityId String
+  actorId     String
+  action      String
+  targetType  String?
+  targetId    String?
+  summary     String   @db.Text
+  createdAt   DateTime @default(now())
+
+  @@index([communityId, createdAt])
+}
+
+model AutoModRule {
+  id          String   @id @default(uuid())
+  communityId String
+  name        String
+  type        String
+  config      Json     @default("{}")
+  action      String   @default("block")
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  @@index([communityId])
+}
+
+model CommunityWebhook {
+  id          String   @id @default(uuid())
+  communityId String
+  channelId   String
+  name        String
+  token       String   @unique
+  createdById String
+  createdAt   DateTime @default(now())
+
+  @@index([communityId])
+}
+
+model CommunityIntegration {
+  id          String   @id @default(uuid())
+  communityId String
+  provider    String
+  label       String
+  url         String   @db.Text
+  channelId   String?
+  enabled     Boolean  @default(true)
+  createdById String
+  createdAt   DateTime @default(now())
+
+  @@index([communityId])
+}
+
+model CommunityWidget {
+  id          String   @id @default(uuid())
+  communityId String   @unique
+  enabled     Boolean  @default(false)
+  theme       String   @default("dark")
+  showMembers Boolean  @default(true)
+  inviteCode  String?
+  updatedAt   DateTime @updatedAt
+}
