@@ -8,6 +8,58 @@ export async function GET(req) {
   if (!user) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
+
+  // ── Search mode: /api/feed?q=... ──────────────────────────────
+  const q = (searchParams.get("q") || "").trim();
+  if (q) {
+    const isHashtag = q.startsWith("#");
+    const isMention = q.startsWith("@");
+    const term = q.replace(/^[@#]+/, "").trim().slice(0, 60);
+    if (!term) return NextResponse.json({ users: [], posts: [] });
+    const lower = term.toLowerCase();
+
+    const users = isHashtag
+      ? []
+      : await prisma.user.findMany({
+          where: {
+            verified: true,
+            isGuest: false,
+            OR: [
+              { username: { contains: term, mode: "insensitive" } },
+              { displayName: { contains: term, mode: "insensitive" } },
+            ],
+          },
+          take: 10,
+          select: { id: true, username: true, displayName: true, avatarDataUrl: true },
+        });
+
+    const posts = isMention
+      ? []
+      : await prisma.feedPost.findMany({
+          where: {
+            isPrivate: false,
+            isDraft: false,
+            OR: [
+              { caption: { contains: term, mode: "insensitive" } },
+              { tags: { hasSome: [lower, "#" + lower] } },
+            ],
+          },
+          orderBy: { createdAt: "desc" },
+          take: 9,
+          select: {
+            id: true,
+            caption: true,
+            mediaUrl: true,
+            mediaType: true,
+            createdAt: true,
+            author: { select: { id: true, username: true, displayName: true, avatarDataUrl: true } },
+          },
+        });
+
+    return NextResponse.json({ users, posts });
+  }
+
+  // ── Normal feed ───────────────────────────────────────────────
   const cursor = searchParams.get("cursor");
   const rawTab = searchParams.get("tab");
   const tab = ["school", "following"].includes(rawTab) ? rawTab : "for-you";
