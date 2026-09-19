@@ -22,22 +22,18 @@ function Avatar({ user, size = 84 }) {
 export default function ProfileClient({ profileId }) {
   const [data, setData] = useState(null);
   const [tab, setTab] = useState("posts");
-  const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [followLoading, setFollowLoading] = useState(false);
 
-  const load = useCallback(async (activeTab) => {
+  const load = useCallback(async () => {
     setLoading(true);
-    const res = await fetch(`/api/users/${profileId}?tab=${activeTab}`);
+    const res = await fetch(`/api/users/${profileId}`);
     const json = await res.json();
-    if (res.ok) {
-      setData(json);
-      setPosts(json.posts);
-    }
+    if (res.ok) setData(json);
     setLoading(false);
   }, [profileId]);
 
-  useEffect(() => { load(tab); }, [load, tab]);
+  useEffect(() => { load(); }, [load]);
 
   async function handleFollow() {
     if (!data) return;
@@ -48,8 +44,8 @@ export default function ProfileClient({ profileId }) {
     if (res.ok) {
       setData((d) => ({
         ...d,
-        isFollowing: json.following,
-        stats: { ...d.stats, followerCount: d.stats.followerCount + (json.following ? 1 : -1) },
+        isFollowedByMe: json.following,
+        followerCount: d.followerCount + (json.following ? 1 : -1),
       }));
     }
   }
@@ -59,10 +55,13 @@ export default function ProfileClient({ profileId }) {
   }
   if (!data) return null;
 
-  const { user, isOwner, isFollowing, stats } = data;
+  const { profile: user, isOwner, isFollowedByMe, followerCount, followingCount, likeCount, publicPosts, privatePosts } = data;
+
   const tabs = isOwner
-    ? [{ id: "posts", label: "Posts" }, { id: "private", label: "Private" }, { id: "favorites", label: "Favorites" }, { id: "liked", label: "Liked" }]
+    ? [{ id: "posts", label: "Posts" }, { id: "private", label: "Private" }]
     : [{ id: "posts", label: "Posts" }];
+
+  const posts = tab === "private" ? privatePosts : publicPosts;
 
   // TikTok-style: Display Name on top, @username (lowercase) underneath
   const displayName = user.displayName || user.username;
@@ -71,7 +70,7 @@ export default function ProfileClient({ profileId }) {
   return (
     <div className="px-4 pt-6 pb-16" style={{ maxWidth: 480, margin: "0 auto" }}>
       <div className="flex items-center justify-between mb-4">
-        {!isOwner ? <div style={{ width: 22 }} /> : <div style={{ width: 22 }} />}
+        <div style={{ width: 22 }} />
         <span className="text-xs" style={{ color: "var(--text-muted)" }} />
         <div className="flex items-center gap-3">
           <button aria-label="Share profile" style={{ background: "none", border: "none", color: "var(--text)" }}>
@@ -96,15 +95,15 @@ export default function ProfileClient({ profileId }) {
 
       <div className="flex items-center justify-center gap-8 mb-4">
         <div className="text-center">
-          <div className="text-base font-semibold">{stats.followingCount}</div>
+          <div className="text-base font-semibold">{followingCount}</div>
           <div className="text-xs" style={{ color: "var(--text-muted)" }}>Following</div>
         </div>
         <div className="text-center">
-          <div className="text-base font-semibold">{stats.followerCount}</div>
+          <div className="text-base font-semibold">{followerCount}</div>
           <div className="text-xs" style={{ color: "var(--text-muted)" }}>Followers</div>
         </div>
         <div className="text-center">
-          <div className="text-base font-semibold">{stats.likeCount}</div>
+          <div className="text-base font-semibold">{likeCount}</div>
           <div className="text-xs" style={{ color: "var(--text-muted)" }}>Likes</div>
         </div>
       </div>
@@ -121,9 +120,9 @@ export default function ProfileClient({ profileId }) {
             onClick={handleFollow}
             disabled={followLoading}
             className="btn-primary w-full"
-            style={isFollowing ? { background: "var(--surface-2)", color: "var(--text)" } : undefined}
+            style={isFollowedByMe ? { background: "var(--surface-2)", color: "var(--text)" } : undefined}
           >
-            {followLoading ? <Loader2 size={15} className="animate-spin" /> : isFollowing ? "Following" : "Follow"}
+            {followLoading ? <Loader2 size={15} className="animate-spin" /> : isFollowedByMe ? "Following" : "Follow"}
           </button>
         )}
       </div>
@@ -145,9 +144,7 @@ export default function ProfileClient({ profileId }) {
         ))}
       </div>
 
-      {loading ? (
-        <div className="flex justify-center py-8"><Loader2 size={18} className="animate-spin" /></div>
-      ) : posts.length === 0 ? (
+      {!posts || posts.length === 0 ? (
         <p className="text-sm text-center py-10" style={{ color: "var(--text-muted)" }}>Nothing here yet.</p>
       ) : (
         <div className="grid grid-cols-3 gap-1">
