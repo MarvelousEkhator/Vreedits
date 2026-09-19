@@ -101,13 +101,18 @@ async function getAudit(community) {
 
 async function getSafety(community) {
   const communityId = community.id;
-  const [reports, actions, joins] = await Promise.all([
+  const [reports, actions, joins, bans, restrictions] = await Promise.all([
     prisma.report.findMany({ where: { communityId }, orderBy: { createdAt: "desc" }, take: 50 }),
     prisma.moderationAction.findMany({ where: { communityId }, orderBy: { createdAt: "desc" }, take: 20 }),
     prisma.joinEvent.findMany({
       where: { communityId, flagged: true },
       orderBy: { createdAt: "desc" },
       take: 10,
+    }),
+    prisma.communityBan.findMany({ where: { communityId }, orderBy: { createdAt: "desc" } }),
+    prisma.memberRestriction.findMany({
+      where: { communityId, expiresAt: { gt: new Date() } },
+      orderBy: { expiresAt: "asc" },
     }),
   ]);
 
@@ -170,6 +175,20 @@ async function getSafety(community) {
       accountAgeDays: j.accountAgeDays,
       riskScore: j.riskScore,
       createdAt: j.createdAt,
+    })),
+    bans: bans.map((b) => ({
+      id: b.id,
+      userId: b.userId,
+      username: b.username,
+      reason: b.reason,
+      createdAt: b.createdAt,
+    })),
+    restrictions: restrictions.map((r) => ({
+      id: r.id,
+      userId: r.userId,
+      username: r.username,
+      reason: r.reason,
+      expiresAt: r.expiresAt,
     })),
   };
 }
@@ -439,7 +458,7 @@ export async function PATCH(request, { params }) {
   if (!FEATURES.includes(feature)) return bad("Unknown feature.", 404);
   const auth = await requireCommunityAdmin(id);
   if (auth.error) return auth.error;
-  const { userId } = auth;
+  const { userId, community } = auth;
   const body = await request.json().catch(() => ({}));
 
   try {
@@ -482,6 +501,106 @@ export async function PATCH(request, { params }) {
         });
         return NextResponse.json({ ok: true });
       }
+
+      // ── Ban a member ──
+      if (body.banUserId) {
+        const targetUserId = String(body.banUserId);
+        if (targetUserId === community.ownerId) return bad("You can't ban the community owner.");
+        const targetUser = await prisma.user.findUnique({ where: { id: targetUserId } });
+        if (!targetUser) return bad("User not found.", 404);
+        const reason = typeof body.reason === "string" ? body.reason.trim().slice(0, 300) || null : null;
+
+        await prisma.communityBan.upsert({
+          where: { communityId_userId: { communityId: id, userId: targetUserId } },
+          update: { reason, bannedById: userId },
+          create: { communityId: id, userId: targetUserId, username: targetUser.username, reason, bannedById: userId },
+        });
+
+        await prisma.community.update({
+          where: { id },
+          data: {
+            memberIds: community.memberIds.filter((m) => m !== targetUserId),
+            adminIds: community.adminIds.filter((m) => m !== targetUserId),
+          },
+        });
+
+        await prisma.moderationAction.create({
+          data: { communityId: id, moderatorId: userId, targetUserId, action: "ban", reason },
+        });
+        await logAudit({
+          communityId: id, actorId: userId, action: "member.ban",
+          targetType: "user", targetId: targetUserId,
+          summary: "Banned @" + targetUser.username + (reason ? ": " + reason : ""),
+        });
+        return NextResponse.json({ ok: true });
+      }
+
+      // ── Unban a member ──
+      if (body.unbanId) {
+        const ban = await prisma.communityBan.findFirst({ where: { id: String(body.unbanId), communityId: id } });
+        if (!ban) return bad("Ban not found.", 404);
+        await prisma.communityBan.delete({ where: { id: ban.id } });
+        await prisma.moderationAction.create({
+          data: { communityId: id, moderatorId: userId, targetUserId: ban.userId, action: "unban" },
+        });
+        await logAudit({
+          communityId: id, actorId: userId, action: "member.unban",
+          targetType: "user", targetId: ban.userId, summary: "Unbanned @" + ban.username,
+        });
+        return NextResponse.json({ ok: true });
+      }
+
+      // ── Timeout (temporarily restrict) a member ──
+      if (body.timeoutUserId) {
+        const targetUserId = String(body.timeoutUserId);
+        if (targetUserId === community.ownerId) return bad("You can't restrict the community owner.");
+        if (!community.memberIds.includes(targetUserId)) return bad("That user isn't a member.");
+        const minutes = parseInt(body.minutes, 10);
+        if (!Number.isFinite(minutes) || minutes < 1 || minutes > 43200) {
+          return bad("Pick a duration between 1 minute and 30 days.");
+        }
+        const targetUser = await prisma.user.findUnique({ where: { id: targetUserId } });
+        if (!targetUser) return bad("User not found.", 404);
+        const reason = typeof body.reason === "string" ? body.reason.trim().slice(0, 300) || null : null;
+        const expiresAt = new Date(Date.now() + minutes * 60000);
+
+        await prisma.memberRestriction.upsert({
+          where: { communityId_userId: { communityId: id, userId: targetUserId } },
+          update: { reason, expiresAt, restrictedById: userId },
+          create: {
+            communityId: id, userId: targetUserId, username: targetUser.username,
+            reason, expiresAt, restrictedById: userId,
+          },
+        });
+
+        await prisma.moderationAction.create({
+          data: { communityId: id, moderatorId: userId, targetUserId, action: "timeout", reason },
+        });
+        await logAudit({
+          communityId: id, actorId: userId, action: "member.timeout",
+          targetType: "user", targetId: targetUserId,
+          summary: "Timed out @" + targetUser.username + " for " + minutes + "m" + (reason ? ": " + reason : ""),
+        });
+        return NextResponse.json({ ok: true });
+      }
+
+      // ── Lift a restriction early ──
+      if (body.liftRestrictionId) {
+        const restriction = await prisma.memberRestriction.findFirst({
+          where: { id: String(body.liftRestrictionId), communityId: id },
+        });
+        if (!restriction) return bad("Restriction not found.", 404);
+        await prisma.memberRestriction.delete({ where: { id: restriction.id } });
+        await prisma.moderationAction.create({
+          data: { communityId: id, moderatorId: userId, targetUserId: restriction.userId, action: "timeout_removed" },
+        });
+        await logAudit({
+          communityId: id, actorId: userId, action: "member.timeout_removed",
+          targetType: "user", targetId: restriction.userId, summary: "Removed timeout for @" + restriction.username,
+        });
+        return NextResponse.json({ ok: true });
+      }
+
       return bad("Nothing to update.");
     }
 
