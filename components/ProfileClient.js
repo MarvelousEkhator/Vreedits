@@ -63,11 +63,14 @@ export default function ProfileClient({ profileId }) {
 
   const posts = tab === "private" ? privatePosts : publicPosts;
 
+  // Display Name (e.g. "Marvy")
   const displayName = user.displayName || user.username;
+  // Username strictly in lowercase (e.g. "elenahenry")
   const handle = (user.username || "").toLowerCase();
 
   return (
     <div className="pt-6 pb-16" style={{ maxWidth: 480, margin: "0 auto" }}>
+      {/* Top Header Controls */}
       <div className="flex items-center justify-between mb-4 px-4">
         <div style={{ width: 22 }} />
         <span className="text-xs" style={{ color: "var(--text-muted)" }} />
@@ -83,7 +86,7 @@ export default function ProfileClient({ profileId }) {
         </div>
       </div>
 
-      {/* Profile Header Stack */}
+      {/* Centered Profile Avatar + Name Stack */}
       <div className="flex flex-col items-center text-center mb-5 px-4">
         <Avatar user={user} />
         
@@ -94,13 +97,14 @@ export default function ProfileClient({ profileId }) {
           </h1>
           {isOwner && <ChevronDown size={18} style={{ color: "var(--text-muted)", marginTop: 2 }} />}
         </div>
-        
-        {/* Muted Username (@elenahenry) */}
-        <span className="text-sm font-medium mt-0.5" style={{ color: "var(--text-muted)" }}>
+
+        {/* Small Muted Lowercase Handle (@elenahenry) */}
+        <span className="text-sm font-normal mt-0.5" style={{ color: "var(--text-muted)" }}>
           @{handle}
         </span>
       </div>
 
+      {/* Stats Section */}
       <div className="flex items-center justify-center gap-8 mb-5 px-4">
         <div className="text-center flex flex-col items-center">
           <div className="text-lg font-bold">{followingCount}</div>
@@ -122,6 +126,7 @@ export default function ProfileClient({ profileId }) {
         </p>
       )}
 
+      {/* Separate Edit Profile / Follow Button Row */}
       <div className="mb-6 px-4 flex justify-center">
         {isOwner ? (
           <Link href="/profile/edit" className="btn-primary block text-center" style={{ padding: "10px 0", width: "100%", maxWidth: 160, background: "var(--surface-2)", color: "var(--text)" }}>
@@ -143,6 +148,7 @@ export default function ProfileClient({ profileId }) {
         )}
       </div>
 
+      {/* Profile Tabs */}
       <div className="flex items-center w-full mb-1" style={{ borderBottom: "1px solid var(--border)" }}>
         {tabs.map((t) => (
           <button
@@ -160,6 +166,7 @@ export default function ProfileClient({ profileId }) {
         ))}
       </div>
 
+      {/* Grid Display */}
       {!posts || posts.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16">
           <p className="text-sm font-medium" style={{ color: "var(--text-muted)" }}>Nothing here yet.</p>
