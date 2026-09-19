@@ -6,7 +6,7 @@ import {
   UserPlus, Link2, X as XIcon, Hash, Plus, Settings, ChevronLeft, ChevronDown,
   ChevronRight, Image as ImageIcon, Shield, ShieldOff, Calendar, ZoomIn, Tag,
   SlidersHorizontal, Flag, Pencil, Reply, CornerUpRight, Copy, BookOpen,
-  HelpCircle, ExternalLink,
+  HelpCircle, ExternalLink, Smile, Sticker,
 } from "lucide-react";
 
 function relativeTime(dateStr) {
@@ -623,6 +623,17 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
   const [savingGuide, setSavingGuide] = useState(false);
   const [guideSaveStatus, setGuideSaveStatus] = useState("");
 
+  // ── Emojis & Stickers (loaded with the rest of the community; used by both settings and the composer picker) ──
+  const [emojis, setEmojis] = useState([]);
+  const [emojisLoading, setEmojisLoading] = useState(false);
+  const emojiFileInputRef = useRef(null);
+  const [newEmojiName, setNewEmojiName] = useState("");
+  const [newEmojiType, setNewEmojiType] = useState("emoji");
+  const [newEmojiImage, setNewEmojiImage] = useState(null);
+  const [creatingEmoji, setCreatingEmoji] = useState(false);
+  const [emojiError, setEmojiError] = useState("");
+  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
+
   const canManage = community && (community.isOwner || community.isAdmin);
 
   const load = useCallback(async () => {
@@ -791,7 +802,20 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
     }
   }, [communityId]);
 
+  const loadEmojis = useCallback(async () => {
+    setEmojisLoading(true);
+    try {
+      const res = await fetch(`/api/communities/${communityId}/emojis`);
+      const data = await res.json();
+      if (res.ok) setEmojis(data.emojis || []);
+    } catch (err) {
+    } finally {
+      setEmojisLoading(false);
+    }
+  }, [communityId]);
+
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { loadEmojis(); }, [loadEmojis]);
   useEffect(() => { if (activeChannelId) loadPosts(activeChannelId); }, [activeChannelId, loadPosts]);
   useEffect(() => { if (view === "events") loadEvents(); }, [view, loadEvents]);
   useEffect(() => { if (view === "guide") loadGuide(); }, [view, loadGuide]);
@@ -1441,6 +1465,65 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
     if (data.guide) setGuideData(data.guide);
   }
 
+  // ── Emojis & Stickers ──
+  function pickEmojiFile() {
+    emojiFileInputRef.current?.click();
+  }
+
+  function handleEmojiFileChange(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (file.size > 1024 * 1024) {
+      setEmojiError("Image must be under 1MB.");
+      return;
+    }
+    setEmojiError("");
+    const reader = new FileReader();
+    reader.onload = () => setNewEmojiImage(reader.result);
+    reader.readAsDataURL(file);
+  }
+
+  async function handleCreateEmoji(e) {
+    e.preventDefault();
+    const name = newEmojiName.trim().toLowerCase().replace(/[^a-z0-9_]/g, "");
+    if (!name) {
+      setEmojiError("Give it a name using only letters, numbers, and underscores.");
+      return;
+    }
+    if (!newEmojiImage) {
+      setEmojiError("Choose an image to upload.");
+      return;
+    }
+    setEmojiError("");
+    setCreatingEmoji(true);
+    const res = await fetch(`/api/communities/${communityId}/emojis`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, type: newEmojiType, imageDataUrl: newEmojiImage }),
+    });
+    const data = await res.json();
+    setCreatingEmoji(false);
+    if (!res.ok) {
+      setEmojiError(data.error || "Could not upload.");
+      return;
+    }
+    setEmojis((prev) => [...prev, data.emoji]);
+    setNewEmojiName("");
+    setNewEmojiImage(null);
+  }
+
+  async function handleDeleteEmoji(emoji) {
+    if (!window.confirm(`Delete "${emoji.name}"?`)) return;
+    await fetch(`/api/communities/${communityId}/emojis/${emoji.id}`, { method: "DELETE" });
+    setEmojis((prev) => prev.filter((e) => e.id !== emoji.id));
+  }
+
+  function insertEmojiShortcode(emoji) {
+    setNewPost((prev) => `${prev}${prev && !prev.endsWith(" ") ? " " : ""}:${emoji.name}:`);
+    setEmojiPickerOpen(false);
+  }
+
   if (loading) {
     return (
       <div className="flex justify-center py-10" style={{ color: "var(--text-muted)" }}>
@@ -1544,7 +1627,6 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
               {settingsPage ? SETTINGS_TITLES[settingsPage] : "Community Settings"}
             </h1>
           </div>
-
           <div className="p-4" style={{ flex: 1 }}>
             {!settingsPage && (
               <SettingsSidebar settingsPage={settingsPage || ""} setSettingsPage={setSettingsPage} isOwner={community.isOwner} />
@@ -2326,6 +2408,113 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
               </div>
             )}
 
+            {settingsPage === "emojis-stickers" && (
+              <div>
+                <input
+                  ref={emojiFileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleEmojiFileChange}
+                  style={{ display: "none" }}
+                />
+                <form onSubmit={handleCreateEmoji} className="card p-3 mb-4 space-y-2">
+                  {emojiError && <div className="text-xs" style={{ color: "var(--danger, #e55)" }}>{emojiError}</div>}
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={pickEmojiFile}
+                      style={{
+                        width: 52, height: 52, borderRadius: 12, flexShrink: 0,
+                        background: "var(--surface-2)", border: "1px dashed var(--border)",
+                        display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden",
+                      }}
+                      aria-label="Choose image"
+                    >
+                      {newEmojiImage ? (
+                        <img src={newEmojiImage} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      ) : (
+                        <Plus size={18} style={{ color: "var(--text-muted)" }} />
+                      )}
+                    </button>
+                    <div style={{ flex: 1 }}>
+                      <input
+                        className="input pl-3"
+                        style={{ padding: "8px 10px", fontSize: 13 }}
+                        placeholder="name (letters, numbers, underscores)"
+                        value={newEmojiName}
+                        onChange={(e) => setNewEmojiName(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <select
+                    className="input pl-3"
+                    style={{ padding: "8px 10px", fontSize: 13 }}
+                    value={newEmojiType}
+                    onChange={(e) => setNewEmojiType(e.target.value)}
+                  >
+                    <option value="emoji">Emoji</option>
+                    <option value="sticker">Sticker</option>
+                  </select>
+                  <button type="submit" className="btn-primary" disabled={creatingEmoji}>
+                    {creatingEmoji ? <Loader2 size={14} className="animate-spin" /> : <><Plus size={14} /> Upload</>}
+                  </button>
+                </form>
+
+
+                {emojisLoading ? (
+                  <div className="flex justify-center py-10" style={{ color: "var(--text-muted)" }}>
+                    <Loader2 size={22} className="animate-spin" />
+                  </div>
+                ) : (
+                  <>
+                    <h3 className="text-xs font-semibold mb-2" style={{ color: "var(--text-muted)" }}>
+                      Emojis ({emojis.filter((e) => e.type === "emoji").length})
+                    </h3>
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      {emojis.filter((e) => e.type === "emoji").map((e) => (
+                        <div key={e.id} className="card p-2 text-center" style={{ width: 76 }}>
+                          <img src={e.imageDataUrl} alt={e.name} style={{ width: 32, height: 32, objectFit: "cover", borderRadius: 6, margin: "0 auto" }} />
+                          <div className="text-xs mt-1" style={{ overflowWrap: "anywhere" }}>{e.name}</div>
+                          <button
+                            onClick={() => handleDeleteEmoji(e)}
+                            style={{ background: "none", border: "none", color: "var(--text-muted)" }}
+                            aria-label={`Delete ${e.name}`}
+                          >
+                            <XIcon size={12} />
+                          </button>
+                        </div>
+                      ))}
+                      {emojis.filter((e) => e.type === "emoji").length === 0 && (
+                        <p className="text-xs" style={{ color: "var(--text-muted)" }}>No custom emojis yet.</p>
+                      )}
+                    </div>
+
+                    <h3 className="text-xs font-semibold mb-2" style={{ color: "var(--text-muted)" }}>
+                      Stickers ({emojis.filter((e) => e.type === "sticker").length})
+                    </h3>
+                    <div className="flex flex-wrap gap-2">
+                      {emojis.filter((e) => e.type === "sticker").map((e) => (
+                        <div key={e.id} className="card p-2 text-center" style={{ width: 92 }}>
+                          <img src={e.imageDataUrl} alt={e.name} style={{ width: 64, height: 64, objectFit: "cover", borderRadius: 8, margin: "0 auto" }} />
+                          <div className="text-xs mt-1" style={{ overflowWrap: "anywhere" }}>{e.name}</div>
+                          <button
+                            onClick={() => handleDeleteEmoji(e)}
+                            style={{ background: "none", border: "none", color: "var(--text-muted)" }}
+                            aria-label={`Delete ${e.name}`}
+                          >
+                            <XIcon size={12} />
+                          </button>
+                        </div>
+                      ))}
+                      {emojis.filter((e) => e.type === "sticker").length === 0 && (
+                        <p className="text-xs" style={{ color: "var(--text-muted)" }}>No stickers yet.</p>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
             {settingsPage === "danger" && community.isOwner && (
               <div>
                 <p className="text-xs mb-3" style={{ color: "var(--text-muted)" }}>
@@ -2337,7 +2526,7 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
               </div>
             )}
 
-            {settingsPage && !["overview", "members", "invites", "channels", "roles", "danger", "threads", "rules", "onboarding", "community-guide"].includes(settingsPage) && (
+            {settingsPage && !["overview", "members", "invites", "channels", "roles", "danger", "threads", "rules", "onboarding", "community-guide", "emojis-stickers"].includes(settingsPage) && (
               <div className="card p-6 text-center space-y-2" style={{ background: "var(--surface-2)" }}>
                 <SlidersHorizontal size={24} className="mx-auto" style={{ color: "var(--text-muted)" }} />
                 <h3 className="text-sm font-semibold">{SETTINGS_TITLES[settingsPage]}</h3>
@@ -2994,7 +3183,50 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
                   </button>
                 </div>
               )}
+              {emojiPickerOpen && (
+                <div
+                  className="card p-2"
+                  style={{ position: "absolute", bottom: "100%", left: 12, marginBottom: 8, maxWidth: 260, maxHeight: 220, overflowY: "auto", zIndex: 5 }}
+                >
+                  {emojis.length === 0 ? (
+                    <p className="text-xs p-2" style={{ color: "var(--text-muted)" }}>
+                      No custom emojis or stickers yet.{canManage ? " Add some from Settings → Emojis & Stickers." : ""}
+                    </p>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5">
+                      {emojis.map((e) => (
+                        <button
+                          key={e.id}
+                          type="button"
+                          onClick={() => insertEmojiShortcode(e)}
+                          title={e.name}
+                          style={{ background: "none", border: "none", padding: 2, borderRadius: 6 }}
+                        >
+                          <img
+                            src={e.imageDataUrl}
+                            alt={e.name}
+                            style={{ width: e.type === "sticker" ? 40 : 24, height: e.type === "sticker" ? 40 : 24, objectFit: "cover", borderRadius: 4 }}
+                          />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEmojiPickerOpen((v) => !v)}
+                  aria-label="Emojis & Stickers"
+                  style={{
+                    width: 40, height: 40, borderRadius: "50%", flexShrink: 0,
+                    background: emojiPickerOpen ? "var(--accent-soft)" : "var(--surface-2)",
+                    color: emojiPickerOpen ? "var(--accent)" : "var(--text-muted)",
+                    border: "none", display: "flex", alignItems: "center", justifyContent: "center",
+                  }}
+                >
+                  <Smile size={18} />
+                </button>
                 <input
                   className="input pl-4"
                   style={{
