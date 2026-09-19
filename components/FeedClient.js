@@ -756,7 +756,7 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
       >
         <button
           onClick={(e) => { e.stopPropagation(); onOpenProfile(post.author.id); }}
-          aria-label={`View ${post.author.username}'s profile`}
+          aria-label={`View profile`}
           style={{ position: "relative", marginBottom: 4, background: "none", border: "none", padding: 0 }}
         >
           <Avatar user={post.author} size={44} />
@@ -764,7 +764,7 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
         {!isOwner && (
           <button
             onClick={(e) => { e.stopPropagation(); onFollow(post); }}
-            aria-label={post.followedByMe ? `Unfollow ${post.author.username}` : `Follow ${post.author.username}`}
+            aria-label={post.followedByMe ? "Unfollow" : "Follow"}
             style={{
               position: "relative", marginTop: -16, marginBottom: 4,
               width: 18, height: 18, borderRadius: "50%",
@@ -816,12 +816,21 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
           className="flex flex-col items-start mb-2"
           style={{ background: "none", border: "none", padding: 0, textAlign: "left" }}
         >
-          <span className="text-sm font-semibold" style={{ color: "white", lineHeight: 1.3 }}>
+          {/* Primary Display Name */}
+          <span className="text-base font-bold drop-shadow-md" style={{ color: "white", lineHeight: 1.2 }}>
             {post.author.displayName || post.author.username}
           </span>
+          
+          {/* Smaller @username Handle */}
+          {post.author.displayName && post.author.username && (
+            <span className="text-sm font-medium drop-shadow-md" style={{ color: "rgba(255, 255, 255, 0.85)", marginTop: 2 }}>
+              @{post.author.username.toLowerCase()}
+            </span>
+          )}
         </button>
+
         {post.caption && (
-          <p className="text-sm" style={{ color: "white", overflowWrap: "anywhere", lineHeight: 1.4 }}>
+          <p className="text-sm drop-shadow-md" style={{ color: "white", overflowWrap: "anywhere", lineHeight: 1.4, marginTop: 4 }}>
             {post.caption}
           </p>
         )}
