@@ -63,7 +63,6 @@ export default function ProfileClient({ profileId }) {
 
   const posts = tab === "private" ? privatePosts : publicPosts;
 
-  // TikTok-style: Display Name on top, @username (lowercase) underneath
   const displayName = user.displayName || user.username;
   const handle = (user.username || "").toLowerCase();
 
@@ -84,13 +83,22 @@ export default function ProfileClient({ profileId }) {
         </div>
       </div>
 
+      {/* Profile Header Stack */}
       <div className="flex flex-col items-center text-center mb-5 px-4">
         <Avatar user={user} />
+        
+        {/* Bold Display Name (Marvy) */}
         <div className="flex items-center gap-1 mt-3">
-          <h1 className="text-xl font-bold leading-tight">{displayName}</h1>
+          <h1 className="text-xl font-bold leading-tight">
+            {displayName}
+          </h1>
           {isOwner && <ChevronDown size={18} style={{ color: "var(--text-muted)", marginTop: 2 }} />}
         </div>
-        <span className="text-sm font-medium mt-0.5" style={{ color: "var(--text-muted)" }}>@{handle}</span>
+        
+        {/* Muted Username (@elenahenry) */}
+        <span className="text-sm font-medium mt-0.5" style={{ color: "var(--text-muted)" }}>
+          @{handle}
+        </span>
       </div>
 
       <div className="flex items-center justify-center gap-8 mb-5 px-4">
