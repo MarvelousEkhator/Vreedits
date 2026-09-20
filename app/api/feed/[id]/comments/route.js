@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/requireUser";
 
+const MAX_MENTIONS_PER_COMMENT = 10;
+
 function shapeComment(c, userId) {
   return {
     id: c.id,
@@ -11,6 +13,96 @@ function shapeComment(c, userId) {
     likeCount: c.likedBy.length,
     likedByMe: c.likedBy.includes(userId),
   };
+}
+
+// True if the two users are friends (Friendship rows can be stored in either order).
+async function areFriends(userIdA, userIdB) {
+  const friendship = await prisma.friendship.findFirst({
+    where: {
+      OR: [
+        { userAId: userIdA, userBId: userIdB },
+        { userAId: userIdB, userBId: userIdA },
+      ],
+    },
+    select: { id: true },
+  });
+  return !!friendship;
+}
+
+// True if either user has blocked the other.
+async function isBlockedEitherWay(userIdA, userIdB) {
+  const block = await prisma.block.findFirst({
+    where: {
+      OR: [
+        { blockerId: userIdA, blockedId: userIdB },
+        { blockerId: userIdB, blockedId: userIdA },
+      ],
+    },
+    select: { id: true },
+  });
+  return !!block;
+}
+
+// setting is "everyone" | "friends" | "none". ownerId is the person whose
+// setting it is, actorId is the person trying to interact with them.
+async function settingAllows(setting, ownerId, actorId) {
+  if (ownerId === actorId) return true;
+  if (setting === "none") return false;
+  if (setting === "friends") return areFriends(ownerId, actorId);
+  return true;
+}
+
+// Pulls unique @usernames out of comment text.
+function extractMentionedUsernames(text) {
+  const found = new Set();
+  const regex = /(^|[^a-zA-Z0-9_])@([a-zA-Z0-9_.]{1,30})/g;
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    const name = match[2].replace(/\.+$/, "");
+    if (name) found.add(name.toLowerCase());
+    if (found.size >= MAX_MENTIONS_PER_COMMENT) break;
+  }
+  return Array.from(found);
+}
+
+// Creates a notification for each mentioned user who allows it.
+// Never throws — a mention problem must not stop the comment from posting.
+async function notifyMentions({ content, commenter, postId }) {
+  try {
+    const usernames = extractMentionedUsernames(content);
+    if (usernames.length === 0) return;
+
+    const mentionedUsers = await prisma.user.findMany({
+      where: {
+        OR: usernames.map((name) => ({
+          username: { equals: name, mode: "insensitive" },
+        })),
+      },
+      select: { id: true, username: true, allowMentions: true },
+    });
+
+    const notifications = [];
+    for (const mentioned of mentionedUsers) {
+      if (mentioned.id === commenter.id) continue;
+      if (await isBlockedEitherWay(mentioned.id, commenter.id)) continue;
+      const allowed = await settingAllows(mentioned.allowMentions, mentioned.id, commenter.id);
+      if (!allowed) continue;
+
+      const preview = content.length > 100 ? content.slice(0, 100) + "…" : content;
+      notifications.push({
+        userId: mentioned.id,
+        category: "Mentions",
+        title: `${commenter.username} mentioned you in a comment`,
+        description: preview,
+      });
+    }
+
+    if (notifications.length > 0) {
+      await prisma.notification.createMany({ data: notifications });
+    }
+  } catch (err) {
+    console.error("Mention notification failed:", err);
+  }
 }
 
 export async function GET(req, { params }) {
@@ -52,18 +144,35 @@ export async function POST(req, { params }) {
   const post = await prisma.feedPost.findUnique({ where: { id: params.id } });
   if (!post) return NextResponse.json({ error: "Not found." }, { status: 404 });
 
-  // Enforce the post author's comment setting. The author can always
-  // comment on their own post.
+  // The post author can always comment on their own post. Everyone else
+  // is checked against the author's block list and comment setting.
   if (post.authorId !== user.id) {
+    const authorBlockedCommenter = await prisma.block.findFirst({
+      where: { blockerId: post.authorId, blockedId: user.id },
+      select: { id: true },
+    });
+    if (authorBlockedCommenter) {
+      return NextResponse.json(
+        { error: "You can't comment on this post." },
+        { status: 403 }
+      );
+    }
+
     const postAuthor = await prisma.user.findUnique({
       where: { id: post.authorId },
       select: { allowComments: true },
     });
-    if (postAuthor && postAuthor.allowComments === false) {
-      return NextResponse.json(
-        { error: "Comments are turned off for this post." },
-        { status: 403 }
-      );
+    const allowed = await settingAllows(
+      postAuthor?.allowComments || "everyone",
+      post.authorId,
+      user.id
+    );
+    if (!allowed) {
+      const message =
+        postAuthor?.allowComments === "friends"
+          ? "Only friends can comment on this post."
+          : "Comments are turned off for this post.";
+      return NextResponse.json({ error: message }, { status: 403 });
     }
   }
 
@@ -80,9 +189,17 @@ export async function POST(req, { params }) {
     }
   }
 
+  const trimmed = content.trim();
+
   const comment = await prisma.feedComment.create({
-    data: { postId: params.id, authorId: user.id, content: content.trim(), parentId: parentId || null },
+    data: { postId: params.id, authorId: user.id, content: trimmed, parentId: parentId || null },
     include: { author: { select: { id: true, username: true, avatarDataUrl: true } } },
+  });
+
+  await notifyMentions({
+    content: trimmed,
+    commenter: { id: user.id, username: comment.author.username },
+    postId: params.id,
   });
 
   return NextResponse.json({
