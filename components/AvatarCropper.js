@@ -1,6 +1,6 @@
 "use client";
 import { useRef, useState, useEffect, useCallback } from "react";
-import { Check, X } from "lucide-react";
+import { Check, X, ImageOff, Loader2 } from "lucide-react";
 
 const PREVIEW_SIZE = 280;
 const OUTPUT_SIZE = 480;
@@ -8,14 +8,39 @@ const OUTPUT_SIZE = 480;
 export default function AvatarCropper({ imageSrc, onCancel, onSave }) {
   const imgRef = useRef(null);
   const [naturalSize, setNaturalSize] = useState(null);
+  const [loadError, setLoadError] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const dragState = useRef(null);
 
   useEffect(() => {
+    setNaturalSize(null);
+    setLoadError(false);
+    setZoom(1);
+    setOffset({ x: 0, y: 0 });
+
+    if (!imageSrc || typeof imageSrc !== "string" || !imageSrc.startsWith("data:image/")) {
+      // If this ever fires, whatever called AvatarCropper handed it something
+      // that isn't actual image data (e.g. the wrong variable, an empty
+      // string, a non-image data URL). Surfacing it here — rather than
+      // silently trying to render it — is what makes a bad caller visible.
+      console.warn("AvatarCropper received a non-image imageSrc:", imageSrc);
+      setLoadError(true);
+      return;
+    }
+
+    let cancelled = false;
     const img = new Image();
-    img.onload = () => setNaturalSize({ w: img.naturalWidth, h: img.naturalHeight });
+    img.onload = () => {
+      if (!cancelled) setNaturalSize({ w: img.naturalWidth, h: img.naturalHeight });
+    };
+    img.onerror = () => {
+      if (!cancelled) setLoadError(true);
+    };
     img.src = imageSrc;
+    return () => {
+      cancelled = true;
+    };
   }, [imageSrc]);
 
   const baseScale = naturalSize
@@ -24,6 +49,7 @@ export default function AvatarCropper({ imageSrc, onCancel, onSave }) {
   const effectiveScale = baseScale * zoom;
 
   function handlePointerDown(e) {
+    if (!naturalSize) return;
     dragState.current = { startX: e.clientX, startY: e.clientY, origin: { ...offset } };
     e.currentTarget.setPointerCapture(e.pointerId);
   }
@@ -38,7 +64,7 @@ export default function AvatarCropper({ imageSrc, onCancel, onSave }) {
   }
 
   const handleSave = useCallback(() => {
-    if (!naturalSize) return;
+    if (!naturalSize || loadError) return;
     const canvas = document.createElement("canvas");
     canvas.width = OUTPUT_SIZE;
     canvas.height = OUTPUT_SIZE;
@@ -61,7 +87,9 @@ export default function AvatarCropper({ imageSrc, onCancel, onSave }) {
 
     const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
     onSave(dataUrl);
-  }, [naturalSize, offset, effectiveScale, onSave]);
+  }, [naturalSize, loadError, offset, effectiveScale, onSave]);
+
+  const ready = !!naturalSize && !loadError;
 
   return (
     <div
@@ -75,7 +103,7 @@ export default function AvatarCropper({ imageSrc, onCancel, onSave }) {
           <h2 className="text-base font-semibold" style={{ fontFamily: "var(--font-display)" }}>
             Drag to reposition
           </h2>
-          <button onClick={onCancel} style={{ color: "var(--text-muted)" }} aria-label="Cancel">
+          <button onClick={onCancel} style={{ color: "var(--text-muted)", background: "none", border: "none" }} aria-label="Cancel">
             <X size={18} />
           </button>
         </div>
@@ -89,10 +117,22 @@ export default function AvatarCropper({ imageSrc, onCancel, onSave }) {
             width: PREVIEW_SIZE, height: PREVIEW_SIZE, borderRadius: "50%",
             overflow: "hidden", margin: "0 auto 20px", position: "relative",
             background: "var(--surface-2)", border: "1px solid var(--border)",
-            cursor: "grab", touchAction: "none",
+            cursor: ready ? "grab" : "default", touchAction: "none",
+            display: "flex", alignItems: "center", justifyContent: "center",
           }}
         >
-          {naturalSize && (
+          {loadError && (
+            <div className="flex flex-col items-center gap-2" style={{ color: "var(--text-muted)" }}>
+              <ImageOff size={28} />
+              <span className="text-xs" style={{ maxWidth: 180, textAlign: "center" }}>
+                Couldn't load that image. Try picking it again.
+              </span>
+            </div>
+          )}
+          {!loadError && !naturalSize && (
+            <Loader2 size={24} className="animate-spin" style={{ color: "var(--text-muted)" }} />
+          )}
+          {ready && (
             <img
               ref={imgRef}
               src={imageSrc}
@@ -112,7 +152,8 @@ export default function AvatarCropper({ imageSrc, onCancel, onSave }) {
         <input
           type="range" min="1" max="3" step="0.01" value={zoom}
           onChange={(e) => setZoom(parseFloat(e.target.value))}
-          style={{ width: "100%", marginBottom: 20 }}
+          disabled={!ready}
+          style={{ width: "100%", marginBottom: 20, opacity: ready ? 1 : 0.5 }}
           aria-label="Zoom"
         />
 
@@ -120,7 +161,7 @@ export default function AvatarCropper({ imageSrc, onCancel, onSave }) {
           <button onClick={onCancel} className="btn-primary" style={{ background: "var(--surface-2)", color: "var(--text)" }}>
             Cancel
           </button>
-          <button onClick={handleSave} className="btn-primary">
+          <button onClick={handleSave} className="btn-primary" disabled={!ready}>
             <Check size={15} /> Save
           </button>
         </div>
