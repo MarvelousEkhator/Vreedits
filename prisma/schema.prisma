@@ -22,13 +22,12 @@ model User {
   country       String?
   school        String?
   language      String   @default("English")
-  isPublic      Boolean  
-allowComments   String  @default("everyone") // "everyone" | "friends" | "none"
+  isPublic      Boolean  @default(true)
+  allowComments   String  @default("everyone") // "everyone" | "friends" | "none"
   allowMentions   String  @default("everyone") // "everyone" | "friends" | "none"
   shareProfileLinks Boolean @default(true)
   hideFollowing   Boolean @default(false)
   hideLikedVideos Boolean @default(false)
-@default(true)
   isGuest       Boolean  @default(false)
   verificationCode    String?
   verificationExpires DateTime?
@@ -55,12 +54,11 @@ allowComments   String  @default("everyone") // "everyone" | "friends" | "none"
   folders        Folder[]
   studySessions  StudySession[]
   feedPosts      FeedPost[]
- viewedBy         String[] @default([])
   feedComments   FeedComment[]
   feedSaves      FeedSave[]
- blockedUsers   Block[] @relation("Blocker")
+  blockedUsers   Block[] @relation("Blocker")
   blockedByUsers Block[] @relation("Blocked")
- followers Follow[] @relation("Followers")
+  followers Follow[] @relation("Followers")
   following Follow[] @relation("Following")
   hostedStudyRooms     StudyRoom[]        @relation("StudyRoomHost")
   studyRoomMemberships StudyRoomMember[]  @relation("StudyRoomMemberships")
@@ -356,9 +354,7 @@ model Notification {
   description String
   read        Boolean @default(false)
   createdAt DateTime @default(now())
-}
-
-model FlashcardDeck {
+}model FlashcardDeck {
   id     String @id @default(uuid())
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -415,7 +411,9 @@ model Folder {
   name String
   createdAt DateTime @default(now())
   notes     Note[]
-}model FeedPost {
+}
+
+model FeedPost {
   id       String @id @default(uuid())
   authorId String
   author   User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
@@ -427,6 +425,7 @@ model Folder {
   isDraft   Boolean @default(false)
   scheduledFor DateTime?
   likedBy   String[] @default([])
+  viewedBy  String[] @default([])
   tags      String[] @default([])
   // Sound: id of the ORIGINAL post whose audio this video uses (null = its own original sound)
   soundId   String?
@@ -644,8 +643,7 @@ model CodeRoom {
   code       String    @db.Text
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
-}
-// ─────────────────────────────────────────────
+}// ─────────────────────────────────────────────
 // FUTURE CHAT SYSTEM (Message-based) — not wired up yet, for later migration
 // ─────────────────────────────────────────────
 
@@ -880,9 +878,7 @@ model CommunityGuide {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-}
-
-// ─────────────────────────────────────────────
+}// ─────────────────────────────────────────────
 // ACTIVE — Community admin tools (Audit Log, AutoMod, Emojis, Webhooks, Integrations, Widget)
 // ─────────────────────────────────────────────
 
@@ -997,6 +993,7 @@ model StudySession {
   note    String?
   createdAt DateTime @default(now())
 }
+
 model AnalyticsEvent {
   id        Int      @id @default(autoincrement())
   ts        DateTime @default(now()) @db.Timestamptz(6)
@@ -1014,6 +1011,7 @@ model AnalyticsEvent {
   @@index([sessionId])
   @@map("analytics_events")
 }
+
 model Block {
   id          String   @id @default(uuid())
   blockerId   String
