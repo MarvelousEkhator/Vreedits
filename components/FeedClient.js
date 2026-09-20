@@ -1683,9 +1683,27 @@ export default function FeedClient({ user }) {
   const [soundTarget, setSoundTarget] = useState(null);
   const overlayPausedRef = useRef([]);
   const overlayDepthRef = useRef(0);
+  const hasInteractedRef = useRef(false);
   const scrollRef = useRef(null);
   const videoRefsMap = useRef(new Map());
   const observerRef = useRef(null);
+
+  // Browsers only allow sound after a touch, so the first tap anywhere
+  // in the feed turns the sound on automatically.
+  function handleFirstTouch(e) {
+    if (hasInteractedRef.current) return;
+    if (e.target.closest && e.target.closest('[aria-label="Unmute"],[aria-label="Mute"]')) return;
+    hasInteractedRef.current = true;
+    setMuted(false);
+  }
+
+  function handleExit() {
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back();
+    } else {
+      router.push("/");
+    }
+  }
 
   function handleLongPress(post) {
     const video = videoRefsMap.current.get(post.id);
@@ -1927,7 +1945,10 @@ export default function FeedClient({ user }) {
   }
 
   return (
-    <div style={{ position: "relative", width: "100%", height: "100%", background: "#000" }}>
+    <div
+      onPointerUpCapture={handleFirstTouch}
+      style={{ position: "relative", width: "100%", height: "100%", background: "#000" }}
+    >
       <div
         style={{
           position: "absolute", top: 0, left: 0, right: 0, zIndex: 10,
@@ -1937,7 +1958,7 @@ export default function FeedClient({ user }) {
         <div className="flex items-center justify-between px-4" style={{ height: 56 }}>
           <div className="flex items-center gap-3">
             <button
-              onClick={() => router.back()}
+              onClick={handleExit}
               aria-label="Exit feed"
               style={{ background: "none", border: "none", color: "white" }}
             >
