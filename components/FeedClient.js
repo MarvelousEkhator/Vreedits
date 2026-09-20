@@ -6,13 +6,24 @@ import {
   Heart, MessageCircle, Share2, Bookmark, RotateCw, Plus, X, Send,
   Loader2, Search, User as UserIcon, Download, Trash2, Music2,
   Volume2, VolumeX, Check, Play, Pause, Pin, Languages, Copy, ArrowLeft,
+  Star, Globe, Lock,
 } from "lucide-react";
 import CameraCapture from "@/components/CameraCapture";
+
+// Videos are stored inside the database, so keep uploads under this size
+// (about 45 million characters of base64, roughly 33 MB of video).
+const MAX_MEDIA_CHARS = 45_000_000;
+
+const SUGGESTED_TAGS = ["#fyp", "#viral", "#trending", "#foryou", "#vreedits", "#school"];
 
 function abbreviateCount(n) {
   if (n < 1000) return `${n}`;
   if (n < 1_000_000) return `${(n / 1000).toFixed(n % 1000 >= 100 ? 1 : 0)}K`;
   return `${(n / 1_000_000).toFixed(1)}M`;
+}
+
+function soundNameFor(author) {
+  return `original sound - ${(author?.username || "").toLowerCase()}`;
 }
 
 function Avatar({ user, size = 40 }) {
@@ -480,127 +491,6 @@ function PostActionsSheet({ post, open, isOwner, onClose, onDownload, onShare, o
       </div>
     </>
   );
-}
-
-function CreatePostModal({ open, onClose, onCreated }) {
-  const [caption, setCaption] = useState("");
-  const [media, setMedia] = useState(null);
-  const [cameraOpen, setCameraOpen] = useState(false);
-  const [posting, setPosting] = useState(false);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    if (open && !media) setCameraOpen(true);
-  }, [open, media]);
-
-  function handleCaptured(result) {
-    setMedia(result);
-    setCameraOpen(false);
-  }
-
-  function handleRetake() {
-    setMedia(null);
-    setCameraOpen(true);
-  }
-
-  async function handlePost() {
-    if (!caption.trim() && !media) {
-      setError("Add a caption or capture something first.");
-      return;
-    }
-    setPosting(true);
-    setError("");
-    const res = await fetch("/api/feed", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        caption,
-        mediaUrl: media?.mediaUrl || null,
-        mediaType: media?.mediaType || "image",
-      }),
-    });
-    const data = await res.json();
-    setPosting(false);
-    if (!res.ok) {
-      setError(data.error || "Could not post.");
-      return;
-    }
-    onCreated(data.post);
-    setCaption("");
-    setMedia(null);
-    onClose();
-  }
-
-  function handleClose() {
-    setCaption("");
-    setMedia(null);
-    setCameraOpen(false);
-    onClose();
-  }
-
-  if (!open) return null;
-
-  if (cameraOpen) {
-    return <CameraCapture onCapture={handleCaptured} onClose={handleClose} />;
-  }
-
-  return (
-    <div
-      style={{
-        position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 300,
-        display: "flex", alignItems: "flex-end", justifyContent: "center",
-      }}
-      onClick={handleClose}
-    >
-      <div
-        className="card p-4"
-        style={{ width: "100%", maxWidth: 480, borderRadius: "20px 20px 0 0" }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-base font-semibold">New Post</h2>
-          <button onClick={handleClose} aria-label="Close" style={{ color: "var(--text-muted)", background: "none", border: "none" }}>
-            <X size={18} />
-          </button>
-        </div>
-
-        {error && <div className="alert alert-error mb-2">{error}</div>}
-
-        {media && (
-          <div style={{ position: "relative", marginBottom: 12 }}>
-            {media.mediaType === "video" ? (
-              <video src={media.mediaUrl} controls style={{ width: "100%", borderRadius: 12, maxHeight: 300, objectFit: "cover" }} />
-            ) : (
-              <img src={media.mediaUrl} alt="" style={{ width: "100%", borderRadius: 12, maxHeight: 300, objectFit: "cover" }} />
-            )}
-            <button
-              onClick={handleRetake}
-              aria-label="Retake"
-              style={{
-                position: "absolute", top: 8, right: 8, background: "rgba(0,0,0,0.6)",
-                color: "white", borderRadius: 20, padding: "6px 12px", border: "none",
-                display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600,
-              }}
-            >
-              Retake
-            </button>
-          </div>
-        )}
-
-        <textarea
-          className="input pl-3 mb-3"
-          style={{ minHeight: 80, resize: "vertical", paddingTop: 10 }}
-          placeholder="What's on your mind?"
-          value={caption}
-          onChange={(e) => setCaption(e.target.value)}
-        />
-
-        <button className="btn-primary" onClick={handlePost} disabled={posting}>
-          {posting ? <Loader2 size={15} className="animate-spin" /> : "Post"}
-        </button>
-      </div>
-    </div>
-  );
 }function SoundMarquee({ text }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6, maxWidth: "100%" }}>
@@ -618,39 +508,93 @@ function CreatePostModal({ open, onClose, onCreated }) {
   );
 }
 
-function SoundSheet({ post, onClose, onOpenProfile }) {
-  const videoRef = useRef(null);
+function SoundSheet({ soundId, onClose, onOpenProfile, onUseSound }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [favorited, setFavorited] = useState(false);
+  const [favBusy, setFavBusy] = useState(false);
   const [playing, setPlaying] = useState(false);
+  const audioElRef = useRef(null);
 
-  useEffect(() => {
-    const v = videoRef.current;
-    if (!v) return;
-    const onPlay = () => setPlaying(true);
-    const onPause = () => setPlaying(false);
-    v.addEventListener("play", onPlay);
-    v.addEventListener("pause", onPause);
-    return () => {
-      v.removeEventListener("play", onPlay);
-      v.removeEventListener("pause", onPause);
-      v.pause();
-    };
+  const setAudioEl = useCallback((el) => {
+    if (el) audioElRef.current = el;
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+    fetch(`/api/feed?sound=${encodeURIComponent(soundId)}`)
+      .then(async (r) => {
+        const json = await r.json();
+        if (cancelled) return;
+        if (r.ok && json.sound) {
+          setData(json);
+          setFavorited(!!json.sound.favorited);
+        } else {
+          setError(json.error || "This sound isn't available.");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setError("Couldn't load this sound.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+      try { audioElRef.current?.pause(); } catch {}
+    };
+  }, [soundId]);
+
   function togglePlay() {
-    const v = videoRef.current;
+    const v = audioElRef.current;
     if (!v) return;
     if (v.paused) v.play().catch(() => {});
     else v.pause();
   }
 
-  const handle = (post.author.username || "").toLowerCase();
-  const name = post.author.displayName || post.author.username;
-  const soundName = `original sound - ${handle}`;
+  async function toggleFavorite() {
+    if (!data || favBusy) return;
+    const previous = favorited;
+    setFavBusy(true);
+    setFavorited(!previous);
+    try {
+      const res = await fetch("/api/feed", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "toggleFavoriteSound", soundId: data.sound.id }),
+      });
+      const json = await res.json();
+      if (res.ok) setFavorited(!!json.favorited);
+      else setFavorited(previous);
+    } catch {
+      setFavorited(previous);
+    }
+    setFavBusy(false);
+  }
+
+  function handleClose() {
+    try { audioElRef.current?.pause(); } catch {}
+    onClose();
+  }
+
+  function handleUse() {
+    if (!data) return;
+    try { audioElRef.current?.pause(); } catch {}
+    onUseSound({ id: data.sound.id, name: data.sound.name, mediaUrl: data.sound.mediaUrl });
+  }
+
+  const sound = data?.sound;
+  const posts = data?.posts || [];
+  const handle = (sound?.author?.username || "").toLowerCase();
+  const authorName = sound?.author?.displayName || sound?.author?.username;
 
   return (
     <div
       style={{
-        position: "fixed", inset: 0, zIndex: 230,
+        position: "fixed", inset: 0, zIndex: 260,
         background: "var(--surface)", color: "var(--text)", overflowY: "auto",
       }}
     >
@@ -661,96 +605,230 @@ function SoundSheet({ post, onClose, onOpenProfile }) {
           position: "sticky", top: 0, background: "var(--surface)", zIndex: 1,
         }}
       >
-        <button onClick={onClose} aria-label="Back" style={{ background: "none", border: "none", color: "var(--text)" }}>
+        <button onClick={handleClose} aria-label="Back" style={{ background: "none", border: "none", color: "var(--text)" }}>
           <ArrowLeft size={22} />
         </button>
         <h2 className="text-sm font-semibold">Sound</h2>
       </div>
 
-      <div className="flex items-center gap-4 p-4">
-        <button
-          onClick={togglePlay}
-          aria-label={playing ? "Pause sound" : "Play sound"}
-          style={{
-            position: "relative", width: 110, height: 110, borderRadius: 16,
-            overflow: "hidden", border: "none", padding: 0, flexShrink: 0,
-            background: "var(--surface-2)",
-          }}
-        >
-          <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <Avatar user={post.author} size={88} />
-          </div>
-          <div
-            style={{
-              position: "absolute", inset: 0, display: "flex",
-              alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.3)",
-            }}
-          >
-            {playing ? (
-              <Pause size={30} color="white" fill="white" />
-            ) : (
-              <Play size={30} color="white" fill="white" style={{ marginLeft: 3 }} />
-            )}
-          </div>
-        </button>
-
-        <div style={{ minWidth: 0 }}>
-          <div className="text-base font-bold" style={{ overflowWrap: "anywhere" }}>{soundName}</div>
-          <button
-            onClick={() => onOpenProfile(post.author.id)}
-            className="text-sm"
-            style={{ background: "none", border: "none", padding: 0, color: "var(--text-muted)", textAlign: "left" }}
-          >
-            {name} · @{handle}
-          </button>
-          <div className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>1 video</div>
+      {loading && (
+        <div className="flex justify-center py-16" style={{ color: "var(--text-muted)" }}>
+          <Loader2 size={22} className="animate-spin" />
         </div>
-      </div>
+      )}
 
-      <div className="px-4 mb-5">
-        <button disabled className="btn-primary" style={{ opacity: 0.55, cursor: "not-allowed" }}>
-          Use this sound · coming soon
-        </button>
-      </div>
+      {!loading && error && (
+        <p className="text-sm text-center py-16 px-6" style={{ color: "var(--text-muted)" }}>{error}</p>
+      )}
 
-      <div className="px-4 pb-10">
-        <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--text-muted)" }}>
-          Videos with this sound
-        </h3>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 4 }}>
-          <button
-            onClick={togglePlay}
-            aria-label="Play video"
-            style={{
-              position: "relative", aspectRatio: "9/16", borderRadius: 8,
-              overflow: "hidden", background: "#000", border: "none", padding: 0,
-            }}
-          >
-            <video
-              ref={videoRef}
-              src={post.mediaUrl}
-              loop
-              playsInline
-              preload="metadata"
-              style={{ width: "100%", height: "100%", objectFit: "cover" }}
-            />
-          </button>
-        </div>
-      </div>
+      {!loading && sound && (
+        <>
+          <div className="flex items-center gap-4 p-4">
+            <button
+              onClick={togglePlay}
+              aria-label={playing ? "Pause sound" : "Play sound"}
+              style={{
+                position: "relative", width: 110, height: 110, borderRadius: 16,
+                overflow: "hidden", border: "none", padding: 0, flexShrink: 0,
+                background: "var(--surface-2)",
+              }}
+            >
+              <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <Avatar user={sound.author} size={88} />
+              </div>
+              <div
+                style={{
+                  position: "absolute", inset: 0, display: "flex",
+                  alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.3)",
+                }}
+              >
+                {playing ? (
+                  <Pause size={30} color="white" fill="white" />
+                ) : (
+                  <Play size={30} color="white" fill="white" style={{ marginLeft: 3 }} />
+                )}
+              </div>
+            </button>
+
+            <div style={{ minWidth: 0 }}>
+              <div className="text-base font-bold" style={{ overflowWrap: "anywhere" }}>{sound.name}</div>
+              <button
+                onClick={() => onOpenProfile(sound.author.id)}
+                className="text-sm"
+                style={{ background: "none", border: "none", padding: 0, color: "var(--text-muted)", textAlign: "left" }}
+              >
+                {authorName} · @{handle}
+              </button>
+              <div className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
+                {sound.count} {sound.count === 1 ? "video" : "videos"}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 px-4 mb-5">
+            <button className="btn-primary" onClick={handleUse} style={{ flex: 1 }}>
+              <Music2 size={15} /> Use this sound
+            </button>
+            <button
+              onClick={toggleFavorite}
+              disabled={favBusy}
+              aria-label={favorited ? "Remove from favorites" : "Add to favorites"}
+              className="flex items-center gap-1.5 text-sm font-semibold"
+              style={{
+                background: "var(--surface-2)", border: "1px solid var(--border)",
+                color: favorited ? "#ffc83d" : "var(--text)", borderRadius: 12,
+                padding: "0 14px", height: 44, flexShrink: 0,
+              }}
+            >
+              <Star size={17} fill={favorited ? "#ffc83d" : "none"} color={favorited ? "#ffc83d" : "currentColor"} />
+              {favorited ? "Favorited" : "Favorite"}
+            </button>
+          </div>
+
+          <div className="px-4 pb-10">
+            <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--text-muted)" }}>
+              Videos with this sound
+            </h3>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 4 }}>
+              {posts.map((p) => {
+                const src = p.isSource ? sound.mediaUrl : p.mediaUrl;
+                return (
+                  <div
+                    key={p.id}
+                    style={{
+                      position: "relative", aspectRatio: "9/16", borderRadius: 8,
+                      overflow: "hidden", background: "#000",
+                    }}
+                  >
+                    {src ? (
+                      p.mediaType === "video" ? (
+                        <video src={src} muted playsInline preload="metadata" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      ) : (
+                        <img src={src} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      )
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <video
+            ref={setAudioEl}
+            src={sound.mediaUrl}
+            loop
+            playsInline
+            preload="metadata"
+            onPlay={() => setPlaying(true)}
+            onPause={() => setPlaying(false)}
+            style={{ position: "absolute", width: 1, height: 1, opacity: 0, pointerEvents: "none" }}
+          />
+        </>
+      )}
     </div>
   );
 }
 
-function SearchOverlay({ onClose, onOpenProfile }) {
+function SoundPicker({ onSelect, onClose }) {
+  const [sounds, setSounds] = useState(null);
+  const [busyId, setBusyId] = useState(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    fetch("/api/feed?favoriteSounds=1")
+      .then((r) => r.json())
+      .then((d) => setSounds(d.sounds || []))
+      .catch(() => setSounds([]));
+  }, []);
+
+  async function choose(s) {
+    if (busyId) return;
+    setBusyId(s.id);
+    setError("");
+    try {
+      const res = await fetch(`/api/feed?sound=${encodeURIComponent(s.id)}`);
+      const json = await res.json();
+      if (res.ok && json.sound?.mediaUrl) {
+        onSelect({ id: json.sound.id, name: json.sound.name, mediaUrl: json.sound.mediaUrl });
+        return;
+      }
+      setError("That sound isn't available anymore.");
+    } catch {
+      setError("Couldn't load that sound.");
+    }
+    setBusyId(null);
+  }
+
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, zIndex: 520,
+        background: "var(--surface)", color: "var(--text)",
+        display: "flex", flexDirection: "column",
+      }}
+    >
+      <div
+        className="flex items-center gap-3 px-4"
+        style={{ height: 56, borderBottom: "1px solid var(--border)", flexShrink: 0 }}
+      >
+        <button onClick={onClose} aria-label="Back" style={{ background: "none", border: "none", color: "var(--text)" }}>
+          <ArrowLeft size={22} />
+        </button>
+        <h2 className="text-sm font-semibold">Favorite sounds</h2>
+      </div>
+
+      <div className="p-4" style={{ flex: 1, overflowY: "auto" }}>
+        {error && <div className="alert alert-error mb-3">{error}</div>}
+
+        {sounds === null && (
+          <div className="flex justify-center py-10" style={{ color: "var(--text-muted)" }}>
+            <Loader2 size={20} className="animate-spin" />
+          </div>
+        )}
+
+        {sounds && sounds.length === 0 && (
+          <p className="text-sm text-center py-10" style={{ color: "var(--text-muted)" }}>
+            No favorite sounds yet. Tap the sound disc on any video and choose Favorite.
+          </p>
+        )}
+
+        {sounds && sounds.map((s) => (
+          <button
+            key={s.id}
+            onClick={() => choose(s)}
+            className="flex items-center gap-3 w-full"
+            style={{ background: "none", border: "none", padding: "8px 0", textAlign: "left", color: "var(--text)" }}
+          >
+            <Avatar user={s.author} size={46} />
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div className="text-sm font-semibold" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {s.name}
+              </div>
+              <div className="text-xs" style={{ color: "var(--text-muted)" }}>
+                @{(s.author?.username || "").toLowerCase()}
+              </div>
+            </div>
+            {busyId === s.id && <Loader2 size={16} className="animate-spin" />}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}function SearchOverlay({ onClose, onOpenProfile, onOpenSound }) {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState(null);
   const [preview, setPreview] = useState(null);
+  const [favSounds, setFavSounds] = useState([]);
   const reqIdRef = useRef(0);
   const inputRef = useRef(null);
 
   useEffect(() => {
     inputRef.current?.focus();
+    fetch("/api/feed?favoriteSounds=1")
+      .then((r) => r.json())
+      .then((d) => setFavSounds(d.sounds || []))
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -829,9 +907,36 @@ function SearchOverlay({ onClose, onOpenProfile }) {
 
       <div className="p-4" style={{ flex: 1, overflowY: "auto" }}>
         {!q && (
-          <p className="text-sm text-center py-10" style={{ color: "var(--text-muted)" }}>
-            Search for people, videos, and hashtags.
-          </p>
+          <>
+            <p className="text-sm text-center py-6" style={{ color: "var(--text-muted)" }}>
+              Search for people, videos, and hashtags.
+            </p>
+            {favSounds.length > 0 && (
+              <div>
+                <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--text-muted)" }}>
+                  Your favorite sounds
+                </h3>
+                {favSounds.map((s) => (
+                  <button
+                    key={s.id}
+                    onClick={() => onOpenSound(s.id)}
+                    className="flex items-center gap-3 w-full"
+                    style={{ background: "none", border: "none", padding: "8px 0", textAlign: "left", color: "var(--text)" }}
+                  >
+                    <Avatar user={s.author} size={44} />
+                    <div style={{ minWidth: 0 }}>
+                      <div className="text-sm font-semibold" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {s.name}
+                      </div>
+                      <div className="text-xs" style={{ color: "var(--text-muted)" }}>
+                        @{(s.author?.username || "").toLowerCase()}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
         )}
 
         {q && loading && (
@@ -977,6 +1082,305 @@ function SearchOverlay({ onClose, onOpenProfile }) {
       )}
     </div>
   );
+}
+
+function CreatePostModal({ open, onClose, onCreated, user, initialSound }) {
+  const [caption, setCaption] = useState("");
+  const [media, setMedia] = useState(null);
+  const [sound, setSound] = useState(null);
+  const [visibility, setVisibility] = useState("everyone");
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [posting, setPosting] = useState(false);
+  const [error, setError] = useState("");
+  const captionRef = useRef(null);
+
+  function resetAll() {
+    setCaption("");
+    setMedia(null);
+    setSound(null);
+    setVisibility("everyone");
+    setCameraOpen(false);
+    setPickerOpen(false);
+    setPreviewOpen(false);
+    setPosting(false);
+    setError("");
+  }
+
+  useEffect(() => {
+    if (open) {
+      resetAll();
+      setSound(initialSound || null);
+      setCameraOpen(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  function handleCaptured(result) {
+    setMedia(result);
+    setCameraOpen(false);
+    if (result.mediaType !== "video") setSound(null);
+  }
+
+  function handleRetake() {
+    setMedia(null);
+    setCameraOpen(true);
+  }
+
+  function handleClose() {
+    resetAll();
+    onClose();
+  }
+
+  function addToCaption(text, focus) {
+    setCaption((prev) => {
+      const base = prev && !/\s$/.test(prev) ? prev + " " : prev;
+      return (base + text).slice(0, 500);
+    });
+    if (focus) setTimeout(() => captionRef.current?.focus(), 0);
+  }
+
+  function addTag(tag) {
+    if (caption.toLowerCase().includes(tag.toLowerCase())) return;
+    addToCaption(tag + " ", false);
+  }
+
+  async function handlePost() {
+    if (posting) return;
+    if (!caption.trim() && !media) {
+      setError("Add a caption or capture something first.");
+      return;
+    }
+    if (media?.mediaUrl && media.mediaUrl.length > MAX_MEDIA_CHARS) {
+      setError("This file is too big. Try a shorter video.");
+      return;
+    }
+    setPosting(true);
+    setError("");
+    try {
+      const res = await fetch("/api/feed", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          caption,
+          mediaUrl: media?.mediaUrl || null,
+          mediaType: media?.mediaType || "image",
+          isPrivate: visibility === "me",
+          soundId: media?.mediaType === "video" && sound ? sound.id : undefined,
+        }),
+      });
+      let data = {};
+      try { data = await res.json(); } catch {}
+      if (!res.ok) {
+        setError(data.error || "Could not post.");
+        setPosting(false);
+        return;
+      }
+      onCreated(data.post);
+      resetAll();
+      onClose();
+    } catch {
+      setError("Could not post. Check your connection and try again.");
+      setPosting(false);
+    }
+  }
+
+  if (!open) return null;
+
+  if (cameraOpen) {
+    return (
+      <>
+        <CameraCapture
+          onCapture={handleCaptured}
+          onClose={handleClose}
+          sound={sound}
+          onPickSound={() => setPickerOpen(true)}
+          onRemoveSound={() => setSound(null)}
+        />
+        {pickerOpen && (
+          <SoundPicker
+            onSelect={(s) => { setSound(s); setPickerOpen(false); }}
+            onClose={() => setPickerOpen(false)}
+          />
+        )}
+      </>
+    );
+  }
+
+  const coverSrc = media?.thumbUrl || (media?.mediaType === "image" ? media.mediaUrl : null);
+  const isVideo = media?.mediaType === "video";
+  const handle = (user?.username || "").toLowerCase();
+  const soundLabel = sound ? sound.name : `original sound - ${handle}`;
+
+  const chipStyle = {
+    background: "var(--surface-2)", border: "none", color: "var(--text)",
+    borderRadius: 16, padding: "6px 12px", fontSize: 13, fontWeight: 600,
+  };
+
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, zIndex: 300, background: "var(--surface)", color: "var(--text)",
+        display: "flex", flexDirection: "column",
+      }}
+    >
+      <div
+        className="flex items-center justify-between px-4"
+        style={{ height: 56, borderBottom: "1px solid var(--border)", flexShrink: 0 }}
+      >
+        <button onClick={handleRetake} aria-label="Back to camera" style={{ background: "none", border: "none", color: "var(--text)" }}>
+          <ArrowLeft size={22} />
+        </button>
+        <h2 className="text-base font-semibold">Post</h2>
+        <div style={{ width: 22 }} />
+      </div>
+
+      <div className="p-4" style={{ flex: 1, overflowY: "auto" }}>
+        <div className="flex items-start gap-3 mb-3">
+          <textarea
+            ref={captionRef}
+            className="input pl-3"
+            style={{ flex: 1, minHeight: 128, resize: "none", paddingTop: 10 }}
+            placeholder="Describe your post, add hashtags, or mention creators"
+            maxLength={500}
+            value={caption}
+            onChange={(e) => setCaption(e.target.value)}
+          />
+          <button
+            onClick={() => media && setPreviewOpen(true)}
+            aria-label="Preview"
+            style={{
+              position: "relative", width: 96, height: 128, borderRadius: 10, overflow: "hidden",
+              border: "none", padding: 0, flexShrink: 0, background: "#000",
+            }}
+          >
+            {coverSrc ? (
+              <img src={coverSrc} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            ) : (
+              <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <Play size={26} color="white" fill="white" />
+              </div>
+            )}
+            <span
+              style={{
+                position: "absolute", left: 0, right: 0, bottom: 0, padding: "4px 0",
+                background: "rgba(0,0,0,0.55)", color: "white", fontSize: 11, fontWeight: 600, textAlign: "center",
+              }}
+            >
+              Preview
+            </span>
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2 mb-3">
+          <button onClick={() => addToCaption("#", true)} style={chipStyle}># Hashtags</button>
+          <button onClick={() => addToCaption("@", true)} style={chipStyle}>@ Mention</button>
+          <span className="text-xs" style={{ marginLeft: "auto", color: "var(--text-muted)" }}>
+            {caption.length}/500
+          </span>
+        </div>
+
+        <div className="flex flex-wrap gap-2 mb-5">
+          {SUGGESTED_TAGS.map((t) => (
+            <button
+              key={t}
+              onClick={() => addTag(t)}
+              style={{
+                background: "none", border: "1px solid var(--border)", color: "var(--text-muted)",
+                borderRadius: 16, padding: "4px 10px", fontSize: 12, fontWeight: 600,
+              }}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+
+        {isVideo && (
+          <div
+            className="flex items-center gap-3"
+            style={{ padding: "14px 0", borderTop: "1px solid var(--border)" }}
+          >
+            <Music2 size={18} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
+            <div style={{ minWidth: 0 }}>
+              <div className="text-sm font-semibold">Sound</div>
+              <div className="text-xs" style={{ color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {soundLabel}
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div style={{ padding: "14px 0", borderTop: "1px solid var(--border)" }}>
+          <div className="text-sm font-semibold mb-2">Who can watch this video</div>
+          <div className="flex gap-2">
+            {[
+              { id: "everyone", label: "Everyone", icon: Globe },
+              { id: "me", label: "Only me", icon: Lock },
+            ].map((o) => (
+              <button
+                key={o.id}
+                onClick={() => setVisibility(o.id)}
+                className="flex items-center justify-center gap-2 text-sm font-semibold"
+                style={{
+                  flex: 1, height: 42, borderRadius: 12,
+                  border: visibility === o.id ? "2px solid var(--accent)" : "1px solid var(--border)",
+                  background: visibility === o.id ? "var(--accent-soft)" : "var(--surface-2)",
+                  color: visibility === o.id ? "var(--accent)" : "var(--text)",
+                }}
+              >
+                <o.icon size={15} /> {o.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {error && <div className="alert alert-error mt-2">{error}</div>}
+      </div>
+
+      <div
+        className="p-4"
+        style={{ borderTop: "1px solid var(--border)", flexShrink: 0, paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 16px)" }}
+      >
+        <button className="btn-primary" onClick={handlePost} disabled={posting}>
+          {posting ? <Loader2 size={16} className="animate-spin" /> : "Post"}
+        </button>
+      </div>
+
+      {previewOpen && media && (
+        <div
+          style={{
+            position: "fixed", inset: 0, zIndex: 310, background: "#000",
+            display: "flex", flexDirection: "column",
+          }}
+        >
+          <div className="flex justify-end px-4" style={{ height: 56, alignItems: "center", flexShrink: 0 }}>
+            <button
+              onClick={() => setPreviewOpen(false)}
+              aria-label="Close preview"
+              style={{ background: "none", border: "none", color: "white" }}
+            >
+              <X size={24} />
+            </button>
+          </div>
+          <div style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            {isVideo ? (
+              <video
+                src={media.mediaUrl}
+                controls
+                autoPlay
+                loop
+                playsInline
+                style={{ width: "100%", height: "100%", objectFit: "contain" }}
+              />
+            ) : (
+              <img src={media.mediaUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }function HeartBurst({ x, y }) {
   return (
     <div
@@ -1092,7 +1496,9 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
   }
 
   const isVideo = post.mediaType === "video" && !!post.mediaUrl;
-  const soundLabel = `original sound - ${(post.author.username || "").toLowerCase()}`;
+  // A video made with someone's sound points back to the original post.
+  const soundKey = post.soundId || post.id;
+  const soundLabel = soundNameFor(post.soundOwner || post.author);
 
   return (
     <div
@@ -1203,7 +1609,7 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
 
         {isVideo && (
           <button
-            onClick={(e) => { e.stopPropagation(); onOpenSound(post); }}
+            onClick={(e) => { e.stopPropagation(); onOpenSound(soundKey); }}
             aria-label="Open sound"
             style={{ background: "none", border: "none", padding: 0, marginTop: 4 }}
           >
@@ -1245,7 +1651,7 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
 
         {isVideo && (
           <button
-            onClick={(e) => { e.stopPropagation(); onOpenSound(post); }}
+            onClick={(e) => { e.stopPropagation(); onOpenSound(soundKey); }}
             aria-label="Open sound"
             style={{ background: "none", border: "none", padding: 0, marginTop: 8, width: "100%", textAlign: "left" }}
           >
@@ -1265,12 +1671,14 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
   const [actionsPost, setActionsPost] = useState(null);
   const wasPlayingBeforeActionsRef = useRef(false);
   const [createOpen, setCreateOpen] = useState(false);
+  const [useSound, setUseSound] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [muted, setMuted] = useState(true);
   const [activeTab, setActiveTab] = useState("for-you");
   const [searchOpen, setSearchOpen] = useState(false);
-  const [soundPost, setSoundPost] = useState(null);
+  const [soundTarget, setSoundTarget] = useState(null);
   const overlayPausedRef = useRef([]);
+  const overlayDepthRef = useRef(0);
   const scrollRef = useRef(null);
   const videoRefsMap = useRef(new Map());
   const observerRef = useRef(null);
@@ -1290,9 +1698,11 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
     }
   }
 
-  // Pause every playing feed video while a full-screen overlay is open,
-  // then resume the same ones when it closes.
+  // Pause the feed while a full-screen overlay is open and resume the same
+  // videos once every overlay is closed (overlays can stack).
   function pauseFeedVideos() {
+    overlayDepthRef.current += 1;
+    if (overlayDepthRef.current > 1) return;
     const ids = [];
     videoRefsMap.current.forEach((video, id) => {
       if (!video.paused) {
@@ -1304,6 +1714,8 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
   }
 
   function resumeFeedVideos() {
+    overlayDepthRef.current = Math.max(0, overlayDepthRef.current - 1);
+    if (overlayDepthRef.current > 0) return;
     overlayPausedRef.current.forEach((id) => {
       videoRefsMap.current.get(id)?.play().catch(() => {});
     });
@@ -1320,14 +1732,39 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
     resumeFeedVideos();
   }
 
-  function openSound(post) {
+  function openSound(soundId) {
     pauseFeedVideos();
-    setSoundPost(post);
+    setSoundTarget(soundId);
   }
 
   function closeSound() {
-    setSoundPost(null);
+    setSoundTarget(null);
     resumeFeedVideos();
+  }
+
+  function openCreate() {
+    pauseFeedVideos();
+    setUseSound(null);
+    setCreateOpen(true);
+  }
+
+  function closeCreate() {
+    setCreateOpen(false);
+    setUseSound(null);
+    resumeFeedVideos();
+  }
+
+  // "Use this sound" from the sound screen: open the camera with that sound.
+  function handleUseSound(sound) {
+    pauseFeedVideos();
+    setSoundTarget(null);
+    resumeFeedVideos();
+    if (searchOpen) {
+      setSearchOpen(false);
+      resumeFeedVideos();
+    }
+    setUseSound(sound);
+    setCreateOpen(true);
   }
 
   const loadFeed = useCallback(async (cursor, tab) => {
@@ -1370,6 +1807,7 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
           if (!video) continue;
 
           if (entry.isIntersecting && entry.intersectionRatio >= 0.6) {
+            if (overlayDepthRef.current > 0) continue;
             video.currentTime = 0;
             video.play().catch(() => {});
           } else {
@@ -1474,6 +1912,8 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
   }
 
   function handlePostCreated(newPost) {
+    // "Only me" posts live on your profile, not in the public feed.
+    if (newPost.isPrivate) return;
     setPosts((prev) => [newPost, ...prev]);
     scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -1541,7 +1981,7 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
       ) : posts.length === 0 ? (
         <div className="flex flex-col items-center justify-center px-6 text-center" style={{ height: "100%", color: "white" }}>
           <p className="text-sm mb-4" style={{ color: "rgba(255,255,255,0.7)" }}>No posts yet — be the first to share something.</p>
-          <button onClick={() => setCreateOpen(true)} className="btn-primary" style={{ maxWidth: 160 }}>
+          <button onClick={openCreate} className="btn-primary" style={{ maxWidth: 160 }}>
             <Plus size={14} /> Create Post
           </button>
         </div>
@@ -1591,7 +2031,7 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
           <RotateCw size={15} className={refreshing ? "animate-spin" : ""} />
         </button>
         <button
-          onClick={() => setCreateOpen(true)}
+          onClick={openCreate}
           aria-label="Create post"
           className="flex items-center justify-center"
           style={{ width: 36, height: 36, borderRadius: 10, background: "var(--accent)", border: "none", color: "white" }}
@@ -1620,13 +2060,24 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
           onDelete={handleDeletePost}
         />
       )}
-      {soundPost && (
-        <SoundSheet post={soundPost} onClose={closeSound} onOpenProfile={handleOpenProfile} />
+      {soundTarget && (
+        <SoundSheet
+          soundId={soundTarget}
+          onClose={closeSound}
+          onOpenProfile={handleOpenProfile}
+          onUseSound={handleUseSound}
+        />
       )}
       {searchOpen && (
-        <SearchOverlay onClose={closeSearch} onOpenProfile={handleOpenProfile} />
+        <SearchOverlay onClose={closeSearch} onOpenProfile={handleOpenProfile} onOpenSound={openSound} />
       )}
-      <CreatePostModal open={createOpen} onClose={() => setCreateOpen(false)} onCreated={handlePostCreated} />
+      <CreatePostModal
+        open={createOpen}
+        onClose={closeCreate}
+        onCreated={handlePostCreated}
+        user={user}
+        initialSound={useSound}
+      />
     </div>
   );
 }
