@@ -266,7 +266,9 @@ function CommentRow({ comment, postId, isReply, isPostOwner, currentUserId, onLi
       />
     </div>
   );
-}function CommentsSheet({ postId, postAuthorId, currentUserId, open, onClose }) {
+}
+
+function CommentsSheet({ postId, postAuthorId, currentUserId, open, onClose }) {
   const [comments, setComments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [input, setInput] = useState("");
@@ -1661,7 +1663,9 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
       </div>
     </div>
   );
-}export default function FeedClient({ user }) {
+}
+
+export default function FeedClient({ user }) {
   const router = useRouter();
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1931,16 +1935,27 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
         }}
       >
         <div className="flex items-center justify-between px-4" style={{ height: 56 }}>
-          <Link href="/profile" aria-label="My Profile" style={{ background: "none", border: "none", color: "white" }}>
-            <UserIcon size={22} />
-          </Link>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => router.back()}
+              aria-label="Exit feed"
+              style={{ background: "none", border: "none", color: "white" }}
+            >
+              <ArrowLeft size={22} />
+            </button>
+            <Link href="/profile" aria-label="My Profile" style={{ background: "none", border: "none", color: "white" }}>
+              <UserIcon size={22} />
+            </Link>
+          </div>
+          <div className="flex items-center gap-3">
             <button
               onClick={() => setMuted((m) => !m)}
               aria-label={muted ? "Unmute" : "Mute"}
+              className="flex items-center gap-1.5"
               style={{ background: "none", border: "none", color: "white" }}
             >
               {muted ? <VolumeX size={22} /> : <Volume2 size={22} />}
+              {muted && <span style={{ fontSize: 12, fontWeight: 600 }}>Tap to unmute</span>}
             </button>
             <button
               onClick={openSearch}
