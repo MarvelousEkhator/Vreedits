@@ -55,9 +55,12 @@ allowComments   String  @default("everyone") // "everyone" | "friends" | "none"
   folders        Folder[]
   studySessions  StudySession[]
   feedPosts      FeedPost[]
+ viewedBy         String[] @default([])
   feedComments   FeedComment[]
   feedSaves      FeedSave[]
-  followers Follow[] @relation("Followers")
+ blockedUsers   Block[] @relation("Blocker")
+  blockedByUsers Block[] @relation("Blocked")
+ followers Follow[] @relation("Followers")
   following Follow[] @relation("Following")
   hostedStudyRooms     StudyRoom[]        @relation("StudyRoomHost")
   studyRoomMemberships StudyRoomMember[]  @relation("StudyRoomMemberships")
@@ -1010,4 +1013,14 @@ model AnalyticsEvent {
   @@index([visitorId, ts])
   @@index([sessionId])
   @@map("analytics_events")
+}
+model Block {
+  id          String   @id @default(uuid())
+  blockerId   String
+  blocker     User     @relation("Blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blockedId   String
+  blocked     User     @relation("Blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@unique([blockerId, blockedId])
 }
