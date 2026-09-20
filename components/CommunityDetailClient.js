@@ -690,7 +690,13 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
         : `/api/communities/${communityId}/posts`;
       const res = await fetch(url);
       const data = await res.json();
-      if (res.ok) setPosts(data.posts || []);
+      // The API returns posts newest-first (orderBy createdAt desc), but the
+      // feed renders top-to-bottom oldest-first — and newly-sent posts get
+      // appended to the end of this array. Reversing here once, right after
+      // the fetch, keeps the array's order consistent everywhere downstream
+      // (grouping consecutive messages from the same author, forum listing,
+      // etc.) instead of mixing two different orderings.
+      if (res.ok) setPosts((data.posts || []).slice().reverse());
     } catch (err) {
     } finally {
       setPostsLoading(false);
@@ -812,7 +818,9 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
     } finally {
       setEmojisLoading(false);
     }
-  }, [communityId]);useEffect(() => { load(); }, [load]);
+  }, [communityId]);
+
+  useEffect(() => { load(); }, [load]);
   useEffect(() => { loadEmojis(); }, [loadEmojis]);
   useEffect(() => { if (activeChannelId) loadPosts(activeChannelId); }, [activeChannelId, loadPosts]);
   useEffect(() => { if (view === "events") loadEvents(); }, [view, loadEvents]);
@@ -861,28 +869,39 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
     if (isForum && !title) return;
     setError("");
     setPosting(true);
-    const res = await fetch(`/api/communities/${communityId}/posts`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        content,
-        channelId: activeChannelId,
-        ...(isForum ? { title } : {}),
-        ...(replyingTo ? { replyToId: replyingTo.id } : {}),
-      }),
-    });
-    const data = await res.json();
-    setPosting(false);
-    if (!res.ok) {
-      setError(data.error || "Could not post.");
-      return;
+    try {
+      const res = await fetch(`/api/communities/${communityId}/posts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          content,
+          channelId: activeChannelId,
+          ...(isForum ? { title } : {}),
+          ...(replyingTo ? { replyToId: replyingTo.id } : {}),
+        }),
+      });
+      let data;
+      try {
+        data = await res.json();
+      } catch {
+        setError(`Server error (${res.status}). Please try again.`);
+        return;
+      }
+      if (!res.ok) {
+        setError(data.error || `Could not post (${res.status}).`);
+        return;
+      }
+      setNewPost("");
+      setNewPostTitle("");
+      setShowNewPostForm(false);
+      setReplyingTo(null);
+      setPosts((prev) => [...prev, data.post]);
+      if (isForum) setOpenForumPostId(data.post.id);
+    } catch (err) {
+      setError("Network error — check your connection and try again.");
+    } finally {
+      setPosting(false);
     }
-    setNewPost("");
-    setNewPostTitle("");
-    setShowNewPostForm(false);
-    setReplyingTo(null);
-    setPosts((prev) => [...prev, data.post]);
-    if (isForum) setOpenForumPostId(data.post.id);
   }
 
   async function handleLike(post) {
@@ -905,15 +924,21 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
   async function handleEditPost(postId) {
     const content = editContent.trim();
     if (!content) return;
-    const res = await fetch(`/api/posts/${postId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content }),
-    });
-    const data = await res.json();
-    if (res.ok) {
-      setPosts((prev) => prev.map((p) => (p.id === postId ? { ...p, content: data.post.content } : p)));
-      setEditingPostId(null);
+    try {
+      const res = await fetch(`/api/posts/${postId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setPosts((prev) => prev.map((p) => (p.id === postId ? { ...p, content: data.post.content } : p)));
+        setEditingPostId(null);
+      } else {
+        setError(data.error || "Could not save edit.");
+      }
+    } catch (err) {
+      setError("Network error — could not save edit.");
     }
   }
 
@@ -925,19 +950,23 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
   async function handleAddComment(postId) {
     const content = (commentDrafts[postId] || "").trim();
     if (!content) return;
-    const res = await fetch(`/api/posts/${postId}/comments`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content }),
-    });
-    const data = await res.json();
-    if (res.ok) {
-      setPosts((prev) =>
-        prev.map((p) => (p.id === postId ? { ...p, comments: [...p.comments, data.comment] } : p))
-      );
-      setCommentDrafts((prev) => ({ ...prev, [postId]: "" }));
-    } else {
-      setError(data.error || "Could not send reply.");
+    try {
+      const res = await fetch(`/api/posts/${postId}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setPosts((prev) =>
+          prev.map((p) => (p.id === postId ? { ...p, comments: [...p.comments, data.comment] } : p))
+        );
+        setCommentDrafts((prev) => ({ ...prev, [postId]: "" }));
+      } else {
+        setError(data.error || "Could not send reply.");
+      }
+    } catch (err) {
+      setError("Network error — could not send reply.");
     }
   }
 
@@ -1624,7 +1653,9 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
             <h1 className="text-base font-semibold">
               {settingsPage ? SETTINGS_TITLES[settingsPage] : "Community Settings"}
             </h1>
-          </div><div className="p-4" style={{ flex: 1 }}>
+          </div>
+
+          <div className="p-4" style={{ flex: 1 }}>
             {!settingsPage && (
               <SettingsSidebar settingsPage={settingsPage || ""} setSettingsPage={setSettingsPage} isOwner={community.isOwner} />
             )}
@@ -2455,7 +2486,9 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
                   <button type="submit" className="btn-primary" disabled={creatingEmoji}>
                     {creatingEmoji ? <Loader2 size={14} className="animate-spin" /> : <><Plus size={14} /> Upload</>}
                   </button>
-                </form>{emojisLoading ? (
+                </form>
+
+                {emojisLoading ? (
                   <div className="flex justify-center py-10" style={{ color: "var(--text-muted)" }}>
                     <Loader2 size={22} className="animate-spin" />
                   </div>
@@ -2509,10 +2542,6 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
               </div>
             )}
 
-            {resolveSettingsPage(settingsPage) && (
-              <CommunitySettingsPage page={resolveSettingsPage(settingsPage)} communityId={communityId} />
-            )}
-
             {settingsPage === "danger" && community.isOwner && (
               <div>
                 <p className="text-xs mb-3" style={{ color: "var(--text-muted)" }}>
@@ -2524,7 +2553,7 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
               </div>
             )}
 
-            {settingsPage && !resolveSettingsPage(settingsPage) && !["overview", "members", "invites", "channels", "roles", "danger", "threads", "rules", "onboarding", "community-guide", "emojis-stickers"].includes(settingsPage) && (
+            {settingsPage && !["overview", "members", "invites", "channels", "roles", "danger", "threads", "rules", "onboarding", "community-guide", "emojis-stickers"].includes(settingsPage) && (
               <div className="card p-6 text-center space-y-2" style={{ background: "var(--surface-2)" }}>
                 <SlidersHorizontal size={24} className="mx-auto" style={{ color: "var(--text-muted)" }} />
                 <h3 className="text-sm font-semibold">{SETTINGS_TITLES[settingsPage]}</h3>
@@ -3256,7 +3285,3 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
     </div>
   );
 }
-
-// New settings pages (Channel Permissions, Safety & Moderation, AutoMod, Audit Log, Integrations, Webhooks, Server Analytics, Widget).
-// Imports are hoisted, so this works even though it sits at the end of the file.
-import CommunitySettingsPage, { resolveSettingsPage } from "./CommunitySettingsPages";
