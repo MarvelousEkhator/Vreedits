@@ -1,7 +1,8 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { Settings, Loader2, Play, Lock, Bookmark, Heart, AlertCircle } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ArrowLeft, Settings, Loader2, Play, Lock, Bookmark, Heart, AlertCircle } from "lucide-react";
 import NavShell from "@/components/NavShell";
 
 function Avatar({ user, size = 88 }) {
@@ -53,6 +54,7 @@ function PostGrid({ posts, emptyLabel }) {
 }
 
 export default function ProfilePage() {
+  const router = useRouter();
   const [user, setUser] = useState(null);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -154,7 +156,14 @@ export default function ProfilePage() {
     <NavShell user={user}>
       <div className="min-h-screen flex flex-col items-center px-4 pb-16">
         <div className="w-full max-w-[480px] mt-6">
-          <div className="flex items-center justify-end mb-2">
+          <div className="flex items-center justify-between mb-2">
+            <button
+              onClick={() => router.back()}
+              aria-label="Go back"
+              style={{ background: "none", border: "none", color: "var(--text-muted)", display: "flex", alignItems: "center" }}
+            >
+              <ArrowLeft size={22} />
+            </button>
             <Link href="/settings/feed" aria-label="Settings and privacy" style={{ color: "var(--text-muted)" }}>
               <Settings size={22} />
             </Link>
