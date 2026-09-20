@@ -406,19 +406,7 @@ model Folder {
   name String
   createdAt DateTime @default(now())
   notes     Note[]
-}
-
-model StudySession {
-  id     String @id @default(uuid())
-  userId String
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  subject String
-  minutes Int
-  note    String?
-  createdAt DateTime @default(now())
-}
-
-model FeedPost {
+}model FeedPost {
   id       String @id @default(uuid())
   authorId String
   author   User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
@@ -431,10 +419,14 @@ model FeedPost {
   scheduledFor DateTime?
   likedBy   String[] @default([])
   tags      String[] @default([])
+  // Sound: id of the ORIGINAL post whose audio this video uses (null = its own original sound)
+  soundId   String?
   createdAt DateTime @default(now())
   comments  FeedComment[]
   saves     FeedSave[]
   poll      FeedPoll?
+
+  @@index([soundId])
 }
 
 model FeedComment {
@@ -461,6 +453,16 @@ model FeedSave {
   createdAt DateTime @default(now())
 
   @@unique([postId, userId])
+}
+
+model FavoriteSound {
+  id        String   @id @default(uuid())
+  userId    String
+  soundId   String
+  createdAt DateTime @default(now())
+
+  @@unique([userId, soundId])
+  @@index([userId, createdAt])
 }
 
 model FeedPoll {
@@ -975,4 +977,14 @@ model MemberRestriction {
   createdAt      DateTime  @default(now())
 
   @@unique([communityId, userId])
+}
+
+model StudySession {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject String
+  minutes Int
+  note    String?
+  createdAt DateTime @default(now())
 }
