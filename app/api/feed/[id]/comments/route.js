@@ -21,16 +21,16 @@ export async function GET(req, { params }) {
   // its replies nested inside it, one level deep — matching how the
   // comment sheet renders threads (replies don't have their own replies).
   const comments = await prisma.feedComment.findMany({
-  where: { postId: params.id, parentId: null },
-  orderBy: [{ pinned: "desc" }, { createdAt: "asc" }],
-  include: {
-    author: { select: { id: true, username: true, avatarDataUrl: true } },
-    replies: {
-      orderBy: { createdAt: "asc" },
-      include: { author: { select: { id: true, username: true, avatarDataUrl: true } } },
+    where: { postId: params.id, parentId: null },
+    orderBy: [{ pinned: "desc" }, { createdAt: "asc" }],
+    include: {
+      author: { select: { id: true, username: true, avatarDataUrl: true } },
+      replies: {
+        orderBy: { createdAt: "asc" },
+        include: { author: { select: { id: true, username: true, avatarDataUrl: true } } },
+      },
     },
-  },
-});
+  });
 
   const shaped = comments.map((c) => ({
     ...shapeComment(c, user.id),
@@ -51,6 +51,21 @@ export async function POST(req, { params }) {
 
   const post = await prisma.feedPost.findUnique({ where: { id: params.id } });
   if (!post) return NextResponse.json({ error: "Not found." }, { status: 404 });
+
+  // Enforce the post author's comment setting. The author can always
+  // comment on their own post.
+  if (post.authorId !== user.id) {
+    const postAuthor = await prisma.user.findUnique({
+      where: { id: post.authorId },
+      select: { allowComments: true },
+    });
+    if (postAuthor && postAuthor.allowComments === false) {
+      return NextResponse.json(
+        { error: "Comments are turned off for this post." },
+        { status: 403 }
+      );
+    }
+  }
 
   // Replying to a reply isn't supported (one level of threading, matching
   // most short-form video apps) — the parent must itself be a top-level
