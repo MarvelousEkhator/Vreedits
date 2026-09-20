@@ -197,6 +197,12 @@ export default function ProfilePage() {
               </div>
             </div>
 
+            {profile.bio && (
+              <p className="text-sm mt-4" style={{ color: "var(--text)", overflowWrap: "anywhere" }}>
+                {profile.bio}
+              </p>
+            )}
+
             <Link
               href="/profile/edit"
               className="btn-primary mt-4"
@@ -204,12 +210,6 @@ export default function ProfilePage() {
             >
               Edit profile
             </Link>
-
-            {profile.bio && (
-              <p className="text-sm mt-3" style={{ color: "var(--text)", overflowWrap: "anywhere" }}>
-                {profile.bio}
-              </p>
-            )}
           </div>
 
           <div className="flex items-center justify-around mb-4" style={{ borderTop: "1px solid var(--border)", borderBottom: "1px solid var(--border)" }}>
