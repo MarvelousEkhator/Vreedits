@@ -22,7 +22,13 @@ model User {
   country       String?
   school        String?
   language      String   @default("English")
-  isPublic      Boolean  @default(true)
+  isPublic      Boolean  
+allowComments   String  @default("everyone") // "everyone" | "friends" | "none"
+  allowMentions   String  @default("everyone") // "everyone" | "friends" | "none"
+  shareProfileLinks Boolean @default(true)
+  hideFollowing   Boolean @default(false)
+  hideLikedVideos Boolean @default(false)
+@default(true)
   isGuest       Boolean  @default(false)
   verificationCode    String?
   verificationExpires DateTime?
