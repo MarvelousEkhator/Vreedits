@@ -988,3 +988,20 @@ model StudySession {
   note    String?
   createdAt DateTime @default(now())
 }
+model AnalyticsEvent {
+  id        Int      @id @default(autoincrement())
+  ts        DateTime @default(now()) @db.Timestamptz(6)
+  visitorId String   @map("visitor_id")
+  sessionId String   @map("session_id")
+  type      String
+  name      String?
+  path      String?
+  isGuest   Boolean  @default(false) @map("is_guest")
+  source    String?
+  country   String?
+
+  @@index([ts])
+  @@index([visitorId, ts])
+  @@index([sessionId])
+  @@map("analytics_events")
+}
