@@ -387,9 +387,29 @@ function SafetyPage({ communityId }) {
   const [status, setStatus] = useState("");
   const [busyId, setBusyId] = useState(null);
 
+  const [members, setMembers] = useState([]);
+  const [banTargetId, setBanTargetId] = useState("");
+  const [banReason, setBanReason] = useState("");
+  const [banning, setBanning] = useState(false);
+  const [timeoutTargetId, setTimeoutTargetId] = useState("");
+  const [timeoutMinutes, setTimeoutMinutes] = useState("60");
+  const [timeoutReason, setTimeoutReason] = useState("");
+  const [timingOut, setTimingOut] = useState(false);
+
   useEffect(() => {
     if (data && data.settings && !form) setForm(data.settings);
   }, [data, form]);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const r = await request(`/api/communities/${communityId}/members`);
+      if (alive && r.ok) setMembers(r.data.members || []);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [communityId]);
 
   async function saveSettings() {
     setSaving(true);
@@ -405,6 +425,58 @@ function SafetyPage({ communityId }) {
     setBusyId(null);
     if (r.ok) reload(true);
     else setStatus(r.data.error || "That didn't work.");
+  }
+
+  async function banMember(e) {
+    e.preventDefault();
+    if (!banTargetId) return;
+    setBanning(true);
+    const r = await request(base(communityId, "safety"), "PATCH", {
+      banUserId: banTargetId,
+      reason: banReason.trim() || undefined,
+    });
+    setBanning(false);
+    if (!r.ok) {
+      setStatus(r.data.error || "Could not ban that member.");
+      return;
+    }
+    setBanTargetId("");
+    setBanReason("");
+    setMembers((prev) => prev.filter((m) => m.id !== banTargetId));
+    reload(true);
+  }
+
+  async function unban(ban) {
+    if (!window.confirm(`Unban @${ban.username}?`)) return;
+    const r = await request(base(communityId, "safety"), "PATCH", { unbanId: ban.id });
+    if (r.ok) reload(true);
+    else setStatus(r.data.error || "Could not unban.");
+  }
+
+  async function timeoutMember(e) {
+    e.preventDefault();
+    if (!timeoutTargetId) return;
+    setTimingOut(true);
+    const r = await request(base(communityId, "safety"), "PATCH", {
+      timeoutUserId: timeoutTargetId,
+      minutes: parseInt(timeoutMinutes, 10),
+      reason: timeoutReason.trim() || undefined,
+    });
+    setTimingOut(false);
+    if (!r.ok) {
+      setStatus(r.data.error || "Could not time out that member.");
+      return;
+    }
+    setTimeoutTargetId("");
+    setTimeoutReason("");
+    reload(true);
+  }
+
+  async function liftRestriction(restriction) {
+    if (!window.confirm(`Remove the timeout for @${restriction.username}?`)) return;
+    const r = await request(base(communityId, "safety"), "PATCH", { liftRestrictionId: restriction.id });
+    if (r.ok) reload(true);
+    else setStatus(r.data.error || "Could not remove the timeout.");
   }
 
   if (loading) return <Spinner />;
@@ -562,6 +634,105 @@ function SafetyPage({ communityId }) {
           </div>
         </SectionCard>
       )}
+
+      <SectionCard title={`Banned Users (${data.bans.length})`}>
+        {data.bans.length === 0 ? (
+          <EmptyState icon={<ShieldAlert size={22} />}>No one is banned right now.</EmptyState>
+        ) : (
+          <div className="space-y-2 mb-4">
+            {data.bans.map((b) => (
+              <div key={b.id} className="flex items-center justify-between card p-2.5" style={{ background: "var(--surface-2)" }}>
+                <div>
+                  <div className="text-sm font-semibold">@{b.username}</div>
+                  {b.reason && <div className="text-xs" style={{ color: "var(--text-muted)" }}>{b.reason}</div>}
+                </div>
+                <button
+                  onClick={() => unban(b)}
+                  className="btn-primary"
+                  style={{ width: "auto", padding: "6px 12px", background: "var(--surface)", color: "var(--text)" }}
+                >
+                  Unban
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <form onSubmit={banMember}>
+          <Field label="Ban a member">
+            <select className="input pl-3" value={banTargetId} onChange={(e) => setBanTargetId(e.target.value)}>
+              <option value="">Select a member…</option>
+              {members.filter((m) => !m.isOwner).map((m) => (
+                <option key={m.id} value={m.id}>@{m.username}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Reason (optional)">
+            <input className="input pl-3" value={banReason} onChange={(e) => setBanReason(e.target.value)} placeholder="Why are they being banned?" />
+          </Field>
+          <Status text={status} tone="danger" />
+          <button
+            type="submit"
+            className="btn-primary"
+            style={{ background: "var(--danger-soft)", color: "var(--danger)" }}
+            disabled={banning || !banTargetId}
+          >
+            {banning ? <Loader2 size={14} className="animate-spin" /> : "Ban Member"}
+          </button>
+        </form>
+      </SectionCard>
+
+      <SectionCard title={`Active Timeouts (${data.restrictions.length})`}>
+        {data.restrictions.length === 0 ? (
+          <EmptyState icon={<ShieldAlert size={22} />}>No one is timed out right now.</EmptyState>
+        ) : (
+          <div className="space-y-2 mb-4">
+            {data.restrictions.map((r) => (
+              <div key={r.id} className="flex items-center justify-between card p-2.5" style={{ background: "var(--surface-2)" }}>
+                <div>
+                  <div className="text-sm font-semibold">@{r.username}</div>
+                  <div className="text-xs" style={{ color: "var(--text-muted)" }}>
+                    until {fmtTime(r.expiresAt)}{r.reason ? ` · ${r.reason}` : ""}
+                  </div>
+                </div>
+                <button
+                  onClick={() => liftRestriction(r)}
+                  className="btn-primary"
+                  style={{ width: "auto", padding: "6px 12px", background: "var(--surface)", color: "var(--text)" }}
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <form onSubmit={timeoutMember}>
+          <Field label="Time out a member">
+            <select className="input pl-3" value={timeoutTargetId} onChange={(e) => setTimeoutTargetId(e.target.value)}>
+              <option value="">Select a member…</option>
+              {members.filter((m) => !m.isOwner).map((m) => (
+                <option key={m.id} value={m.id}>@{m.username}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Duration">
+            <select className="input pl-3" value={timeoutMinutes} onChange={(e) => setTimeoutMinutes(e.target.value)}>
+              <option value="10">10 minutes</option>
+              <option value="60">1 hour</option>
+              <option value="480">8 hours</option>
+              <option value="1440">1 day</option>
+              <option value="10080">1 week</option>
+            </select>
+          </Field>
+          <Field label="Reason (optional)">
+            <input className="input pl-3" value={timeoutReason} onChange={(e) => setTimeoutReason(e.target.value)} placeholder="Why the timeout?" />
+          </Field>
+          <button type="submit" className="btn-primary" disabled={timingOut || !timeoutTargetId}>
+            {timingOut ? <Loader2 size={14} className="animate-spin" /> : "Time Out Member"}
+          </button>
+        </form>
+      </SectionCard>
     </div>
   );
 }
