@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { Settings as SettingsIcon, Share2, ChevronDown, Loader2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Settings as SettingsIcon, Share2, ChevronDown, Loader2, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 
 function Avatar({ user, size = 96 }) {
@@ -20,6 +21,7 @@ function Avatar({ user, size = 96 }) {
 }
 
 export default function ProfileClient({ profileId }) {
+  const router = useRouter();
   const [data, setData] = useState(null);
   const [tab, setTab] = useState("posts");
   const [loading, setLoading] = useState(true);
@@ -34,6 +36,14 @@ export default function ProfileClient({ profileId }) {
   }, [profileId]);
 
   useEffect(() => { load(); }, [load]);
+
+  function handleExit() {
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back();
+    } else {
+      router.push("/");
+    }
+  }
 
   async function handleFollow() {
     if (!data) return;
@@ -72,7 +82,13 @@ export default function ProfileClient({ profileId }) {
     <div className="pt-6 pb-16" style={{ maxWidth: 480, margin: "0 auto" }}>
       {/* Top Header Controls */}
       <div className="flex items-center justify-between mb-4 px-4">
-        <div style={{ width: 22 }} />
+        <button
+          onClick={handleExit}
+          aria-label="Exit profile"
+          style={{ background: "none", border: "none", color: "var(--text)", padding: 0 }}
+        >
+          <ArrowLeft size={22} />
+        </button>
         <span className="text-xs" style={{ color: "var(--text-muted)" }} />
         <div className="flex items-center gap-3">
           <button aria-label="Share profile" style={{ background: "none", border: "none", color: "var(--text)" }}>
@@ -89,7 +105,7 @@ export default function ProfileClient({ profileId }) {
       {/* Centered Profile Avatar + Name Stack */}
       <div className="flex flex-col items-center text-center mb-5 px-4">
         <Avatar user={user} />
-        
+
         {/* Bold Display Name (Marvy) */}
         <div className="flex items-center gap-1 mt-3">
           <h1 className="text-xl font-bold leading-tight">
@@ -120,13 +136,14 @@ export default function ProfileClient({ profileId }) {
         </div>
       </div>
 
+      {/* Bio */}
       {user.bio && (
         <p className="text-sm text-center mb-5 font-medium px-4" style={{ color: "var(--text)", whiteSpace: "pre-wrap" }}>
           {user.bio}
         </p>
       )}
 
-      {/* Separate Edit Profile / Follow Button Row */}
+      {/* Edit Profile / Follow Button (below the bio) */}
       <div className="mb-6 px-4 flex justify-center">
         {isOwner ? (
           <Link href="/profile/edit" className="btn-primary block text-center" style={{ padding: "10px 0", width: "100%", maxWidth: 160, background: "var(--surface-2)", color: "var(--text)" }}>
