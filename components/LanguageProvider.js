@@ -1,9 +1,19 @@
 "use client";
 import { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { LANGUAGES, normalizeLang, detectBrowserLang, translate } from "@/lib/i18n";
+import "@/lib/i18n-extra";
 
 const LanguageContext = createContext(null);
 const STORAGE_KEY = "vreedits-lang";
+
+function fill(text, vars) {
+  if (!vars) return text;
+  let out = text;
+  for (const k of Object.keys(vars)) {
+    out = out.split(`{${k}}`).join(String(vars[k]));
+  }
+  return out;
+}
 
 export function LanguageProvider({ userLanguage, children }) {
   const [lang, setLangState] = useState("en");
@@ -52,7 +62,7 @@ export function LanguageProvider({ userLanguage, children }) {
     return () => document.removeEventListener("change", onChange);
   }, [setLang]);
 
-  const t = useCallback((key) => translate(lang, key), [lang]);
+  const t = useCallback((key, vars) => fill(translate(lang, key), vars), [lang]);
 
   return (
     <LanguageContext.Provider value={{ lang, setLang, t, languages: LANGUAGES }}>
@@ -68,7 +78,7 @@ export function useLanguage() {
   return {
     lang: "en",
     setLang: () => {},
-    t: (key) => translate("en", key),
+    t: (key, vars) => fill(translate("en", key), vars),
     languages: LANGUAGES,
   };
 }
