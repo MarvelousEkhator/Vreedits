@@ -7,19 +7,20 @@
   --bg: #d9cdf8;
   --bg-gradient: linear-gradient(90deg, #ded3f6 0%, #d3c6fc 100%);
   --menu-bg: linear-gradient(180deg, #e6dcfa 0%, #d3c6fc 100%);
-  --surface: #f4effd;
-  --surface-2: #e8dffa;
-  --border: #c9b8f0;
+  --glass: rgba(255, 255, 255, 0.55);
+  --surface: #e6dcfa;
+  --surface-2: #d9ccf6;
+  --border: #c2b0ee;
   --text: #2a1a4a;
   --text-muted: #6b5a8e;
   --accent: #9303c5;
   --accent-btn: linear-gradient(135deg, #a10cd6 0%, #7a02a3 100%);
-  --accent-soft: rgba(147, 3, 197, 0.12);
+  --accent-soft: rgba(147, 3, 197, 0.13);
   --danger: #d6453b;
   --danger-soft: rgba(214, 69, 59, 0.12);
   --success: #12907f;
   --success-soft: rgba(18, 144, 127, 0.12);
-  --shadow: 0 20px 60px rgba(90, 40, 160, 0.18);
+  --shadow: 0 16px 44px rgba(90, 40, 160, 0.2);
 }
 
 /* ───────── DARK MODE — Royal Violet (#02060E → #9303C5) ───────── */
@@ -27,31 +28,28 @@
   color-scheme: dark;
   --bg: #02060e;
   --bg-gradient: linear-gradient(
-    180deg,
+    165deg,
     #02060e 0%,
-    #1b0330 40%,
-    #5c0180 75%,
+    #1a0230 22%,
+    #4a0270 52%,
+    #7a02a3 78%,
     #9303c5 100%
   );
-  --menu-bg: linear-gradient(
-    180deg,
-    #02060e 0%,
-    #22033b 55%,
-    #6a0294 100%
-  );
-  --surface: #12041f;
-  --surface-2: #1d0732;
-  --border: #45126a;
-  --text: #f7ecff;
-  --text-muted: #b995d6;
+  --menu-bg: linear-gradient(180deg, #02060e 0%, #2b0446 45%, #7a02a3 100%);
+  --glass: rgba(12, 2, 26, 0.55);
+  --surface: #17042a;
+  --surface-2: #2a0a45;
+  --border: #6a1f99;
+  --text: #ffffff;
+  --text-muted: #cfaee8;
   --accent: #c15cff;
   --accent-btn: linear-gradient(135deg, #a10cd6 0%, #7a02a3 100%);
-  --accent-soft: rgba(193, 92, 255, 0.16);
+  --accent-soft: rgba(193, 92, 255, 0.18);
   --danger: #f0776c;
   --danger-soft: rgba(240, 119, 108, 0.14);
   --success: #2dd4c4;
   --success-soft: rgba(45, 212, 196, 0.12);
-  --shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  --shadow: 0 16px 44px rgba(0, 0, 0, 0.55);
 }
 
 body {
@@ -60,7 +58,7 @@ body {
   transition: color 0.25s ease;
 }
 
-/* Full-screen gradient behind the whole app (works on phones too) */
+/* Full-screen gradient behind the whole app */
 body::before {
   content: "";
   position: fixed;
@@ -70,11 +68,18 @@ body::before {
   pointer-events: none;
 }
 
+/* Full-screen pages and sheets that use the solid surface get the gradient too */
+[style*="position: fixed"][style*="background: var(--surface)"] {
+  background: var(--bg-gradient) !important;
+}
+
 .card {
-  background: var(--surface);
+  background: var(--glass);
   border: 1px solid var(--border);
   border-radius: 18px;
   box-shadow: var(--shadow);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
 }
 
 .input {
@@ -90,7 +95,6 @@ body::before {
 }
 .input:focus {
   border-color: var(--accent);
-  background: var(--surface);
 }
 
 .btn-primary {
@@ -149,10 +153,12 @@ body::before {
   align-items: center;
   gap: 10px;
   padding: 6px 16px 6px 10px;
-  background: var(--surface);
+  background: var(--glass);
   border: 1px solid var(--border);
   border-radius: 999px;
   box-shadow: var(--shadow);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
 }
 .v-search input {
   flex: 1;
