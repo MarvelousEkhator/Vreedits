@@ -1,7 +1,8 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { Search, UserPlus, Check, X as XIcon, Loader2 } from "lucide-react";
+import { UserPlus, Check, X as XIcon, Loader2 } from "lucide-react";
+import GlossIcon from "@/components/GlossIcon";
 
 function Avatar({ user, size = 44 }) {
   if (user?.avatarDataUrl) {
@@ -98,10 +99,10 @@ export default function InboxClient({ currentUserId }) {
   return (
     <div className="p-3">
       <div className="flex items-center gap-2 mb-3">
-        <div className="relative flex items-center" style={{ flex: 1 }}>
-          <Search size={15} className="absolute left-3" style={{ color: "var(--text-muted)" }} />
+        <div className="v-search" style={{ flex: 1, minWidth: 0 }}>
+          <GlossIcon name="search" size={34} fallback={UserPlus} />
           <input
-            className="input"
+            type="text"
             placeholder="Search friends…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
