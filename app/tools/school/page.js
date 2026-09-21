@@ -4,7 +4,8 @@ import { prisma } from "@/lib/prisma";
 import NavShell from "@/components/NavShell";
 import SectionDashboard from "@/components/SectionDashboard";
 import { TOOLS } from "@/lib/aiTools";
-import { GraduationCap } from "lucide-react";
+import GlossIcon from "@/components/GlossIcon";
+
 
 export default async function SchoolPage() {
   const userId = getSessionUserId();
