@@ -8,7 +8,7 @@ import {
   SlidersHorizontal, Flag, Pencil, Reply, CornerUpRight, Copy, BookOpen,
   HelpCircle, ExternalLink, Smile, Sticker, Check,
 } from "lucide-react";
-import CommunitySettingsPage, { resolveSettingsPage } from "@/components/CommunitySettingsPage";
+import CommunitySettingsPage, { resolveSettingsPage } from "@/components/CommunitySettingsPages";
 
 function relativeTime(dateStr) {
   const diffMs = Date.now() - new Date(dateStr).getTime();
