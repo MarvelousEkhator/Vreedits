@@ -3,29 +3,30 @@ import { useState, useRef, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import PresenceHeartbeat from "@/components/PresenceHeartbeat";
+import GlossIcon from "@/components/GlossIcon";
 import {
   Menu, X, Home, Bot, GraduationCap, Briefcase, PenLine, Plane, Wrench,
   Users, Heart, History, FolderOpen, Bell, Crown, Settings, User,
-  HelpCircle, Phone, LogOut, Lock,MessageCircle,
+  HelpCircle, Phone, LogOut, Lock, MessageCircle,
 } from "lucide-react";
 
 const NAV_ITEMS = [
-  { id: "home", label: "Home", href: "/feed", icon: Home, available: true },
-  { id: "inbox", label: "Inbox", href: "/inbox", icon: MessageCircle, available: true },
-  { id: "ai-tools", label: "AI Tools", href: "/ai-tools", icon: Bot, available: true },
-  { id: "school", label: "School", href: "/tools/school", icon: GraduationCap, available: true },
-  { id: "business", label: "Business", href: "/tools/business", icon: Briefcase, available: true },
-  { id: "writing", label: "Writing", href: "/tools/writing", icon: PenLine, available: true },
-  { id: "travel", label: "Travel", href: "/tools/travel", icon: Plane, available: true },
-  { id: "home-tools", label: "Home Tools", href: "/tools/home", icon: Wrench, available: true },
-  { id: "communities", label: "Communities", href: "/communities", icon: Users, available: true },
-  { id: "favorites", label: "Favorites", href: "/favourites", icon: Heart, available: true },
-  { id: "history", label: "History", href: "/history", icon: History, available: true },
-  { id: "collections", label: "Collections", href: "/collections", icon: FolderOpen, available: true },
-  { id: "notifications", label: "Notifications", href: "/notifications", icon: Bell, available: true },
-  { id: "premium", label: "Premium", href: "/premium", icon: Crown, available: false },
-  { id: "settings", label: "Settings", href: "/settings", icon: Settings, available: true },
-  { id: "profile", label: "My Profile", href: "/profile", icon: User, available: true },
+  { id: "home", label: "Home", href: "/feed", icon: Home, gloss: "home", available: true },
+  { id: "inbox", label: "Inbox", href: "/inbox", icon: MessageCircle, gloss: "inbox", available: true },
+  { id: "ai-tools", label: "AI Tools", href: "/ai-tools", icon: Bot, gloss: "ai-tools", available: true },
+  { id: "school", label: "School", href: "/tools/school", icon: GraduationCap, gloss: "school", available: true },
+  { id: "business", label: "Business", href: "/tools/business", icon: Briefcase, gloss: "business", available: true },
+  { id: "writing", label: "Writing", href: "/tools/writing", icon: PenLine, gloss: "writing", available: true },
+  { id: "travel", label: "Travel", href: "/tools/travel", icon: Plane, gloss: "travel", available: true },
+  { id: "home-tools", label: "Home Tools", href: "/tools/home", icon: Wrench, gloss: "home-tools", available: true },
+  { id: "communities", label: "Communities", href: "/communities", icon: Users, gloss: "communities", available: true },
+  { id: "favorites", label: "Favorites", href: "/favourites", icon: Heart, gloss: "favorites", available: true },
+  { id: "history", label: "History", href: "/history", icon: History, gloss: "history", available: true },
+  { id: "collections", label: "Collections", href: "/collections", icon: FolderOpen, gloss: "collections", available: true },
+  { id: "notifications", label: "Notifications", href: "/notifications", icon: Bell, gloss: "notifications", available: true },
+  { id: "premium", label: "Premium", href: "/premium", icon: Crown, gloss: "premium", available: false },
+  { id: "settings", label: "Settings", href: "/settings", icon: Settings, gloss: "settings", available: true },
+  { id: "profile", label: "My Profile", href: "/profile", icon: User, gloss: "profile", available: true },
 ];
 
 export default function NavShell({ children, user }) {
@@ -105,13 +106,13 @@ export default function NavShell({ children, user }) {
         }
         .vreedits-brand { font-size: 17px; font-weight: 600; font-family: var(--font-display); }
         .vreedits-overlay {
-          position: fixed; inset: 0; background: rgba(0,0,0,0.45); opacity: 0; pointer-events: none;
+          position: fixed; inset: 0; background: rgba(0,0,0,0.5); opacity: 0; pointer-events: none;
           transition: opacity 0.25s ease; z-index: 40;
         }
         .vreedits-overlay.open { opacity: 1; pointer-events: auto; }
         .vreedits-menu {
           position: fixed; top: 0; left: 0; bottom: 0; width: min(320px, 86vw);
-          background: var(--surface); border-right: 1px solid var(--border);
+          background: var(--menu-bg); border-right: 1px solid var(--border);
           box-shadow: var(--shadow); transform: translateX(-100%);
           transition: transform 0.3s cubic-bezier(0.22,1,0.36,1); z-index: 50;
           display: flex; flex-direction: column; overflow-y: auto;
@@ -154,13 +155,15 @@ export default function NavShell({ children, user }) {
         .vreedits-popover-item.danger { color: var(--danger); }
         .vreedits-nav-scroll { padding: 10px 12px 14px; flex: 1; }
         .vreedits-nav-item {
-          display: flex; align-items: center; gap: 11px; width: 100%; padding: 10px 12px; border-radius: 10px;
-          border: none; background: transparent; color: var(--text-muted); font-size: 14px; font-weight: 500;
-          cursor: pointer; margin-bottom: 2px; text-align: left;
+          display: flex; align-items: center; gap: 12px; width: 100%; padding: 6px 12px; border-radius: 14px;
+          border: 1px solid transparent; background: transparent; color: var(--text); font-size: 15px;
+          font-weight: 500; cursor: pointer; margin-bottom: 2px; text-align: left;
         }
-        .vreedits-nav-item:hover { background: var(--surface-2); color: var(--text); }
-        .vreedits-nav-item.active { background: var(--accent-soft); color: var(--accent); }
-        .vreedits-nav-item.locked { opacity: 0.4; cursor: not-allowed; }
+        .vreedits-nav-item:hover { background: var(--surface-2); }
+        .vreedits-nav-item.active {
+          background: var(--accent-soft); color: var(--text); border-color: var(--border);
+        }
+        .vreedits-nav-item.locked { opacity: 0.55; cursor: not-allowed; }
         .vreedits-lock-badge { margin-left: auto; }
         .vreedits-content { flex: 1; min-height: 0; overflow-y: auto; }
       `}</style>
@@ -223,9 +226,9 @@ export default function NavShell({ children, user }) {
             if (!item.available) {
               return (
                 <div key={item.id} className="vreedits-nav-item locked" title="Coming in a later phase">
-                  <item.icon size={17} />
+                  <GlossIcon name={item.gloss} size={38} fallback={item.icon} />
                   {item.label}
-                  <Lock size={13} className="vreedits-lock-badge" />
+                  <Lock size={14} className="vreedits-lock-badge" />
                 </div>
               );
             }
@@ -236,7 +239,7 @@ export default function NavShell({ children, user }) {
                 className={`vreedits-nav-item ${isActive ? "active" : ""}`}
                 onClick={() => setMenuOpen(false)}
               >
-                <item.icon size={17} />
+                <GlossIcon name={item.gloss} size={38} fallback={item.icon} />
                 {item.label}
               </Link>
             );
