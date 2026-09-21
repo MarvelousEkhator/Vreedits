@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ArrowLeft, Loader2, AlertCircle, CheckCircle2, Camera, ChevronRight, X } from "lucide-react";
 import NavShell from "@/components/NavShell";
 import AvatarCropper from "@/components/AvatarCropper";
@@ -74,6 +74,7 @@ function FieldSheet({ label, value, onSave, onClose, multiline, maxLength }) {
 }
 
 export default function EditProfilePage() {
+  const router = useRouter();
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -83,6 +84,14 @@ export default function EditProfilePage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const fileInputRef = useRef(null);
+
+  function handleBack() {
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back();
+    } else {
+      router.push("/profile");
+    }
+  }
 
   async function loadEverything() {
     try {
@@ -199,9 +208,14 @@ export default function EditProfilePage() {
       <div className="min-h-screen flex flex-col items-center px-4 pb-16">
         <div className="w-full max-w-[480px] mt-4">
           <div className="flex items-center gap-3 mb-6">
-            <Link href="/profile" aria-label="Back" style={{ color: "var(--text)" }}>
+            <button
+              type="button"
+              onClick={handleBack}
+              aria-label="Back"
+              style={{ background: "none", border: "none", color: "var(--text)", padding: 0 }}
+            >
               <ArrowLeft size={20} />
-            </Link>
+            </button>
             <h1 className="text-lg font-semibold">Edit profile</h1>
           </div>
 
