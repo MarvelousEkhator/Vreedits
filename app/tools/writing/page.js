@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import NavShell from "@/components/NavShell";
 import SectionDashboard from "@/components/SectionDashboard";
 import { TOOLS } from "@/lib/aiTools";
-import { PenLine } from "lucide-react";
+import GlossIcon from "@/components/GlossIcon";
 
 export default async function WritingPage() {
   const userId = getSessionUserId();
@@ -22,7 +22,7 @@ export default async function WritingPage() {
     <NavShell user={user}>
       <SectionDashboard
         title="Writing"
-        icon={<PenLine size={20} />}
+        icon={<GlossIcon name="writing" size={28} />}
         description="Draft, polish, and generate writing of any kind."
         items={items}
       />
