@@ -8,7 +8,7 @@ import {
   SlidersHorizontal, Flag, Pencil, Reply, CornerUpRight, Copy, BookOpen,
   HelpCircle, ExternalLink, Smile, Sticker, Check,
 } from "lucide-react";
-import CommunitySettingsPage, { resolveSettingsPage } from "./CommunitySettingsPage";
+import CommunitySettingsPage, { resolveSettingsPage } from "@/components/CommunitySettingsPage";
 
 function relativeTime(dateStr) {
   const diffMs = Date.now() - new Date(dateStr).getTime();
@@ -330,7 +330,7 @@ function OnboardingFlowModal({ data, channels, onClose, onSubmit, submitting }) 
 
         {data.requireRulesAck && (
           <p className="text-xs mb-4" style={{ color: "var(--text-muted)" }}>
-            By continuing you agree to follow this community&apos;s rules. You can review them any time from Settings → Rules.
+            By continuing you agree to follow this community's rules. You can review them any time from Settings → Rules.
           </p>
         )}
 
@@ -832,7 +832,9 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
     } finally {
       setGuideConfigLoading(false);
     }
-  }, [communityId]);const loadEmojis = useCallback(async () => {
+  }, [communityId]);
+
+  const loadEmojis = useCallback(async () => {
     setEmojisLoading(true);
     try {
       const res = await fetch(`/api/communities/${communityId}/emojis`);
@@ -1658,7 +1660,9 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
           onToggleThread={(postId) => setOpenThreads((prev) => ({ ...prev, [postId]: !prev[postId] }))}
           reportedIds={reportedIds}
         />
-      )}{view === "settings" && canManage && (
+      )}
+
+      {view === "settings" && canManage && (
         <div
           style={{
             position: "fixed", inset: 0, background: "var(--surface)", zIndex: 150,
@@ -2456,7 +2460,9 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
                   </form>
                 )}
               </div>
-            )}{settingsPage === "emojis-stickers" && (
+            )}
+
+            {settingsPage === "emojis-stickers" && (
               <div>
                 <input
                   ref={emojiFileInputRef}
@@ -2562,6 +2568,10 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
               </div>
             )}
 
+            {resolveSettingsPage(settingsPage) && (
+              <CommunitySettingsPage page={resolveSettingsPage(settingsPage)} communityId={communityId} />
+            )}
+
             {settingsPage === "danger" && community.isOwner && (
               <div>
                 <p className="text-xs mb-3" style={{ color: "var(--text-muted)" }}>
@@ -2571,13 +2581,6 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
                   <Trash2 size={14} /> Delete Community
                 </button>
               </div>
-            )}
-
-            {settingsPage && resolveSettingsPage(settingsPage) && (
-              <CommunitySettingsPage
-                page={resolveSettingsPage(settingsPage)}
-                communityId={communityId}
-              />
             )}
 
             {settingsPage && !resolveSettingsPage(settingsPage) && !["overview", "members", "invites", "channels", "roles", "danger", "threads", "rules", "onboarding", "community-guide", "emojis-stickers"].includes(settingsPage) && (
@@ -2697,7 +2700,7 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
         <div className="card p-4 mb-4" style={{ border: "1px solid var(--accent)" }}>
           <p className="text-sm font-semibold mb-1">Please review the community rules</p>
           <p className="text-xs mb-3" style={{ color: "var(--text-muted)" }}>
-            You need to acknowledge this community&apos;s rules before you can participate.
+            You need to acknowledge this community's rules before you can participate.
           </p>
           <button
             onClick={() => { setView("settings"); setSettingsPage("rules"); }}
