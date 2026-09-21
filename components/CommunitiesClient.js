@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   Search, Users, Plus, Check, X, Loader2, Crown, ImageIcon, ArrowRight, ArrowLeft, UserPlus, Sparkles,
 } from "lucide-react";
+import GlossIcon from "@/components/GlossIcon";
 
 const CATEGORY_OPTIONS = ["Social", "Gaming", "Education", "Technology", "Art", "Business", "Music", "Photography", "AI", "Writing", "General"];
 
@@ -184,10 +185,10 @@ export default function CommunitiesClient() {
 
   return (
     <div>
-      <div className="relative flex items-center mb-4">
-        <Search size={15} className="absolute left-3" style={{ color: "var(--text-muted)" }} />
+      <div className="v-search mb-4">
+        <GlossIcon name="search" size={34} fallback={Search} />
         <input
-          className="input"
+          type="text"
           placeholder="Search communities…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
