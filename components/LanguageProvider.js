@@ -36,6 +36,22 @@ export function LanguageProvider({ userLanguage, children }) {
     try { localStorage.setItem(STORAGE_KEY, next); } catch {}
   }, []);
 
+  // Watches the Settings language dropdown so choosing a language switches the app.
+  useEffect(() => {
+    function onChange(e) {
+      const el = e.target;
+      if (!el || el.tagName !== "SELECT") return;
+      const labels = Array.from(el.options).map((o) => (o.text || "").trim().toLowerCase());
+      if (!(labels.includes("english") && labels.includes("portuguese"))) return;
+      const opt = el.options[el.selectedIndex];
+      if (!opt) return;
+      const code = normalizeLang(opt.value) || normalizeLang(opt.text);
+      if (code) setLang(code);
+    }
+    document.addEventListener("change", onChange);
+    return () => document.removeEventListener("change", onChange);
+  }, [setLang]);
+
   const t = useCallback((key) => translate(lang, key), [lang]);
 
   return (
