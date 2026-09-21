@@ -92,8 +92,8 @@ function PostActionSheet({ post, currentUserId, onClose, onQuickReact, onReply, 
     );
   }
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 200, display: "flex", alignItems: "flex-end" }} onClick={onClose}>
-      <div style={{ width: "100%", background: "var(--surface)", borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingBottom: 20, maxHeight: "70vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center" }} onClick={onClose}>
+      <div style={{ width: "100%", maxWidth: 520, background: "var(--surface)", borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingBottom: 20, maxHeight: "70vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "center", gap: 14, padding: "16px 12px" }}>
           {["❤️", "😢", "😂", "👍", "💀", "😮"].map((e) => (
             <button key={e} onClick={() => { onQuickReact(e); onClose(); }} style={{ fontSize: 24, background: "none", border: "none" }}>{e}</button>
@@ -1589,7 +1589,7 @@ function AccessControlRow({ label, value, onChange, roles }) {
   }
 
   return (
-    <div>
+    <div className="cd-page">
       {cropTarget && (
         <CropModal
           image={cropTarget.image}
@@ -1636,6 +1636,7 @@ function AccessControlRow({ label, value, onChange, roles }) {
 
       {view === "settings" && canManage && (
         <div
+          className="cd-overlay-wide"
           style={{
             position: "fixed", inset: 0, background: "var(--surface)", zIndex: 150,
             display: "flex", flexDirection: "column", overflowY: "auto",
@@ -1653,11 +1654,12 @@ function AccessControlRow({ label, value, onChange, roles }) {
             </h1>
           </div>
 
-          <div className="p-4" style={{ flex: 1 }}>
-            {!settingsPage && (
+          <div className="p-4 cd-settings-body" style={{ flex: 1 }}>
+            <div className={settingsPage ? "cd-hide-mobile" : ""}>
               <SettingsSidebar settingsPage={settingsPage || ""} setSettingsPage={setSettingsPage} isOwner={community.isOwner} />
-            )}
+            </div>
 
+            <div style={{ minWidth: 0 }}>
             {settingsPage === "overview" && (
               <form onSubmit={handleSaveSettings} className="space-y-3">
                 <div>
@@ -2562,6 +2564,7 @@ function AccessControlRow({ label, value, onChange, roles }) {
                 </p>
               </div>
             )}
+            </div>
           </div>
         </div>
       )}
@@ -2902,6 +2905,7 @@ function AccessControlRow({ label, value, onChange, roles }) {
 
       {view === "feed" && channelViewOpen && activeChannel && (
         <div
+          className="cd-overlay"
           style={{
             position: "fixed", inset: 0, background: "var(--surface)", zIndex: 150,
             display: "flex", flexDirection: "column",
