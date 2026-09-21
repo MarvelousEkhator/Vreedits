@@ -1,7 +1,13 @@
 "use client";
 import { useState, useEffect } from "react";
 
-const SPRITE = "/icons/sprite.png";
+// The app looks for the icon sheet in these places, in this order.
+const CANDIDATES = [
+  "/icons/sprite.png",
+  "/icons/1000021901.png",
+  "/sprite.png",
+  "/1000021901.png",
+];
 const COLS = 5;
 const ROWS = 4;
 
@@ -12,19 +18,31 @@ const POS = {
   profile: [0, 3], search: [1, 3],
 };
 
-// Remember whether the sprite loaded so every icon doesn't re-check.
+// Remember which file worked so every icon doesn't re-check.
 let spriteStatus = "unknown"; // "unknown" | "ok" | "fail"
+let spriteSrc = null;
 let spritePromise = null;
+
+function tryLoad(i, resolve) {
+  if (i >= CANDIDATES.length) {
+    spriteStatus = "fail";
+    resolve("fail");
+    return;
+  }
+  const img = new window.Image();
+  img.onload = () => {
+    spriteSrc = CANDIDATES[i];
+    spriteStatus = "ok";
+    resolve("ok");
+  };
+  img.onerror = () => tryLoad(i + 1, resolve);
+  img.src = CANDIDATES[i];
+}
 
 function checkSprite() {
   if (spriteStatus !== "unknown") return Promise.resolve(spriteStatus);
   if (!spritePromise) {
-    spritePromise = new Promise((resolve) => {
-      const img = new window.Image();
-      img.onload = () => { spriteStatus = "ok"; resolve("ok"); };
-      img.onerror = () => { spriteStatus = "fail"; resolve("fail"); };
-      img.src = SPRITE;
-    });
+    spritePromise = new Promise((resolve) => tryLoad(0, resolve));
   }
   return spritePromise;
 }
@@ -55,14 +73,14 @@ export default function GlossIcon({ name, size = 36, fallback: Fallback }) {
   }, []);
 
   const pos = POS[name];
-  if (!ready || !pos) return <Gem size={size} Fallback={Fallback} />;
+  if (!ready || !pos || !spriteSrc) return <Gem size={size} Fallback={Fallback} />;
 
   return (
     <span
       aria-hidden="true"
       style={{
         display: "inline-block", width: size, height: size, flexShrink: 0,
-        backgroundImage: `url(${SPRITE})`,
+        backgroundImage: `url(${spriteSrc})`,
         backgroundRepeat: "no-repeat",
         backgroundSize: `${COLS * size}px ${ROWS * size}px`,
         backgroundPosition: `${-pos[0] * size}px ${-pos[1] * size}px`,
