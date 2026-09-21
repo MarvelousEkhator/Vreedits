@@ -6,9 +6,8 @@ import {
   UserPlus, Link2, X as XIcon, Hash, Plus, Settings, ChevronLeft, ChevronDown,
   ChevronRight, Image as ImageIcon, Shield, ShieldOff, Calendar, ZoomIn, Tag,
   SlidersHorizontal, Flag, Pencil, Reply, CornerUpRight, Copy, BookOpen,
-  HelpCircle, ExternalLink, Smile, Sticker,
+  HelpCircle, ExternalLink, Smile, Sticker, Check,
 } from "lucide-react";
-import CommunitySettingsPage, { resolveSettingsPage } from "./CommunitySettingsPage";
 
 function relativeTime(dateStr) {
   const diffMs = Date.now() - new Date(dateStr).getTime();
@@ -92,8 +91,8 @@ function PostActionSheet({ post, currentUserId, onClose, onQuickReact, onReply, 
     );
   }
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center" }} onClick={onClose}>
-      <div style={{ width: "100%", maxWidth: 520, background: "var(--surface)", borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingBottom: 20, maxHeight: "70vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 200, display: "flex", alignItems: "flex-end" }} onClick={onClose}>
+      <div style={{ width: "100%", background: "var(--surface)", borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingBottom: 20, maxHeight: "70vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "center", gap: 14, padding: "16px 12px" }}>
           {["❤️", "😢", "😂", "👍", "💀", "😮"].map((e) => (
             <button key={e} onClick={() => { onQuickReact(e); onClose(); }} style={{ fontSize: 24, background: "none", border: "none" }}>{e}</button>
@@ -111,109 +110,134 @@ function PostActionSheet({ post, currentUserId, onClose, onQuickReact, onReply, 
 }
 
 function CropModal({ image, aspect, shape, onCancel, onConfirm }) {
+  const imgRef = useRef(null);
+  const [naturalSize, setNaturalSize] = useState(null);
   const [zoom, setZoom] = useState(1);
-  const [pos, setPos] = useState({ x: 0.5, y: 0.5 });
-  const dragRef = useRef(null);
-  const frameRef = useRef(null);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const dragState = useRef(null);
+
+  // Preview box: same width for both shapes, height derived from aspect
+  // (280x280 for a 1:1 icon, 280x93 for a 3:1 banner) — matches
+  // AvatarCropper's PREVIEW_SIZE convention, generalized to non-square boxes.
+  const PREVIEW_W = 280;
+  const PREVIEW_H = Math.round(PREVIEW_W / aspect);
+  const OUTPUT_W = aspect >= 1 ? 800 : Math.round(800 * aspect);
+  const OUTPUT_H = Math.round(OUTPUT_W / aspect);
+
+  useEffect(() => {
+    setZoom(1);
+    setOffset({ x: 0, y: 0 });
+    const img = new window.Image();
+    img.onload = () => setNaturalSize({ w: img.naturalWidth, h: img.naturalHeight });
+    img.src = image;
+  }, [image]);
+
+  const baseScale = naturalSize
+    ? Math.max(PREVIEW_W / naturalSize.w, PREVIEW_H / naturalSize.h)
+    : 1;
+  const effectiveScale = baseScale * zoom;
 
   function handlePointerDown(e) {
-    dragRef.current = { startX: e.clientX, startY: e.clientY, origPos: pos };
+    dragState.current = { startX: e.clientX, startY: e.clientY, origin: { ...offset } };
+    e.currentTarget.setPointerCapture(e.pointerId);
   }
   function handlePointerMove(e) {
-    if (!dragRef.current || !frameRef.current) return;
-    const rect = frameRef.current.getBoundingClientRect();
-    const dx = (e.clientX - dragRef.current.startX) / rect.width;
-    const dy = (e.clientY - dragRef.current.startY) / rect.height;
-    setPos({
-      x: Math.min(1, Math.max(0, dragRef.current.origPos.x - dx)),
-      y: Math.min(1, Math.max(0, dragRef.current.origPos.y - dy)),
-    });
+    if (!dragState.current) return;
+    const dx = e.clientX - dragState.current.startX;
+    const dy = e.clientY - dragState.current.startY;
+    setOffset({ x: dragState.current.origin.x + dx, y: dragState.current.origin.y + dy });
   }
   function handlePointerUp() {
-    dragRef.current = null;
+    dragState.current = null;
   }
 
-  function confirm() {
-    const img = new window.Image();
-    img.onload = () => {
-      const outW = aspect >= 1 ? 800 : 400;
-      const outH = Math.round(outW / aspect);
-      const canvas = document.createElement("canvas");
-      canvas.width = outW;
-      canvas.height = outH;
-      const ctx = canvas.getContext("2d");
+  function handleSave() {
+    if (!naturalSize) return;
+    const canvas = document.createElement("canvas");
+    canvas.width = OUTPUT_W;
+    canvas.height = OUTPUT_H;
+    const ctx = canvas.getContext("2d");
+    const outputScaleFactor = OUTPUT_W / PREVIEW_W;
 
-      const scale = Math.max(outW / img.width, outH / img.height) * zoom;
-      const drawW = img.width * scale;
-      const drawH = img.height * scale;
-      const drawX = outW / 2 - pos.x * drawW;
-      const drawY = outH / 2 - pos.y * drawH;
+    if (shape === "circle") {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(OUTPUT_W / 2, OUTPUT_H / 2, OUTPUT_W / 2, 0, Math.PI * 2);
+      ctx.closePath();
+      ctx.clip();
+    }
 
-      ctx.drawImage(img, drawX, drawY, drawW, drawH);
-      onConfirm(canvas.toDataURL("image/jpeg", 0.88));
-    };
-    img.src = image;
+    ctx.translate(
+      OUTPUT_W / 2 + offset.x * outputScaleFactor,
+      OUTPUT_H / 2 + offset.y * outputScaleFactor
+    );
+    ctx.scale(effectiveScale * outputScaleFactor, effectiveScale * outputScaleFactor);
+    ctx.drawImage(imgRef.current, -naturalSize.w / 2, -naturalSize.h / 2);
+    if (shape === "circle") ctx.restore();
+
+    onConfirm(canvas.toDataURL("image/jpeg", 0.88));
   }
 
   return (
     <div
       style={{
-        position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200,
+        position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 200,
         display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
       }}
     >
-      <div className="card p-4" style={{ maxWidth: 380, width: "100%" }}>
-        <h3 className="text-sm font-semibold mb-3">Adjust image</h3>
+      <div className="card" style={{ width: "100%", maxWidth: 360, padding: 22 }}>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-base font-semibold" style={{ fontFamily: "var(--font-display)" }}>
+            Drag to reposition
+          </h2>
+          <button onClick={onCancel} style={{ color: "var(--text-muted)", background: "none", border: "none" }} aria-label="Cancel">
+            <XIcon size={18} />
+          </button>
+        </div>
+
         <div
-          ref={frameRef}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
           onPointerLeave={handlePointerUp}
           style={{
-            width: "100%",
-            aspectRatio: aspect,
-            borderRadius: shape === "circle" ? "50%" : 12,
-            overflow: "hidden",
-            position: "relative",
-            background: "var(--surface-2)",
-            cursor: "grab",
-            touchAction: "none",
+            width: PREVIEW_W, height: PREVIEW_H, borderRadius: shape === "circle" ? "50%" : 12,
+            overflow: "hidden", margin: "0 auto 20px", position: "relative",
+            background: "var(--surface-2)", border: "1px solid var(--border)",
+            cursor: "grab", touchAction: "none",
           }}
         >
-          <img
-            src={image}
-            alt=""
-            draggable={false}
-            style={{
-              position: "absolute",
-              top: `${pos.y * 100}%`,
-              left: `${pos.x * 100}%`,
-              transform: `translate(-50%, -50%) scale(${zoom})`,
-              minWidth: "100%",
-              minHeight: "100%",
-              width: "auto",
-              height: "auto",
-              userSelect: "none",
-              pointerEvents: "none",
-            }}
-          />
+          {naturalSize && (
+            <img
+              ref={imgRef}
+              src={image}
+              alt="Crop preview"
+              draggable={false}
+              style={{
+                position: "absolute", left: "50%", top: "50%",
+                width: naturalSize.w, height: naturalSize.h,
+                transform: `translate(-50%, -50%) translate(${offset.x}px, ${offset.y}px) scale(${effectiveScale})`,
+                transformOrigin: "center center",
+                pointerEvents: "none",
+              }}
+            />
+          )}
         </div>
-        <div className="flex items-center gap-2 mt-3">
-          <ZoomIn size={14} style={{ color: "var(--text-muted)" }} />
-          <input
-            type="range"
-            min="1"
-            max="3"
-            step="0.01"
-            value={zoom}
-            onChange={(e) => setZoom(parseFloat(e.target.value))}
-            style={{ flex: 1 }}
-          />
-        </div>
-        <div className="flex gap-2 mt-3">
-          <button onClick={confirm} className="btn-primary">Apply</button>
-          <button onClick={onCancel} className="btn-primary" style={{ background: "var(--surface-2)", color: "var(--text)" }}>Cancel</button>
+
+        <input
+          type="range" min="1" max="3" step="0.01" value={zoom}
+          onChange={(e) => setZoom(parseFloat(e.target.value))}
+          style={{ width: "100%", marginBottom: 20 }}
+          aria-label="Zoom"
+        />
+
+        <div className="flex gap-2">
+          <button onClick={onCancel} className="btn-primary" style={{ background: "var(--surface-2)", color: "var(--text)" }}>
+            Cancel
+          </button>
+          <button onClick={handleSave} className="btn-primary">
+            <Check size={15} /> Save
+          </button>
         </div>
       </div>
     </div>
@@ -479,7 +503,9 @@ function AccessControlRow({ label, value, onChange, roles }) {
       )}
     </div>
   );
-}export default function CommunityDetailClient({ communityId, currentUserId }) {
+}
+
+export default function CommunityDetailClient({ communityId, currentUserId }) {
   const router = useRouter();
   const bannerInputRef = useRef(null);
   const iconInputRef = useRef(null);
@@ -1353,7 +1379,9 @@ function AccessControlRow({ label, value, onChange, roles }) {
   }
   function handlePressEnd(postId) {
     clearTimeout(pressTimers.current[postId]);
-  }// ── Onboarding: admin config editor helpers ──
+  }
+
+  // ── Onboarding: admin config editor helpers ──
   function addOnboardingQuestion() {
     setOnboardingQuestions((prev) => [
       ...prev,
@@ -1587,9 +1615,8 @@ function AccessControlRow({ label, value, onChange, roles }) {
     setActiveChannelId(channelId);
     setChannelViewOpen(true);
   }
-
   return (
-    <div className="cd-page">
+    <div>
       {cropTarget && (
         <CropModal
           image={cropTarget.image}
@@ -1636,7 +1663,6 @@ function AccessControlRow({ label, value, onChange, roles }) {
 
       {view === "settings" && canManage && (
         <div
-          className="cd-overlay-wide"
           style={{
             position: "fixed", inset: 0, background: "var(--surface)", zIndex: 150,
             display: "flex", flexDirection: "column", overflowY: "auto",
@@ -1654,12 +1680,11 @@ function AccessControlRow({ label, value, onChange, roles }) {
             </h1>
           </div>
 
-          <div className="p-4 cd-settings-body" style={{ flex: 1 }}>
-            <div className={settingsPage ? "cd-hide-mobile" : ""}>
+          <div className="p-4" style={{ flex: 1 }}>
+            {!settingsPage && (
               <SettingsSidebar settingsPage={settingsPage || ""} setSettingsPage={setSettingsPage} isOwner={community.isOwner} />
-            </div>
+            )}
 
-            <div style={{ minWidth: 0 }}>
             {settingsPage === "overview" && (
               <form onSubmit={handleSaveSettings} className="space-y-3">
                 <div>
@@ -1979,7 +2004,9 @@ function AccessControlRow({ label, value, onChange, roles }) {
                   </form>
                 </div>
               </div>
-            )}{settingsPage === "roles" && (
+            )}
+
+            {settingsPage === "roles" && (
               <div>
                 <div className="space-y-2 mb-4">
                   {roles.map((role) => (
@@ -2551,11 +2578,7 @@ function AccessControlRow({ label, value, onChange, roles }) {
               </div>
             )}
 
-            {settingsPage && resolveSettingsPage(settingsPage) && (
-              <CommunitySettingsPage page={resolveSettingsPage(settingsPage)} communityId={communityId} />
-            )}
-
-            {settingsPage && !resolveSettingsPage(settingsPage) && !["overview", "members", "invites", "channels", "roles", "danger", "threads", "rules", "onboarding", "community-guide", "emojis-stickers"].includes(settingsPage) && (
+            {settingsPage && !["overview", "members", "invites", "channels", "roles", "danger", "threads", "rules", "onboarding", "community-guide", "emojis-stickers"].includes(settingsPage) && (
               <div className="card p-6 text-center space-y-2" style={{ background: "var(--surface-2)" }}>
                 <SlidersHorizontal size={24} className="mx-auto" style={{ color: "var(--text-muted)" }} />
                 <h3 className="text-sm font-semibold">{SETTINGS_TITLES[settingsPage]}</h3>
@@ -2564,12 +2587,10 @@ function AccessControlRow({ label, value, onChange, roles }) {
                 </p>
               </div>
             )}
-            </div>
           </div>
         </div>
       )}
-
-      <div className="mb-4" style={{ borderRadius: 16, overflow: "hidden", border: "1px solid var(--border)" }}>
+<div className="mb-4" style={{ borderRadius: 16, overflow: "hidden", border: "1px solid var(--border)" }}>
         <div
           onClick={() => canManage && pickImage("banner")}
           style={{
@@ -2902,10 +2923,8 @@ function AccessControlRow({ label, value, onChange, roles }) {
           )}
         </div>
       )}
-
-      {view === "feed" && channelViewOpen && activeChannel && (
+{view === "feed" && channelViewOpen && activeChannel && (
         <div
-          className="cd-overlay"
           style={{
             position: "fixed", inset: 0, background: "var(--surface)", zIndex: 150,
             display: "flex", flexDirection: "column",
