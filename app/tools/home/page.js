@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import NavShell from "@/components/NavShell";
 import SectionDashboard from "@/components/SectionDashboard";
 import { TOOLS } from "@/lib/aiTools";
-import { Wrench } from "lucide-react";
+import GlossIcon from "@/components/GlossIcon";
 
 export default async function HomeToolsPage() {
   const userId = getSessionUserId();
