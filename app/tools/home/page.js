@@ -22,7 +22,7 @@ export default async function HomeToolsPage() {
     <NavShell user={user}>
       <SectionDashboard
         title="Home Tools"
-        icon={<Wrench size={20} />}
+        icon={<GlossIcon name="home-tools" size={28} />}
         description="Everyday utilities for daily life."
         items={items}
       />
