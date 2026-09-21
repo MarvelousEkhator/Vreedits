@@ -2,42 +2,72 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ───────── LIGHT MODE — lilac ───────── */
 :root {
-  --bg: #FAFAFB;
-  --surface: #FFFFFF;
-  --surface-2: #F2F2F5;
-  --border: #E7E7EC;
-  --text: #14151A;
-  --text-muted: #71727E;
-  --accent: #6D4FF2;
-  --accent-soft: rgba(109, 79, 242, 0.10);
-  --danger: #E4574C;
-  --danger-soft: rgba(228, 87, 76, 0.10);
-  --success: #17A398;
-  --success-soft: rgba(23, 163, 152, 0.10);
-  --shadow: 0 20px 60px rgba(20, 21, 26, 0.14);
+  --bg: #d9cdf8;
+  --bg-gradient: linear-gradient(90deg, #ded3f6 0%, #d3c6fc 100%);
+  --menu-bg: linear-gradient(180deg, #e6dcfa 0%, #d3c6fc 100%);
+  --surface: #f4effd;
+  --surface-2: #e8dffa;
+  --border: #c9b8f0;
+  --text: #2a1a4a;
+  --text-muted: #6b5a8e;
+  --accent: #9303c5;
+  --accent-btn: linear-gradient(135deg, #a10cd6 0%, #7a02a3 100%);
+  --accent-soft: rgba(147, 3, 197, 0.12);
+  --danger: #d6453b;
+  --danger-soft: rgba(214, 69, 59, 0.12);
+  --success: #12907f;
+  --success-soft: rgba(18, 144, 127, 0.12);
+  --shadow: 0 20px 60px rgba(90, 40, 160, 0.18);
 }
 
+/* ───────── DARK MODE — Royal Violet (#02060E → #9303C5) ───────── */
 .dark {
-  --bg: #0E0F14;
-  --surface: #16171F;
-  --surface-2: #1D1F29;
-  --border: #272935;
-  --text: #EDEDF2;
-  --text-muted: #8A8C99;
-  --accent: #8B70FF;
-  --accent-soft: rgba(139, 112, 255, 0.14);
-  --danger: #F0776C;
-  --danger-soft: rgba(240, 119, 108, 0.12);
-  --success: #2DD4C4;
+  color-scheme: dark;
+  --bg: #02060e;
+  --bg-gradient: linear-gradient(
+    180deg,
+    #02060e 0%,
+    #1b0330 40%,
+    #5c0180 75%,
+    #9303c5 100%
+  );
+  --menu-bg: linear-gradient(
+    180deg,
+    #02060e 0%,
+    #22033b 55%,
+    #6a0294 100%
+  );
+  --surface: #12041f;
+  --surface-2: #1d0732;
+  --border: #45126a;
+  --text: #f7ecff;
+  --text-muted: #b995d6;
+  --accent: #c15cff;
+  --accent-btn: linear-gradient(135deg, #a10cd6 0%, #7a02a3 100%);
+  --accent-soft: rgba(193, 92, 255, 0.16);
+  --danger: #f0776c;
+  --danger-soft: rgba(240, 119, 108, 0.14);
+  --success: #2dd4c4;
   --success-soft: rgba(45, 212, 196, 0.12);
-  --shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  --shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
 }
 
 body {
   background: var(--bg);
   color: var(--text);
-  transition: background 0.25s ease, color 0.25s ease;
+  transition: color 0.25s ease;
+}
+
+/* Full-screen gradient behind the whole app (works on phones too) */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: var(--bg-gradient);
+  z-index: -1;
+  pointer-events: none;
 }
 
 .card {
@@ -67,7 +97,7 @@ body {
   width: 100%;
   padding: 12px;
   border-radius: 10px;
-  background: var(--accent);
+  background: var(--accent-btn);
   color: white;
   font-size: 14px;
   font-weight: 600;
@@ -77,7 +107,7 @@ body {
   gap: 8px;
   transition: filter 0.15s ease, transform 0.1s ease;
 }
-.btn-primary:hover { filter: brightness(1.08); }
+.btn-primary:hover { filter: brightness(1.1); }
 .btn-primary:active { transform: scale(0.98); }
 .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
 
@@ -112,6 +142,28 @@ body {
 }
 .pw-req.met { color: var(--success); }
 .pw-req.taken { color: var(--danger); }
+
+/* ───────── Glossy search bar ───────── */
+.v-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 16px 6px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: var(--shadow);
+}
+.v-search input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-size: 16px;
+}
+.v-search input::placeholder { color: var(--text-muted); }
 
 /* ───────── Desktop / PC layout for communities ───────── */
 .cd-page { max-width: 960px; margin: 0 auto; }
