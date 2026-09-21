@@ -4,6 +4,7 @@ import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import PresenceHeartbeat from "@/components/PresenceHeartbeat";
 import GlossIcon from "@/components/GlossIcon";
+import ThemeToggle from "@/components/ThemeToggle";
 import {
   Menu, X, Home, Bot, GraduationCap, Briefcase, PenLine, Plane, Wrench,
   Users, Heart, History, FolderOpen, Bell, Crown, Settings, User,
@@ -96,7 +97,8 @@ export default function NavShell({ children, user }) {
       <style>{`
         .vreedits-topbar {
           display: flex; align-items: center; justify-content: space-between;
-          padding: 14px 18px; border-bottom: 1px solid var(--border); background: var(--surface);
+          padding: 14px 18px; border-bottom: 1px solid var(--border); background: var(--glass);
+          backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
           position: relative; z-index: 30; flex-shrink: 0;
         }
         .vreedits-hamburger {
@@ -159,11 +161,11 @@ export default function NavShell({ children, user }) {
           border: 1px solid transparent; background: transparent; color: var(--text); font-size: 15px;
           font-weight: 500; cursor: pointer; margin-bottom: 2px; text-align: left;
         }
-        .vreedits-nav-item:hover { background: var(--surface-2); }
+        .vreedits-nav-item:hover { background: var(--accent-soft); }
         .vreedits-nav-item.active {
           background: var(--accent-soft); color: var(--text); border-color: var(--border);
         }
-        .vreedits-nav-item.locked { opacity: 0.55; cursor: not-allowed; }
+        .vreedits-nav-item.locked { opacity: 0.6; cursor: not-allowed; }
         .vreedits-lock-badge { margin-left: auto; }
         .vreedits-content { flex: 1; min-height: 0; overflow-y: auto; }
       `}</style>
@@ -173,7 +175,7 @@ export default function NavShell({ children, user }) {
           <Menu size={20} />
         </button>
         <span className="vreedits-brand">Vreedits</span>
-        <div style={{ width: 42 }} />
+        <ThemeToggle />
       </div>
 
       <div className={`vreedits-overlay ${menuOpen ? "open" : ""}`} onClick={() => setMenuOpen(false)} />
