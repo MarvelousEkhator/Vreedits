@@ -1,13 +1,6 @@
 "use client";
-import { useState, useEffect } from "react";
+import spriteImg from "./sprite.png";
 
-// The app looks for the icon sheet in these places, in this order.
-const CANDIDATES = [
-  "/icons/sprite.png",
-  "/icons/1000021901.png",
-  "/sprite.png",
-  "/1000021901.png",
-];
 const COLS = 5;
 const ROWS = 4;
 
@@ -17,35 +10,6 @@ const POS = {
   history: [0, 2], collections: [1, 2], notifications: [2, 2], premium: [3, 2], settings: [4, 2],
   profile: [0, 3], search: [1, 3],
 };
-
-// Remember which file worked so every icon doesn't re-check.
-let spriteStatus = "unknown"; // "unknown" | "ok" | "fail"
-let spriteSrc = null;
-let spritePromise = null;
-
-function tryLoad(i, resolve) {
-  if (i >= CANDIDATES.length) {
-    spriteStatus = "fail";
-    resolve("fail");
-    return;
-  }
-  const img = new window.Image();
-  img.onload = () => {
-    spriteSrc = CANDIDATES[i];
-    spriteStatus = "ok";
-    resolve("ok");
-  };
-  img.onerror = () => tryLoad(i + 1, resolve);
-  img.src = CANDIDATES[i];
-}
-
-function checkSprite() {
-  if (spriteStatus !== "unknown") return Promise.resolve(spriteStatus);
-  if (!spritePromise) {
-    spritePromise = new Promise((resolve) => tryLoad(0, resolve));
-  }
-  return spritePromise;
-}
 
 function Gem({ size, Fallback }) {
   return (
@@ -64,23 +28,21 @@ function Gem({ size, Fallback }) {
 }
 
 export default function GlossIcon({ name, size = 36, fallback: Fallback }) {
-  const [ready, setReady] = useState(spriteStatus === "ok");
-
-  useEffect(() => {
-    let alive = true;
-    checkSprite().then((s) => { if (alive) setReady(s === "ok"); });
-    return () => { alive = false; };
-  }, []);
-
   const pos = POS[name];
-  if (!ready || !pos || !spriteSrc) return <Gem size={size} Fallback={Fallback} />;
+  const src = spriteImg && (spriteImg.src || spriteImg);
+
+  // Only shows the old purple tile if the icon name is unknown.
+  if (!pos || !src) return <Gem size={size} Fallback={Fallback} />;
 
   return (
     <span
       aria-hidden="true"
       style={{
-        display: "inline-block", width: size, height: size, flexShrink: 0,
-        backgroundImage: `url(${spriteSrc})`,
+        display: "inline-block",
+        width: size,
+        height: size,
+        flexShrink: 0,
+        backgroundImage: `url(${src})`,
         backgroundRepeat: "no-repeat",
         backgroundSize: `${COLS * size}px ${ROWS * size}px`,
         backgroundPosition: `${-pos[0] * size}px ${-pos[1] * size}px`,
