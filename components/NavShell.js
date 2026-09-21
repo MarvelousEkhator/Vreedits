@@ -5,6 +5,7 @@ import Link from "next/link";
 import PresenceHeartbeat from "@/components/PresenceHeartbeat";
 import GlossIcon from "@/components/GlossIcon";
 import ThemeToggle from "@/components/ThemeToggle";
+import { LanguageProvider, useLanguage } from "@/components/LanguageProvider";
 import {
   Menu, X, Home, Bot, GraduationCap, Briefcase, PenLine, Plane, Wrench,
   Users, Heart, History, FolderOpen, Bell, Crown, Settings, User,
@@ -12,25 +13,26 @@ import {
 } from "lucide-react";
 
 const NAV_ITEMS = [
-  { id: "home", label: "Home", href: "/feed", icon: Home, gloss: "home", available: true },
-  { id: "inbox", label: "Inbox", href: "/inbox", icon: MessageCircle, gloss: "inbox", available: true },
-  { id: "ai-tools", label: "AI Tools", href: "/ai-tools", icon: Bot, gloss: "ai-tools", available: true },
-  { id: "school", label: "School", href: "/tools/school", icon: GraduationCap, gloss: "school", available: true },
-  { id: "business", label: "Business", href: "/tools/business", icon: Briefcase, gloss: "business", available: true },
-  { id: "writing", label: "Writing", href: "/tools/writing", icon: PenLine, gloss: "writing", available: true },
-  { id: "travel", label: "Travel", href: "/tools/travel", icon: Plane, gloss: "travel", available: true },
-  { id: "home-tools", label: "Home Tools", href: "/tools/home", icon: Wrench, gloss: "home-tools", available: true },
-  { id: "communities", label: "Communities", href: "/communities", icon: Users, gloss: "communities", available: true },
-  { id: "favorites", label: "Favorites", href: "/favourites", icon: Heart, gloss: "favorites", available: true },
-  { id: "history", label: "History", href: "/history", icon: History, gloss: "history", available: true },
-  { id: "collections", label: "Collections", href: "/collections", icon: FolderOpen, gloss: "collections", available: true },
-  { id: "notifications", label: "Notifications", href: "/notifications", icon: Bell, gloss: "notifications", available: true },
-  { id: "premium", label: "Premium", href: "/premium", icon: Crown, gloss: "premium", available: false },
-  { id: "settings", label: "Settings", href: "/settings", icon: Settings, gloss: "settings", available: true },
-  { id: "profile", label: "My Profile", href: "/profile", icon: User, gloss: "profile", available: true },
+  { id: "home", labelKey: "nav.home", href: "/feed", icon: Home, gloss: "home", available: true },
+  { id: "inbox", labelKey: "nav.inbox", href: "/inbox", icon: MessageCircle, gloss: "inbox", available: true },
+  { id: "ai-tools", labelKey: "nav.aiTools", href: "/ai-tools", icon: Bot, gloss: "ai-tools", available: true },
+  { id: "school", labelKey: "nav.school", href: "/tools/school", icon: GraduationCap, gloss: "school", available: true },
+  { id: "business", labelKey: "nav.business", href: "/tools/business", icon: Briefcase, gloss: "business", available: true },
+  { id: "writing", labelKey: "nav.writing", href: "/tools/writing", icon: PenLine, gloss: "writing", available: true },
+  { id: "travel", labelKey: "nav.travel", href: "/tools/travel", icon: Plane, gloss: "travel", available: true },
+  { id: "home-tools", labelKey: "nav.homeTools", href: "/tools/home", icon: Wrench, gloss: "home-tools", available: true },
+  { id: "communities", labelKey: "nav.communities", href: "/communities", icon: Users, gloss: "communities", available: true },
+  { id: "favorites", labelKey: "nav.favorites", href: "/favourites", icon: Heart, gloss: "favorites", available: true },
+  { id: "history", labelKey: "nav.history", href: "/history", icon: History, gloss: "history", available: true },
+  { id: "collections", labelKey: "nav.collections", href: "/collections", icon: FolderOpen, gloss: "collections", available: true },
+  { id: "notifications", labelKey: "nav.notifications", href: "/notifications", icon: Bell, gloss: "notifications", available: true },
+  { id: "premium", labelKey: "nav.premium", href: "/premium", icon: Crown, gloss: "premium", available: false },
+  { id: "settings", labelKey: "nav.settings", href: "/settings", icon: Settings, gloss: "settings", available: true },
+  { id: "profile", labelKey: "nav.profile", href: "/profile", icon: User, gloss: "profile", available: true },
 ];
 
-export default function NavShell({ children, user }) {
+function NavShellInner({ children, user }) {
+  const { t } = useLanguage();
   const [menuOpen, setMenuOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const router = useRouter();
@@ -202,21 +204,21 @@ export default function NavShell({ children, user }) {
               @{user?.username?.toLowerCase()}
             </div>
             <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 3 }}>
-              {user?.online ? "Online" : "Offline"}
+              {user?.online ? t("common.online") : t("common.offline")}
             </div>
 
             <div className={`vreedits-popover-panel ${profileMenuOpen ? "open" : ""}`}>
               <Link href="/profile" className="vreedits-popover-item" onClick={() => setProfileMenuOpen(false)}>
-                <User size={15} /> View Profile
+                <User size={15} /> {t("menu.viewProfile")}
               </Link>
               <Link href="/profile" className="vreedits-popover-item" onClick={() => setProfileMenuOpen(false)}>
-                <User size={15} /> Edit Profile
+                <User size={15} /> {t("menu.editProfile")}
               </Link>
               <Link href={popoverSettingsHref} className="vreedits-popover-item" onClick={() => setProfileMenuOpen(false)}>
-                <Settings size={15} /> Settings
+                <Settings size={15} /> {t("nav.settings")}
               </Link>
               <button className="vreedits-popover-item danger" onClick={handleLogout}>
-                <LogOut size={15} /> Logout
+                <LogOut size={15} /> {t("nav.logout")}
               </button>
             </div>
           </div>
@@ -227,9 +229,9 @@ export default function NavShell({ children, user }) {
             const isActive = isItemActive(item);
             if (!item.available) {
               return (
-                <div key={item.id} className="vreedits-nav-item locked" title="Coming in a later phase">
+                <div key={item.id} className="vreedits-nav-item locked" title={t("common.comingSoon")}>
                   <GlossIcon name={item.gloss} size={38} fallback={item.icon} />
-                  {item.label}
+                  {t(item.labelKey)}
                   <Lock size={14} className="vreedits-lock-badge" />
                 </div>
               );
@@ -242,7 +244,7 @@ export default function NavShell({ children, user }) {
                 onClick={() => setMenuOpen(false)}
               >
                 <GlossIcon name={item.gloss} size={38} fallback={item.icon} />
-                {item.label}
+                {t(item.labelKey)}
               </Link>
             );
           })}
@@ -251,5 +253,13 @@ export default function NavShell({ children, user }) {
 
       <div className="vreedits-content">{children}</div>
     </div>
+  );
+}
+
+export default function NavShell({ children, user }) {
+  return (
+    <LanguageProvider userLanguage={user?.language}>
+      <NavShellInner user={user}>{children}</NavShellInner>
+    </LanguageProvider>
   );
 }
