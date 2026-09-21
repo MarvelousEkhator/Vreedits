@@ -9,6 +9,7 @@ import {
   Star, Globe, Lock,
 } from "lucide-react";
 import CameraCapture from "@/components/CameraCapture";
+import GlossIcon from "@/components/GlossIcon";
 
 // Videos are stored inside the database, so keep uploads under this size
 // (about 45 million characters of base64, roughly 33 MB of video).
@@ -493,7 +494,9 @@ function PostActionsSheet({ post, open, isOwner, onClose, onDownload, onShare, o
       </div>
     </>
   );
-}function SoundMarquee({ text }) {
+}
+
+function SoundMarquee({ text }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6, maxWidth: "100%" }}>
       <Music2 size={13} color="white" style={{ flexShrink: 0 }} />
@@ -816,7 +819,9 @@ function SoundPicker({ onSelect, onClose }) {
       </div>
     </div>
   );
-}function SearchOverlay({ onClose, onOpenProfile, onOpenSound }) {
+}
+
+function SearchOverlay({ onClose, onOpenProfile, onOpenSound }) {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState(null);
@@ -874,20 +879,16 @@ function SoundPicker({ onSelect, onClose }) {
     >
       <div
         className="flex items-center gap-2 px-3"
-        style={{ height: 56, borderBottom: "1px solid var(--border)", flexShrink: 0 }}
+        style={{ height: 64, borderBottom: "1px solid var(--border)", flexShrink: 0 }}
       >
         <button onClick={onClose} aria-label="Close search" style={{ background: "none", border: "none", color: "var(--text)" }}>
           <ArrowLeft size={22} />
         </button>
-        <div style={{ position: "relative", flex: 1 }}>
-          <Search
-            size={16}
-            style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)" }}
-          />
+        <div className="v-search" style={{ flex: 1, minWidth: 0, background: "var(--surface-2)" }}>
+          <GlossIcon name="search" size={34} fallback={Search} />
           <input
             ref={inputRef}
-            className="input"
-            style={{ paddingLeft: 36, paddingRight: 34 }}
+            type="text"
             placeholder="Search people, videos, #tags"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -896,10 +897,7 @@ function SoundPicker({ onSelect, onClose }) {
             <button
               onClick={() => setQuery("")}
               aria-label="Clear"
-              style={{
-                position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)",
-                background: "none", border: "none", color: "var(--text-muted)",
-              }}
+              style={{ background: "none", border: "none", color: "var(--text-muted)", display: "flex" }}
             >
               <X size={16} />
             </button>
@@ -1383,7 +1381,9 @@ function CreatePostModal({ open, onClose, onCreated, user, initialSound }) {
       )}
     </div>
   );
-}function HeartBurst({ x, y }) {
+}
+
+function HeartBurst({ x, y }) {
   return (
     <div
       style={{
@@ -1981,9 +1981,9 @@ export default function FeedClient({ user }) {
             <button
               onClick={openSearch}
               aria-label="Search"
-              style={{ background: "none", border: "none", color: "white" }}
+              style={{ background: "none", border: "none", color: "white", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}
             >
-              <Search size={22} />
+              <GlossIcon name="search" size={34} fallback={Search} />
             </button>
           </div>
         </div>
