@@ -6,7 +6,6 @@ import SectionDashboard from "@/components/SectionDashboard";
 import { TOOLS } from "@/lib/aiTools";
 import GlossIcon from "@/components/GlossIcon";
 
-
 export default async function SchoolPage() {
   const userId = getSessionUserId();
   if (!userId) redirect("/login");
@@ -30,7 +29,7 @@ export default async function SchoolPage() {
     <NavShell user={user}>
       <SectionDashboard
         title="School"
-        icon={<GraduationCap size={20} />}
+        icon={<GlossIcon name="school" size={28} />}
         description="Homework, studying, and everything class-related."
         items={items}
       />
