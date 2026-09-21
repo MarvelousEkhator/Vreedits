@@ -3,26 +3,33 @@ import { useState, useRef, useEffect, useCallback, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
-  ArrowLeft, Send, Loader2, Sparkles, AlertCircle,
+  ArrowLeft, Send, Loader2, AlertCircle,
   History, Plus, Trash2, X, MessageSquare, Paperclip, Camera, ImageIcon,
   File as FileIcon, Copy, Check, ThumbsUp, ThumbsDown, Share2, Home, Pin, Pencil,
 } from "lucide-react";
 import MarkdownText from "@/components/MarkdownText";
+import GlossIcon from "@/components/GlossIcon";
+import { useLanguage } from "@/components/LanguageProvider";
 
 const MAX_ATTACHMENT_BYTES = 4_000_000;
 const MAX_ATTACHMENTS = 3; // bump this (and the matching constant in route.js) to allow more
 const MAX_TEXTAREA_HEIGHT = 160;
 
-function relativeTime(dateStr) {
+function relativeTime(dateStr, lang = "en") {
   const diffMs = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diffMs / 60000);
-  if (mins < 1) return "Just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
-  return new Date(dateStr).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  try {
+    const rtf = new Intl.RelativeTimeFormat(lang, { numeric: "auto", style: "short" });
+    if (mins < 1) return rtf.format(0, "second");
+    if (mins < 60) return rtf.format(-mins, "minute");
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return rtf.format(-hours, "hour");
+    const days = Math.floor(hours / 24);
+    if (days < 7) return rtf.format(-days, "day");
+  } catch {
+    // fall through to the plain date below
+  }
+  return new Date(dateStr).toLocaleDateString(lang, { month: "short", day: "numeric" });
 }
 
 function getUserDateTime() {
@@ -57,18 +64,26 @@ function parseTimerCommand(text) {
   return { seconds: Math.round(seconds), amount, unit };
 }
 
-function formatTimerDuration(seconds) {
-  if (seconds < 60) return `${seconds} second${seconds === 1 ? "" : "s"}`;
+function unitText(lang, unit, value) {
+  try {
+    return new Intl.NumberFormat(lang, { style: "unit", unit, unitDisplay: "long" }).format(value);
+  } catch {
+    return `${value} ${unit}${value === 1 ? "" : "s"}`;
+  }
+}
+
+function formatTimerDuration(seconds, lang = "en") {
+  if (seconds < 60) return unitText(lang, "second", seconds);
   if (seconds < 3600) {
     const minutes = Math.floor(seconds / 60);
     const remainingSeconds = seconds % 60;
-    if (remainingSeconds === 0) return `${minutes} minute${minutes === 1 ? "" : "s"}`;
-    return `${minutes}m ${remainingSeconds}s`;
+    if (remainingSeconds === 0) return unitText(lang, "minute", minutes);
+    return `${unitText(lang, "minute", minutes)} ${unitText(lang, "second", remainingSeconds)}`;
   }
   const hours = Math.floor(seconds / 3600);
   const remainingMinutes = Math.floor((seconds % 3600) / 60);
-  if (remainingMinutes === 0) return `${hours} hour${hours === 1 ? "" : "s"}`;
-  return `${hours}h ${remainingMinutes}m`;
+  if (remainingMinutes === 0) return unitText(lang, "hour", hours);
+  return `${unitText(lang, "hour", hours)} ${unitText(lang, "minute", remainingMinutes)}`;
 }
 
 // Renders a message's attachments, whether it's the newer `attachments`
@@ -141,6 +156,7 @@ function AttachmentGrid({ attachments, bubbleText }) {
 }
 
 function MessageActions({ text }) {
+  const { t } = useLanguage();
   const [copied, setCopied] = useState(false);
   const [reaction, setReaction] = useState(null); // "up" | "down" | null
 
@@ -175,24 +191,24 @@ function MessageActions({ text }) {
 
   return (
     <div className="flex items-center gap-1" style={{ marginTop: 8 }}>
-      <button onClick={handleCopy} style={btnStyle} aria-label="Copy">
+      <button onClick={handleCopy} style={btnStyle} aria-label={t("chat.copy")}>
         {copied ? <Check size={13} /> : <Copy size={13} />}
       </button>
       <button
         onClick={() => toggleReaction("up")}
         style={{ ...btnStyle, color: reaction === "up" ? "var(--accent)" : "var(--text-muted)" }}
-        aria-label="Good response"
+        aria-label={t("chat.goodResponse")}
       >
         <ThumbsUp size={13} fill={reaction === "up" ? "var(--accent)" : "none"} />
       </button>
       <button
         onClick={() => toggleReaction("down")}
         style={{ ...btnStyle, color: reaction === "down" ? "var(--danger, #e55)" : "var(--text-muted)" }}
-        aria-label="Bad response"
+        aria-label={t("chat.badResponse")}
       >
         <ThumbsDown size={13} fill={reaction === "down" ? "var(--danger, #e55)" : "none"} />
       </button>
-      <button onClick={handleShare} style={btnStyle} aria-label="Share">
+      <button onClick={handleShare} style={btnStyle} aria-label={t("chat.share")}>
         <Share2 size={13} />
       </button>
     </div>
@@ -200,6 +216,7 @@ function MessageActions({ text }) {
 }
 
 function SynaChatInner() {
+  const { t, lang } = useLanguage();
   const searchParams = useSearchParams();
   const [messages, setMessages] = useState([]);
   const [conversationId, setConversationId] = useState(null);
@@ -246,12 +263,12 @@ function SynaChatInner() {
       if (remaining <= 0) {
         setTimerEndAt(null);
         setTimerRemaining(0);
-        setMessages((prev) => [...prev, { role: "assistant", text: "⏰ Your timer is finished!" }]);
+        setMessages((prev) => [...prev, { role: "assistant", text: t("chat.timer.done") }]);
 
         if ("Notification" in window && Notification.permission === "granted") {
-          new Notification("Syna Timer", { body: "⏰ Your timer is finished!" });
+          new Notification(t("chat.timer.title"), { body: t("chat.timer.done") });
         } else {
-          try { alert("⏰ Your timer is finished!"); } catch {}
+          try { alert(t("chat.timer.done")); } catch {}
         }
       }
     };
@@ -259,7 +276,7 @@ function SynaChatInner() {
     updateTimer();
     const interval = setInterval(updateTimer, 250);
     return () => clearInterval(interval);
-  }, [timerEndAt]);
+  }, [timerEndAt, t]);
 
   useEffect(() => {
     if ("Notification" in window && Notification.permission === "default") {
@@ -337,18 +354,18 @@ function SynaChatInner() {
     setPendingAttachments((prev) => {
       const room = MAX_ATTACHMENTS - prev.length;
       if (room <= 0) {
-        setError(`You can attach up to ${MAX_ATTACHMENTS} files at a time.`);
+        setError(t("chat.err.max", { n: MAX_ATTACHMENTS }));
         return prev;
       }
 
       const toAdd = files.slice(0, room);
       if (files.length > room) {
-        setError(`Only added ${room} — you can attach up to ${MAX_ATTACHMENTS} files at a time.`);
+        setError(t("chat.err.onlyAdded", { added: room, n: MAX_ATTACHMENTS }));
       }
 
       for (const file of toAdd) {
         if (file.size > MAX_ATTACHMENT_BYTES) {
-          setError("One of your files is too large — please choose files under 4MB.");
+          setError(t("chat.err.tooLarge"));
           continue;
         }
         const reader = new FileReader();
@@ -381,9 +398,9 @@ function SynaChatInner() {
     const timer = text ? parseTimerCommand(text) : null;
 
     if (timer && pendingAttachments.length === 0) {
-      const durationText = formatTimerDuration(timer.seconds);
+      const durationText = formatTimerDuration(timer.seconds, lang);
       const userMsg = { role: "user", text };
-      const timerReply = { role: "assistant", text: `⏱️ Timer set for **${durationText}**. I'll let you know when it's finished.` };
+      const timerReply = { role: "assistant", text: t("chat.timer.set", { duration: durationText }) };
       const timerMessages = [...messages, userMsg, timerReply];
 
       setMessages(timerMessages);
@@ -414,12 +431,12 @@ function SynaChatInner() {
       const res = await fetch("/api/ai/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: nextMessages, clientDateTime }),
+        body: JSON.stringify({ messages: nextMessages, clientDateTime, language: lang }),
       });
 
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "Something went wrong.");
+        setError(data.error || t("chat.err.generic"));
         setLoading(false);
         return;
       }
@@ -436,7 +453,7 @@ function SynaChatInner() {
       setMessages(finalMessages);
       persist(finalMessages);
     } catch {
-      setError("Network error. Please try again.");
+      setError(t("chat.err.network"));
     } finally {
       setLoading(false);
     }
@@ -499,14 +516,14 @@ function SynaChatInner() {
     const res = await fetch(`/api/ai/conversations/${conversationId}/share`, { method: "POST" });
     const data = await res.json();
     if (!res.ok) {
-      setError("Could not create share link.");
+      setError(t("chat.err.shareLink"));
       return;
     }
     const url = `${window.location.origin}/share/${data.shareToken}`;
 
     if (navigator.share) {
       try {
-        await navigator.share({ title: "Chat with Syna", url });
+        await navigator.share({ title: t("chat.title"), url });
       } catch {
         // user cancelled the share sheet — no action needed
       }
@@ -525,7 +542,7 @@ function SynaChatInner() {
             href="/ai-tools"
             className="w-9 h-9 rounded-full flex items-center justify-center"
             style={{ background: "var(--surface-2)", color: "var(--text)" }}
-            aria-label="Back to AI Tools"
+            aria-label={t("chat.backToAi")}
           >
             <ArrowLeft size={16} />
           </Link>
@@ -533,16 +550,16 @@ function SynaChatInner() {
             href="/dashboard"
             className="w-9 h-9 rounded-full flex items-center justify-center"
             style={{ background: "var(--surface-2)", color: "var(--text)" }}
-            aria-label="Exit to Home"
+            aria-label={t("chat.exitHome")}
           >
             <Home size={16} />
           </Link>
         </div>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Sparkles size={18} style={{ color: "var(--accent)" }} />
+            <GlossIcon name="ai-tools" size={32} />
             <h1 className="text-xl font-semibold" style={{ fontFamily: "var(--font-display)" }}>
-              Chat with Syna
+              {t("chat.title")}
             </h1>
           </div>
           <div className="flex items-center gap-2">
@@ -551,7 +568,7 @@ function SynaChatInner() {
                 onClick={handleShareConversation}
                 className="w-9 h-9 rounded-full flex items-center justify-center"
                 style={{ background: "var(--surface-2)", color: shareCopied ? "var(--accent)" : "var(--text)" }}
-                aria-label="Share this chat"
+                aria-label={t("chat.shareChat")}
               >
                 {shareCopied ? <Check size={16} /> : <Share2 size={16} />}
               </button>
@@ -560,7 +577,7 @@ function SynaChatInner() {
               onClick={startNewChat}
               className="w-9 h-9 rounded-full flex items-center justify-center"
               style={{ background: "var(--surface-2)", color: "var(--text)" }}
-              aria-label="New chat"
+              aria-label={t("chat.newChat")}
             >
               <Plus size={16} />
             </button>
@@ -568,7 +585,7 @@ function SynaChatInner() {
               onClick={() => setHistoryOpen(true)}
               className="w-9 h-9 rounded-full flex items-center justify-center"
               style={{ background: "var(--surface-2)", color: "var(--text)" }}
-              aria-label="Recent chats"
+              aria-label={t("chat.recentChats")}
             >
               <History size={16} />
             </button>
@@ -585,7 +602,7 @@ function SynaChatInner() {
       >
         {messages.length === 0 && (
           <p className="text-sm text-center mt-10" style={{ color: "var(--text-muted)" }}>
-            Ask Syna anything, or attach up to {MAX_ATTACHMENTS} photos or files to get started.
+            {t("chat.empty", { n: MAX_ATTACHMENTS })}
           </p>
         )}
 
@@ -646,7 +663,7 @@ function SynaChatInner() {
               color: "var(--text-muted)",
             }}
           >
-            <Loader2 size={14} className="animate-spin" /> Syna is thinking…
+            <Loader2 size={14} className="animate-spin" /> {t("chat.thinking")}
           </div>
         )}
 
@@ -661,7 +678,7 @@ function SynaChatInner() {
             style={{ background: "var(--surface-2)", border: "1px solid var(--border)", color: "var(--text-muted)" }}
           >
             <AlertCircle size={14} style={{ flexShrink: 0 }} />
-            Running on backup AI while Gemini recovers — responses (including image understanding) may be a little different for now.
+            {t("chat.fallback")}
           </div>
         )}
 
@@ -681,7 +698,7 @@ function SynaChatInner() {
                 <span className="text-xs" style={{ maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {att.name}
                 </span>
-                <button onClick={() => removePendingAttachment(idx)} aria-label="Remove attachment" style={{ color: "var(--text-muted)" }}>
+                <button onClick={() => removePendingAttachment(idx)} aria-label={t("chat.removeAttachment")} style={{ color: "var(--text-muted)" }}>
                   <X size={16} />
                 </button>
               </div>
@@ -702,8 +719,8 @@ function SynaChatInner() {
                 opacity: pendingAttachments.length >= MAX_ATTACHMENTS ? 0.5 : 1,
                 cursor: pendingAttachments.length >= MAX_ATTACHMENTS ? "not-allowed" : "pointer",
               }}
-              aria-label="Attach"
-              title={pendingAttachments.length >= MAX_ATTACHMENTS ? `Up to ${MAX_ATTACHMENTS} attachments at a time` : undefined}
+              aria-label={t("chat.attach")}
+              title={pendingAttachments.length >= MAX_ATTACHMENTS ? t("chat.attachLimit", { n: MAX_ATTACHMENTS }) : undefined}
             >
               <Plus size={18} />
             </button>
@@ -718,7 +735,7 @@ function SynaChatInner() {
                   className="flex items-center gap-2.5 w-full p-2.5 rounded-lg text-sm"
                   style={{ textAlign: "left" }}
                 >
-                  <ImageIcon size={16} /> Photo from gallery
+                  <ImageIcon size={16} /> {t("chat.photoGallery")}
                 </button>
                 <button
                   type="button"
@@ -726,7 +743,7 @@ function SynaChatInner() {
                   className="flex items-center gap-2.5 w-full p-2.5 rounded-lg text-sm"
                   style={{ textAlign: "left" }}
                 >
-                  <Camera size={16} /> Take a photo
+                  <Camera size={16} /> {t("chat.takePhoto")}
                 </button>
                 <button
                   type="button"
@@ -734,7 +751,7 @@ function SynaChatInner() {
                   className="flex items-center gap-2.5 w-full p-2.5 rounded-lg text-sm"
                   style={{ textAlign: "left" }}
                 >
-                  <Paperclip size={16} /> Send a file
+                  <Paperclip size={16} /> {t("chat.sendFile")}
                 </button>
               </div>
             )}
@@ -746,7 +763,7 @@ function SynaChatInner() {
           <textarea
             ref={textareaRef}
             className="input pl-3"
-            placeholder="Message Syna…"
+            placeholder={t("chat.placeholder")}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -769,7 +786,7 @@ function SynaChatInner() {
               background: "var(--accent)", color: "white",
               opacity: loading || (!input.trim() && pendingAttachments.length === 0) ? 0.6 : 1,
             }}
-            aria-label="Send"
+            aria-label={t("chat.send")}
           >
             <Send size={16} />
           </button>
@@ -777,7 +794,7 @@ function SynaChatInner() {
 
         {timerEndAt && (
           <div className="text-center text-xs mt-2" style={{ color: "var(--accent)", fontWeight: 600 }}>
-            ⏱️ Timer: {formatTimerDuration(Math.ceil(timerRemaining / 1000))} remaining
+            {t("chat.timer.remaining", { duration: formatTimerDuration(Math.ceil(timerRemaining / 1000), lang) })}
           </div>
         )}
       </div>
@@ -800,8 +817,8 @@ function SynaChatInner() {
         }}
       >
         <div className="flex items-center justify-between p-4" style={{ borderBottom: "1px solid var(--border)" }}>
-          <h2 className="text-sm font-semibold">Recent Chats</h2>
-          <button onClick={() => setHistoryOpen(false)} aria-label="Close" style={{ color: "var(--text-muted)" }}>
+          <h2 className="text-sm font-semibold">{t("chat.recentChats")}</h2>
+          <button onClick={() => setHistoryOpen(false)} aria-label={t("chat.close")} style={{ color: "var(--text-muted)" }}>
             <X size={18} />
           </button>
         </div>
@@ -811,7 +828,7 @@ function SynaChatInner() {
           className="flex items-center gap-2 m-3 p-3 rounded-xl text-sm font-medium"
           style={{ background: "var(--accent-soft)", color: "var(--accent)" }}
         >
-          <Plus size={15} /> New Chat
+          <Plus size={15} /> {t("chat.newChat")}
         </button>
 
         <div className="px-2 pb-4">
@@ -822,7 +839,7 @@ function SynaChatInner() {
           )}
           {!loadingHistory && conversations.length === 0 && (
             <p className="text-xs text-center mt-6 px-4" style={{ color: "var(--text-muted)" }}>
-              No conversations yet.
+              {t("chat.noConversations")}
             </p>
           )}
           {conversations.map((c) => (
@@ -840,10 +857,10 @@ function SynaChatInner() {
                     onChange={(e) => setRenameValue(e.target.value)}
                     autoFocus
                   />
-                  <button onClick={(e) => confirmRename(c.id, e)} style={{ color: "var(--accent)", background: "none", border: "none" }} aria-label="Save name">
+                  <button onClick={(e) => confirmRename(c.id, e)} style={{ color: "var(--accent)", background: "none", border: "none" }} aria-label={t("chat.saveName")}>
                     <Check size={16} />
                   </button>
-                  <button onClick={(e) => { e.stopPropagation(); setRenamingId(null); }} style={{ color: "var(--text-muted)", background: "none", border: "none" }} aria-label="Cancel rename">
+                  <button onClick={(e) => { e.stopPropagation(); setRenamingId(null); }} style={{ color: "var(--text-muted)", background: "none", border: "none" }} aria-label={t("chat.cancelRename")}>
                     <X size={16} />
                   </button>
                 </div>
@@ -864,18 +881,18 @@ function SynaChatInner() {
                         {c.title}
                       </div>
                       <div className="text-xs" style={{ color: "var(--text-muted)" }}>
-                        {relativeTime(c.updatedAt)}
+                        {relativeTime(c.updatedAt, lang)}
                       </div>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    <button onClick={(e) => togglePin(c, e)} aria-label="Pin conversation" style={{ color: c.pinned ? "var(--accent)" : "var(--text-muted)", background: "none", border: "none" }}>
+                    <button onClick={(e) => togglePin(c, e)} aria-label={t("chat.pin")} style={{ color: c.pinned ? "var(--accent)" : "var(--text-muted)", background: "none", border: "none" }}>
                       <Pin size={13} fill={c.pinned ? "var(--accent)" : "none"} />
                     </button>
-                    <button onClick={(e) => startRename(c, e)} aria-label="Rename conversation" style={{ color: "var(--text-muted)", background: "none", border: "none" }}>
+                    <button onClick={(e) => startRename(c, e)} aria-label={t("chat.rename")} style={{ color: "var(--text-muted)", background: "none", border: "none" }}>
                       <Pencil size={13} />
                     </button>
-                    <button onClick={(e) => deleteConversation(c.id, e)} aria-label="Delete conversation" style={{ color: "var(--text-muted)", background: "none", border: "none" }}>
+                    <button onClick={(e) => deleteConversation(c.id, e)} aria-label={t("chat.delete")} style={{ color: "var(--text-muted)", background: "none", border: "none" }}>
                       <Trash2 size={13} />
                     </button>
                   </div>
