@@ -107,9 +107,14 @@ export default function AiToolsClient({ tools }) {
         </p>
 
         <div className="relative flex items-center mb-6">
-          <Search size={15} className="absolute left-3" style={{ color: "var(--text-muted)" }} />
+          <Search
+            size={15}
+            className="absolute left-3"
+            style={{ color: "var(--text-muted)", pointerEvents: "none" }}
+          />
           <input
             className="input"
+            style={{ paddingLeft: 38 }}
             placeholder="Search AI Tools…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -140,7 +145,7 @@ export default function AiToolsClient({ tools }) {
 
         {categories.length === 0 && query && (
           <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-            No tools match "{query}".
+            No tools match &quot;{query}&quot;.
           </p>
         )}
 
