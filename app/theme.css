@@ -1,0 +1,88 @@
+/* LIGHT MODE — lilac */
+:root {
+  --bg: linear-gradient(90deg, #ded3f6 0%, #d3c6fc 100%);
+  --surface: rgba(255, 255, 255, 0.6);
+  --surface-strong: rgba(255, 255, 255, 0.85);
+  --border: rgba(147, 3, 197, 0.22);
+  --text: #2a1a4a;
+  --text-muted: #6b5a8e;
+  --accent: #9303c5;
+  --shadow: 0 8px 24px rgba(147, 3, 197, 0.15);
+}
+
+/* DARK MODE — Royal Violet (works with .dark or data-theme="dark") */
+.dark,
+[data-theme="dark"] {
+  --bg: linear-gradient(180deg, #02060e 0%, #3a0559 55%, #9303c5 100%);
+  --surface: rgba(2, 6, 14, 0.55);
+  --surface-strong: rgba(2, 6, 14, 0.8);
+  --border: rgba(147, 3, 197, 0.4);
+  --text: #ffffff;
+  --text-muted: #c9a8e0;
+  --accent: #b84dff;
+  --shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+}
+
+html,
+body {
+  min-height: 100%;
+  background: var(--bg) fixed;
+  color: var(--text);
+}
+
+/* Reusable glass surfaces */
+.v-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.v-menu {
+  background: var(--surface-strong);
+  border-right: 1px solid var(--border);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.v-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  color: var(--text);
+  border-radius: 14px;
+}
+
+.v-menu-item.active {
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+/* Search bar */
+.v-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.v-search input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-size: 16px;
+}
+
+.v-search input::placeholder {
+  color: var(--text-muted);
+}
