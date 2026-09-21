@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import NavShell from "@/components/NavShell";
 import SectionDashboard from "@/components/SectionDashboard";
 import { TOOLS } from "@/lib/aiTools";
-import { Plane } from "lucide-react";
+import GlossIcon from "@/components/GlossIcon";
 
 export default async function TravelPage() {
   const userId = getSessionUserId();
@@ -22,7 +22,7 @@ export default async function TravelPage() {
     <NavShell user={user}>
       <SectionDashboard
         title="Travel"
-        icon={<Plane size={20} />}
+        icon={<GlossIcon name="travel" size={28} />}
         description="Plan trips from idea to itinerary."
         items={items}
       />
