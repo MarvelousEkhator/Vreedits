@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Settings as SettingsIcon, Share2, ChevronDown, Loader2, ArrowLeft } from "lucide-react";
+import { Settings as SettingsIcon, Share2, ChevronDown, Loader2, ArrowLeft, X } from "lucide-react";
 import Link from "next/link";
 
 function Avatar({ user, size = 96 }) {
@@ -20,12 +20,69 @@ function Avatar({ user, size = 96 }) {
   );
 }
 
+function UserListSheet({ title, open, onClose, users, loading, error }) {
+  return (
+    <>
+      <div
+        onClick={onClose}
+        style={{
+          position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)",
+          opacity: open ? 1 : 0, pointerEvents: open ? "auto" : "none",
+          transition: "opacity 0.2s ease", zIndex: 200,
+        }}
+      />
+      <div
+        style={{
+          position: "fixed", left: 0, right: 0, bottom: 0, maxHeight: "75vh",
+          background: "var(--surface)", borderRadius: "20px 20px 0 0",
+          transform: open ? "translateY(0)" : "translateY(100%)",
+          transition: "transform 0.28s cubic-bezier(0.22,1,0.36,1)", zIndex: 201,
+          display: "flex", flexDirection: "column",
+        }}
+      >
+        <div className="flex items-center justify-between p-4" style={{ borderBottom: "1px solid var(--border)" }}>
+          <h2 className="text-sm font-semibold">{title}</h2>
+          <button onClick={onClose} aria-label="Close" style={{ color: "var(--text-muted)", background: "none", border: "none" }}>
+            <X size={18} />
+          </button>
+        </div>
+        <div className="p-3" style={{ overflowY: "auto", flex: 1 }}>
+          {loading ? (
+            <div className="flex justify-center py-8" style={{ color: "var(--text-muted)" }}>
+              <Loader2 size={20} className="animate-spin" />
+            </div>
+          ) : error ? (
+            <p className="text-sm text-center py-8" style={{ color: "var(--text-muted)" }}>{error}</p>
+          ) : users.length === 0 ? (
+            <p className="text-sm text-center py-8" style={{ color: "var(--text-muted)" }}>Nothing here yet.</p>
+          ) : (
+            users.map((u) => (
+              <div key={u.id} className="flex items-center gap-2.5 py-2">
+                <Avatar user={u} size={36} />
+                <div>
+                  <div className="text-sm font-medium">{u.displayName || u.username}</div>
+                  <div className="text-xs" style={{ color: "var(--text-muted)" }}>@{u.username}</div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
 export default function ProfileClient({ profileId }) {
   const router = useRouter();
   const [data, setData] = useState(null);
   const [tab, setTab] = useState("posts");
   const [loading, setLoading] = useState(true);
   const [followLoading, setFollowLoading] = useState(false);
+
+  const [sheet, setSheet] = useState(null); // "following" | "followers" | null
+  const [sheetLoading, setSheetLoading] = useState(false);
+  const [sheetError, setSheetError] = useState("");
+  const [sheetUsers, setSheetUsers] = useState([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -60,6 +117,24 @@ export default function ProfileClient({ profileId }) {
     }
   }
 
+  async function openSheet(type) {
+    setSheet(type);
+    setSheetError("");
+    setSheetLoading(true);
+    setSheetUsers([]);
+    try {
+      const endpoint = type === "following" ? "following-list" : "followers-list";
+      const res = await fetch(`/api/users/${profileId}/${endpoint}`);
+      const json = await res.json();
+      if (res.ok) setSheetUsers(type === "following" ? json.following : json.followers);
+      else setSheetError(json.error || "Could not load.");
+    } catch {
+      setSheetError("Network error.");
+    } finally {
+      setSheetLoading(false);
+    }
+  }
+
   if (loading && !data) {
     return <div className="flex items-center justify-center" style={{ height: "100%" }}><Loader2 className="animate-spin" size={24} /></div>;
   }
@@ -73,14 +148,11 @@ export default function ProfileClient({ profileId }) {
 
   const posts = tab === "private" ? privatePosts : publicPosts;
 
-  // Display Name (e.g. "Marvy")
   const displayName = user.displayName || user.username;
-  // Username strictly in lowercase (e.g. "elenahenry")
   const handle = (user.username || "").toLowerCase();
 
   return (
     <div className="pt-6 pb-16" style={{ maxWidth: 480, margin: "0 auto" }}>
-      {/* Top Header Controls */}
       <div className="flex items-center justify-between mb-4 px-4">
         <button
           onClick={handleExit}
@@ -102,11 +174,9 @@ export default function ProfileClient({ profileId }) {
         </div>
       </div>
 
-      {/* Centered Profile Avatar + Name Stack */}
       <div className="flex flex-col items-center text-center mb-5 px-4">
         <Avatar user={user} />
 
-        {/* Bold Display Name (Marvy) */}
         <div className="flex items-center gap-1 mt-3">
           <h1 className="text-xl font-bold leading-tight">
             {displayName}
@@ -114,36 +184,32 @@ export default function ProfileClient({ profileId }) {
           {isOwner && <ChevronDown size={18} style={{ color: "var(--text-muted)", marginTop: 2 }} />}
         </div>
 
-        {/* Small Muted Lowercase Handle (@elenahenry) */}
         <span className="text-sm font-normal mt-0.5" style={{ color: "var(--text-muted)" }}>
           @{handle}
         </span>
       </div>
 
-      {/* Stats Section */}
       <div className="flex items-center justify-center gap-8 mb-5 px-4">
-        <div className="text-center flex flex-col items-center">
+        <button onClick={() => openSheet("following")} className="text-center flex flex-col items-center" style={{ background: "none", border: "none" }}>
           <div className="text-lg font-bold">{followingCount}</div>
           <div className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>Following</div>
-        </div>
-        <div className="text-center flex flex-col items-center">
+        </button>
+        <button onClick={() => openSheet("followers")} className="text-center flex flex-col items-center" style={{ background: "none", border: "none" }}>
           <div className="text-lg font-bold">{followerCount}</div>
           <div className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>Followers</div>
-        </div>
+        </button>
         <div className="text-center flex flex-col items-center">
           <div className="text-lg font-bold">{likeCount}</div>
           <div className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>Likes</div>
         </div>
       </div>
 
-      {/* Bio */}
       {user.bio && (
         <p className="text-sm text-center mb-5 font-medium px-4" style={{ color: "var(--text)", whiteSpace: "pre-wrap" }}>
           {user.bio}
         </p>
       )}
 
-      {/* Edit Profile / Follow Button (below the bio) */}
       <div className="mb-6 px-4 flex justify-center">
         {isOwner ? (
           <Link href="/profile/edit" className="btn-primary block text-center" style={{ padding: "10px 0", width: "100%", maxWidth: 160, background: "var(--surface-2)", color: "var(--text)" }}>
@@ -165,7 +231,6 @@ export default function ProfileClient({ profileId }) {
         )}
       </div>
 
-      {/* Profile Tabs */}
       <div className="flex items-center w-full mb-1" style={{ borderBottom: "1px solid var(--border)" }}>
         {tabs.map((t) => (
           <button
@@ -183,7 +248,6 @@ export default function ProfileClient({ profileId }) {
         ))}
       </div>
 
-      {/* Grid Display */}
       {!posts || posts.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16">
           <p className="text-sm font-medium" style={{ color: "var(--text-muted)" }}>Nothing here yet.</p>
@@ -201,6 +265,15 @@ export default function ProfileClient({ profileId }) {
           ))}
         </div>
       )}
+
+      <UserListSheet
+        title={sheet === "following" ? "Following" : "Followers"}
+        open={!!sheet}
+        onClose={() => setSheet(null)}
+        users={sheetUsers}
+        loading={sheetLoading}
+        error={sheetError}
+      />
     </div>
   );
 }
