@@ -27,7 +27,7 @@ export default async function BusinessPage() {
     <NavShell user={user}>
       <SectionDashboard
         title="Business"
-        icon={<Briefcase size={20} />}
+        icon={<GlossIcon name="business" size={28} />}
         description="Run and grow your business in one place."
         items={items}
       />
