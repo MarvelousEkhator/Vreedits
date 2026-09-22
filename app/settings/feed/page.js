@@ -3,12 +3,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { ArrowLeft, ChevronRight, Lock, Loader2, X } from "lucide-react";
 import NavShell from "@/components/NavShell";
-
-const STILL_LOCKED_SECTIONS = [
-  { header: "Activity", items: ["Content preferences", "Time and well-being", "Family Pairing"] },
-  { header: "Account", items: ["Security and permissions"] },
-  { header: "Content & display", items: ["Activity centre", "Ads"] },
-];
+import { useLanguage } from "@/components/LanguageProvider";
 
 function ToggleSwitch({ checked, onChange, disabled }) {
   return (
@@ -45,10 +40,11 @@ function ToggleSwitch({ checked, onChange, disabled }) {
 }
 
 function SegmentedControl({ value, onChange, disabled }) {
+  const { t } = useLanguage();
   const options = [
-    { id: "everyone", label: "Everyone" },
-    { id: "friends", label: "Friends" },
-    { id: "none", label: "No one" },
+    { id: "everyone", label: t("feedSettings.everyone") },
+    { id: "friends", label: t("feedSettings.friends") },
+    { id: "none", label: t("feedSettings.noOne") },
   ];
   return (
     <div className="flex items-center gap-1 p-1 rounded-full" style={{ background: "var(--surface-2)" }}>
@@ -90,6 +86,7 @@ function Avatar({ user, size = 36 }) {
 }
 
 function UserListSheet({ title, open, onClose, users, loading, error, onUnblock }) {
+  const { t } = useLanguage();
   return (
     <>
       <div
@@ -111,7 +108,7 @@ function UserListSheet({ title, open, onClose, users, loading, error, onUnblock 
       >
         <div className="flex items-center justify-between p-4" style={{ borderBottom: "1px solid var(--border)" }}>
           <h2 className="text-sm font-semibold">{title}</h2>
-          <button onClick={onClose} aria-label="Close" style={{ color: "var(--text-muted)", background: "none", border: "none" }}>
+          <button onClick={onClose} aria-label={t("feedSettings.close")} style={{ color: "var(--text-muted)", background: "none", border: "none" }}>
             <X size={18} />
           </button>
         </div>
@@ -123,7 +120,7 @@ function UserListSheet({ title, open, onClose, users, loading, error, onUnblock 
           ) : error ? (
             <p className="text-sm text-center py-8" style={{ color: "var(--text-muted)" }}>{error}</p>
           ) : users.length === 0 ? (
-            <p className="text-sm text-center py-8" style={{ color: "var(--text-muted)" }}>Nothing here yet.</p>
+            <p className="text-sm text-center py-8" style={{ color: "var(--text-muted)" }}>{t("feedSettings.nothingHere")}</p>
           ) : (
             users.map((u) => (
               <div key={u.id} className="flex items-center justify-between py-2">
@@ -140,7 +137,7 @@ function UserListSheet({ title, open, onClose, users, loading, error, onUnblock 
                     className="text-xs font-semibold px-3 py-1.5 rounded-full"
                     style={{ background: "var(--surface-2)", color: "var(--text)", border: "none" }}
                   >
-                    Unblock
+                    {t("feedSettings.unblock")}
                   </button>
                 )}
               </div>
@@ -153,6 +150,7 @@ function UserListSheet({ title, open, onClose, users, loading, error, onUnblock 
 }
 
 function VideoGridSheet({ title, open, onClose, posts, loading, error }) {
+  const { t } = useLanguage();
   return (
     <>
       <div
@@ -174,7 +172,7 @@ function VideoGridSheet({ title, open, onClose, posts, loading, error }) {
       >
         <div className="flex items-center justify-between p-4" style={{ borderBottom: "1px solid var(--border)" }}>
           <h2 className="text-sm font-semibold">{title}</h2>
-          <button onClick={onClose} aria-label="Close" style={{ color: "var(--text-muted)", background: "none", border: "none" }}>
+          <button onClick={onClose} aria-label={t("feedSettings.close")} style={{ color: "var(--text-muted)", background: "none", border: "none" }}>
             <X size={18} />
           </button>
         </div>
@@ -186,7 +184,7 @@ function VideoGridSheet({ title, open, onClose, posts, loading, error }) {
           ) : error ? (
             <p className="text-sm text-center py-8" style={{ color: "var(--text-muted)" }}>{error}</p>
           ) : posts.length === 0 ? (
-            <p className="text-sm text-center py-8" style={{ color: "var(--text-muted)" }}>Nothing here yet.</p>
+            <p className="text-sm text-center py-8" style={{ color: "var(--text-muted)" }}>{t("feedSettings.nothingHere")}</p>
           ) : (
             <div className="grid grid-cols-3 gap-1">
               {posts.map((p) => (
@@ -204,7 +202,177 @@ function VideoGridSheet({ title, open, onClose, posts, loading, error }) {
       </div>
     </>
   );
-}export default function FeedSettingsPage() {
+}
+
+function FeedSettingsInner({
+  user, profile, privacy, saving,
+  sheet, sheetLoading, sheetError, sheetUsers, sheetPosts,
+  patchField, patchPrivacy, handleShareProfile, openSheet, handleUnblock, setSheet,
+}) {
+  const { t } = useLanguage();
+
+  const stillLockedSections = [
+    { header: t("feedSettings.activity"), items: [t("feedSettings.contentPreferences"), t("feedSettings.timeWellbeing"), t("feedSettings.familyPairing")] },
+    { header: t("feedSettings.account"), items: [t("feedSettings.securityPermissions")] },
+    { header: t("feedSettings.contentDisplay"), items: [t("feedSettings.activityCentre"), t("feedSettings.ads")] },
+  ];
+
+  return (
+    <>
+      <div className="px-4 pt-5 pb-16" style={{ maxWidth: 480, margin: "0 auto" }}>
+        <div className="flex items-center gap-3 mb-6">
+          <Link href="/profile" aria-label={t("feedSettings.back")} style={{ color: "var(--text)" }}>
+            <ArrowLeft size={20} />
+          </Link>
+          <h1 className="text-lg font-semibold">{t("feedSettings.title")}</h1>
+        </div>
+
+        <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--text-muted)" }}>{t("feedSettings.activity")}</div>
+        <div className="card mb-6" style={{ padding: 6 }}>
+          <Link href="/profile" className="flex items-center justify-between p-3 rounded-xl" style={{ borderBottom: "1px solid var(--border)" }}>
+            <span className="text-sm font-medium">{t("feedSettings.managePosts")}</span>
+            <ChevronRight size={16} style={{ color: "var(--text-muted)" }} />
+          </Link>
+          <Link href="/notifications" className="flex items-center justify-between p-3 rounded-xl">
+            <span className="text-sm font-medium">{t("feedSettings.notifications")}</span>
+            <ChevronRight size={16} style={{ color: "var(--text-muted)" }} />
+          </Link>
+        </div>
+
+        <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--text-muted)" }}>{t("feedSettings.account")}</div>
+        <div className="card mb-6" style={{ padding: 6 }}>
+          <Link href="/settings/feed/account" className="flex items-center justify-between p-3 rounded-xl" style={{ borderBottom: "1px solid var(--border)" }}>
+            <span className="text-sm font-medium">{t("feedSettings.account")}</span>
+            <ChevronRight size={16} style={{ color: "var(--text-muted)" }} />
+          </Link>
+          <button onClick={handleShareProfile} className="flex items-center justify-between w-full p-3 rounded-xl text-left" style={{ background: "none", border: "none" }}>
+            <span className="text-sm font-medium">{t("feedSettings.shareProfile")}</span>
+            <ChevronRight size={16} style={{ color: "var(--text-muted)" }} />
+          </button>
+        </div>
+
+        <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--text-muted)" }}>{t("feedSettings.visibility")}</div>
+        <div className="card mb-6" style={{ padding: 6 }}>
+          <div className="flex items-center justify-between p-3 rounded-xl" style={{ borderBottom: "1px solid var(--border)" }}>
+            <div>
+              <div className="text-sm font-medium">{t("feedSettings.privateAccount")}</div>
+              <div className="text-xs" style={{ color: "var(--text-muted)" }}>{t("feedSettings.privateAccountDesc")}</div>
+            </div>
+            <ToggleSwitch checked={!profile.isPublic} onChange={(v) => patchField("isPublic", !v)} disabled={saving} />
+          </div>
+          <button
+            onClick={() => openSheet("blocked")}
+            className="flex items-center justify-between w-full p-3 rounded-xl text-left"
+            style={{ background: "none", border: "none" }}
+          >
+            <span className="text-sm font-medium">{t("feedSettings.blockedAccounts")}</span>
+            <ChevronRight size={16} style={{ color: "var(--text-muted)" }} />
+          </button>
+        </div>
+
+        <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--text-muted)" }}>{t("feedSettings.interactions")}</div>
+        <div className="card mb-6" style={{ padding: 6 }}>
+          <div className="flex items-center justify-between p-3 rounded-xl" style={{ borderBottom: "1px solid var(--border)" }}>
+            <div>
+              <div className="text-sm font-medium">{t("feedSettings.downloads")}</div>
+              <div className="text-xs" style={{ color: "var(--text-muted)" }}>{t("feedSettings.downloadsDesc")}</div>
+            </div>
+            <ToggleSwitch checked={profile.allowDownloads} onChange={(v) => patchField("allowDownloads", v)} disabled={saving} />
+          </div>
+
+          <div className="p-3" style={{ borderBottom: "1px solid var(--border)" }}>
+            <div className="text-sm font-medium mb-2">{t("feedSettings.whoCanComment")}</div>
+            <SegmentedControl value={privacy.allowComments} onChange={(v) => patchPrivacy("allowComments", v)} disabled={saving} />
+          </div>
+
+          <div className="p-3" style={{ borderBottom: "1px solid var(--border)" }}>
+            <div className="text-sm font-medium mb-2">{t("feedSettings.whoCanMention")}</div>
+            <SegmentedControl value={privacy.allowMentions} onChange={(v) => patchPrivacy("allowMentions", v)} disabled={saving} />
+          </div>
+
+          <div className="flex items-center justify-between p-3 rounded-xl" style={{ borderBottom: "1px solid var(--border)" }}>
+            <div>
+              <div className="text-sm font-medium">{t("feedSettings.displayProfileLinks")}</div>
+              <div className="text-xs" style={{ color: "var(--text-muted)" }}>{t("feedSettings.displayProfileLinksDesc")}</div>
+            </div>
+            <ToggleSwitch checked={privacy.shareProfileLinks} onChange={(v) => patchPrivacy("shareProfileLinks", v)} disabled={saving} />
+          </div>
+
+          <div className="flex items-center justify-between p-3 rounded-xl" style={{ borderBottom: "1px solid var(--border)" }}>
+            <div>
+              <div className="text-sm font-medium">{t("feedSettings.hideFollowing")}</div>
+              <div className="text-xs" style={{ color: "var(--text-muted)" }}>{t("feedSettings.hideFollowingDesc")}</div>
+            </div>
+            <ToggleSwitch checked={privacy.hideFollowing} onChange={(v) => patchPrivacy("hideFollowing", v)} disabled={saving} />
+          </div>
+          <button
+            onClick={() => openSheet("following")}
+            className="flex items-center justify-between w-full p-3 rounded-xl text-left"
+            style={{ background: "none", border: "none", borderBottom: "1px solid var(--border)" }}
+          >
+            <span className="text-sm font-medium">{t("feedSettings.viewFollowing")}</span>
+            <ChevronRight size={16} style={{ color: "var(--text-muted)" }} />
+          </button>
+
+          <div className="flex items-center justify-between p-3 rounded-xl" style={{ borderBottom: "1px solid var(--border)" }}>
+            <div>
+              <div className="text-sm font-medium">{t("feedSettings.hideLiked")}</div>
+              <div className="text-xs" style={{ color: "var(--text-muted)" }}>{t("feedSettings.hideLikedDesc")}</div>
+            </div>
+            <ToggleSwitch checked={privacy.hideLikedVideos} onChange={(v) => patchPrivacy("hideLikedVideos", v)} disabled={saving} />
+          </div>
+          <button
+            onClick={() => openSheet("liked")}
+            className="flex items-center justify-between w-full p-3 rounded-xl text-left"
+            style={{ background: "none", border: "none" }}
+          >
+            <span className="text-sm font-medium">{t("feedSettings.viewLiked")}</span>
+            <ChevronRight size={16} style={{ color: "var(--text-muted)" }} />
+          </button>
+        </div>
+
+        {stillLockedSections.map((section) => (
+          <div key={section.header}>
+            <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--text-muted)" }}>{section.header}</div>
+            <div className="card mb-6" style={{ padding: 6 }}>
+              {section.items.map((label, i) => (
+                <div
+                  key={label}
+                  className="flex items-center justify-between p-3 rounded-xl"
+                  style={{ opacity: 0.4, borderBottom: i < section.items.length - 1 ? "1px solid var(--border)" : "none" }}
+                  title="Coming in a later phase"
+                >
+                  <span className="text-sm font-medium">{label}</span>
+                  <Lock size={14} />
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <UserListSheet
+        title={sheet === "blocked" ? t("feedSettings.blockedAccounts") : t("feedSettings.following")}
+        open={sheet === "blocked" || sheet === "following"}
+        onClose={() => setSheet(null)}
+        users={sheetUsers}
+        loading={sheetLoading}
+        error={sheetError}
+        onUnblock={sheet === "blocked" ? handleUnblock : null}
+      />
+      <VideoGridSheet
+        title={t("feedSettings.likedVideos")}
+        open={sheet === "liked"}
+        onClose={() => setSheet(null)}
+        posts={sheetPosts}
+        loading={sheetLoading}
+        error={sheetError}
+      />
+    </>
+  );
+}
+
+export default function FeedSettingsPage() {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [privacy, setPrivacy] = useState(null);
@@ -315,154 +483,22 @@ function VideoGridSheet({ title, open, onClose, posts, loading, error }) {
 
   return (
     <NavShell user={user}>
-      <div className="px-4 pt-5 pb-16" style={{ maxWidth: 480, margin: "0 auto" }}>
-        <div className="flex items-center gap-3 mb-6">
-          <Link href="/profile" aria-label="Back" style={{ color: "var(--text)" }}>
-            <ArrowLeft size={20} />
-          </Link>
-          <h1 className="text-lg font-semibold">Settings and privacy</h1>
-        </div>
-
-        <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--text-muted)" }}>Activity</div>
-        <div className="card mb-6" style={{ padding: 6 }}>
-          <Link href="/profile" className="flex items-center justify-between p-3 rounded-xl" style={{ borderBottom: "1px solid var(--border)" }}>
-            <span className="text-sm font-medium">Manage posts</span>
-            <ChevronRight size={16} style={{ color: "var(--text-muted)" }} />
-          </Link>
-          <Link href="/notifications" className="flex items-center justify-between p-3 rounded-xl">
-            <span className="text-sm font-medium">Notifications</span>
-            <ChevronRight size={16} style={{ color: "var(--text-muted)" }} />
-          </Link>
-        </div>
-
-        <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--text-muted)" }}>Account</div>
-        <div className="card mb-6" style={{ padding: 6 }}>
-          <Link href="/settings/feed/account" className="flex items-center justify-between p-3 rounded-xl" style={{ borderBottom: "1px solid var(--border)" }}>
-            <span className="text-sm font-medium">Account</span>
-            <ChevronRight size={16} style={{ color: "var(--text-muted)" }} />
-          </Link>
-          <button onClick={handleShareProfile} className="flex items-center justify-between w-full p-3 rounded-xl text-left" style={{ background: "none", border: "none" }}>
-            <span className="text-sm font-medium">Share profile</span>
-            <ChevronRight size={16} style={{ color: "var(--text-muted)" }} />
-          </button>
-        </div>
-
-        <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--text-muted)" }}>Visibility</div>
-        <div className="card mb-6" style={{ padding: 6 }}>
-          <div className="flex items-center justify-between p-3 rounded-xl" style={{ borderBottom: "1px solid var(--border)" }}>
-            <div>
-              <div className="text-sm font-medium">Private account</div>
-              <div className="text-xs" style={{ color: "var(--text-muted)" }}>Only approved followers see your posts</div>
-            </div>
-            <ToggleSwitch checked={!profile.isPublic} onChange={(v) => patchField("isPublic", !v)} disabled={saving} />
-          </div>
-          <button
-            onClick={() => openSheet("blocked")}
-            className="flex items-center justify-between w-full p-3 rounded-xl text-left"
-            style={{ background: "none", border: "none" }}
-          >
-            <span className="text-sm font-medium">Blocked accounts</span>
-            <ChevronRight size={16} style={{ color: "var(--text-muted)" }} />
-          </button>
-        </div>
-
-        <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--text-muted)" }}>Interactions</div>
-        <div className="card mb-6" style={{ padding: 6 }}>
-          <div className="flex items-center justify-between p-3 rounded-xl" style={{ borderBottom: "1px solid var(--border)" }}>
-            <div>
-              <div className="text-sm font-medium">Downloads</div>
-              <div className="text-xs" style={{ color: "var(--text-muted)" }}>Let others download your posts</div>
-            </div>
-            <ToggleSwitch checked={profile.allowDownloads} onChange={(v) => patchField("allowDownloads", v)} disabled={saving} />
-          </div>
-
-          <div className="p-3" style={{ borderBottom: "1px solid var(--border)" }}>
-            <div className="text-sm font-medium mb-2">Who can comment</div>
-            <SegmentedControl value={privacy.allowComments} onChange={(v) => patchPrivacy("allowComments", v)} disabled={saving} />
-          </div>
-
-          <div className="p-3" style={{ borderBottom: "1px solid var(--border)" }}>
-            <div className="text-sm font-medium mb-2">Who can mention you</div>
-            <SegmentedControl value={privacy.allowMentions} onChange={(v) => patchPrivacy("allowMentions", v)} disabled={saving} />
-          </div>
-
-          <div className="flex items-center justify-between p-3 rounded-xl" style={{ borderBottom: "1px solid var(--border)" }}>
-            <div>
-              <div className="text-sm font-medium">Display profile when sharing links</div>
-              <div className="text-xs" style={{ color: "var(--text-muted)" }}>Show a preview card when your profile link is shared</div>
-            </div>
-            <ToggleSwitch checked={privacy.shareProfileLinks} onChange={(v) => patchPrivacy("shareProfileLinks", v)} disabled={saving} />
-          </div>
-
-          <div className="flex items-center justify-between p-3 rounded-xl" style={{ borderBottom: "1px solid var(--border)" }}>
-            <div>
-              <div className="text-sm font-medium">Hide following list</div>
-              <div className="text-xs" style={{ color: "var(--text-muted)" }}>Only you can see who you follow</div>
-            </div>
-            <ToggleSwitch checked={privacy.hideFollowing} onChange={(v) => patchPrivacy("hideFollowing", v)} disabled={saving} />
-          </div>
-          <button
-            onClick={() => openSheet("following")}
-            className="flex items-center justify-between w-full p-3 rounded-xl text-left"
-            style={{ background: "none", border: "none", borderBottom: "1px solid var(--border)" }}
-          >
-            <span className="text-sm font-medium">View following list</span>
-            <ChevronRight size={16} style={{ color: "var(--text-muted)" }} />
-          </button>
-
-          <div className="flex items-center justify-between p-3 rounded-xl" style={{ borderBottom: "1px solid var(--border)" }}>
-            <div>
-              <div className="text-sm font-medium">Hide liked videos</div>
-              <div className="text-xs" style={{ color: "var(--text-muted)" }}>Only you can see your liked videos</div>
-            </div>
-            <ToggleSwitch checked={privacy.hideLikedVideos} onChange={(v) => patchPrivacy("hideLikedVideos", v)} disabled={saving} />
-          </div>
-          <button
-            onClick={() => openSheet("liked")}
-            className="flex items-center justify-between w-full p-3 rounded-xl text-left"
-            style={{ background: "none", border: "none" }}
-          >
-            <span className="text-sm font-medium">View liked videos</span>
-            <ChevronRight size={16} style={{ color: "var(--text-muted)" }} />
-          </button>
-        </div>
-
-        {STILL_LOCKED_SECTIONS.map((section) => (
-          <div key={section.header}>
-            <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--text-muted)" }}>{section.header}</div>
-            <div className="card mb-6" style={{ padding: 6 }}>
-              {section.items.map((label, i) => (
-                <div
-                  key={label}
-                  className="flex items-center justify-between p-3 rounded-xl"
-                  style={{ opacity: 0.4, borderBottom: i < section.items.length - 1 ? "1px solid var(--border)" : "none" }}
-                  title="Coming in a later phase"
-                >
-                  <span className="text-sm font-medium">{label}</span>
-                  <Lock size={14} />
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <UserListSheet
-        title={sheet === "blocked" ? "Blocked accounts" : "Following"}
-        open={sheet === "blocked" || sheet === "following"}
-        onClose={() => setSheet(null)}
-        users={sheetUsers}
-        loading={sheetLoading}
-        error={sheetError}
-        onUnblock={sheet === "blocked" ? handleUnblock : null}
-      />
-      <VideoGridSheet
-        title="Liked videos"
-        open={sheet === "liked"}
-        onClose={() => setSheet(null)}
-        posts={sheetPosts}
-        loading={sheetLoading}
-        error={sheetError}
+      <FeedSettingsInner
+        user={user}
+        profile={profile}
+        privacy={privacy}
+        saving={saving}
+        sheet={sheet}
+        sheetLoading={sheetLoading}
+        sheetError={sheetError}
+        sheetUsers={sheetUsers}
+        sheetPosts={sheetPosts}
+        patchField={patchField}
+        patchPrivacy={patchPrivacy}
+        handleShareProfile={handleShareProfile}
+        openSheet={openSheet}
+        handleUnblock={handleUnblock}
+        setSheet={setSheet}
       />
     </NavShell>
   );
