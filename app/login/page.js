@@ -3,9 +3,11 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Mail, Lock, Eye, EyeOff, Loader2, AlertCircle } from "lucide-react";
+import { LanguageProvider, useLanguage } from "@/components/LanguageProvider";
 
-export default function LoginPage() {
+function LoginInner() {
   const router = useRouter();
+  const { t } = useLanguage();
   const [form, setForm] = useState({ email: "", password: "" });
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState("");
@@ -42,10 +44,10 @@ export default function LoginPage() {
     <div className="min-h-screen flex flex-col items-center px-4">
       <div className="w-full max-w-[420px] card p-7 mt-16">
         <h1 className="text-xl font-semibold mb-1" style={{ fontFamily: "var(--font-display)" }}>
-          Welcome back
+          {t("auth.welcomeBack")}
         </h1>
         <p className="text-sm mb-6" style={{ color: "var(--text-muted)" }}>
-          Log in to your Vreedits account.
+          {t("auth.logInSubtitle")}
         </p>
 
         {error && <div className="alert alert-error mb-4"><AlertCircle size={15} />{error}</div>}
@@ -53,7 +55,7 @@ export default function LoginPage() {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--text-muted)" }}>
-              Email
+              {t("auth.email")}
             </label>
             <div className="relative flex items-center">
               <Mail size={15} className="absolute left-3" style={{ color: "var(--text-muted)" }} />
@@ -69,7 +71,7 @@ export default function LoginPage() {
           </div>
           <div>
             <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--text-muted)" }}>
-              Password
+              {t("auth.password")}
             </label>
             <div className="relative flex items-center">
               <Lock size={15} className="absolute left-3" style={{ color: "var(--text-muted)" }} />
@@ -81,25 +83,33 @@ export default function LoginPage() {
                 placeholder="••••••••"
                 autoComplete="current-password"
               />
-              <button type="button" className="absolute right-2" onClick={() => setShowPw((v) => !v)} aria-label="Toggle password visibility">
+              <button type="button" className="absolute right-2" onClick={() => setShowPw((v) => !v)} aria-label={t("auth.togglePassword")}>
                 {showPw ? <EyeOff size={15} /> : <Eye size={15} />}
               </button>
             </div>
           </div>
           <div className="text-right">
-            <Link href="/forgot-password" className="btn-text">Forgot password?</Link>
+            <Link href="/forgot-password" className="btn-text">{t("auth.forgotPassword")}</Link>
           </div>
           <button className="btn-primary" type="submit" disabled={loading}>
             {loading && <Loader2 size={15} className="animate-spin" />}
-            Log In
+            {t("auth.logInBtn")}
           </button>
         </form>
 
         <div className="text-center text-sm mt-4" style={{ color: "var(--text-muted)" }}>
-          Don&apos;t have an account?{" "}
-          <Link href="/register" className="btn-text">Create one</Link>
+          {t("auth.noAccount")}{" "}
+          <Link href="/register" className="btn-text">{t("auth.createOne")}</Link>
         </div>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <LanguageProvider>
+      <LoginInner />
+    </LanguageProvider>
   );
 }
