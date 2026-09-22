@@ -3,13 +3,15 @@ import BirthdayPicker from "@/components/BirthdayPicker";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Mail, Lock, User, Eye, EyeOff, Loader2, AlertCircle, ChevronLeft, Calendar } from "lucide-react";
+import { Mail, Lock, User, Eye, EyeOff, Loader2, AlertCircle, ChevronLeft } from "lucide-react";
 import { PasswordRequirement, UsernameStatus } from "@/components/AuthWidgets";
+import { LanguageProvider, useLanguage } from "@/components/LanguageProvider";
 
 const STEPS = ["account", "identity", "birthday", "terms"];
 
-export default function RegisterPage() {
+function RegisterInner() {
   const router = useRouter();
+  const { t } = useLanguage();
   const [step, setStep] = useState(0);
   const [form, setForm] = useState({
     email: "",
@@ -162,16 +164,16 @@ export default function RegisterPage() {
       <div className="w-full max-w-[420px] card p-7 mt-16">
         <div className="flex items-center gap-2 mb-1">
           {step > 0 && (
-            <button onClick={handleBack} aria-label="Back" style={{ background: "none", border: "none", color: "var(--text-muted)" }}>
+            <button onClick={handleBack} aria-label={t("auth.back")} style={{ background: "none", border: "none", color: "var(--text-muted)" }}>
               <ChevronLeft size={18} />
             </button>
           )}
           <h1 className="text-xl font-semibold" style={{ fontFamily: "var(--font-display)" }}>
-            Create your account
+            {t("auth.createAccount")}
           </h1>
         </div>
         <p className="text-sm mb-2" style={{ color: "var(--text-muted)" }}>
-          Step {step + 1} of {STEPS.length}
+          {t("auth.stepOf", { n: step + 1, total: STEPS.length })}
         </p>
 
         <div className="flex gap-1.5 mb-6">
@@ -198,7 +200,7 @@ export default function RegisterPage() {
             <>
               <div>
                 <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--text-muted)" }}>
-                  Email
+                  {t("auth.email")}
                 </label>
                 <div className="relative flex items-center">
                   <Mail size={15} className="absolute left-3" style={{ color: "var(--text-muted)" }} />
@@ -216,7 +218,7 @@ export default function RegisterPage() {
 
               <div>
                 <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--text-muted)" }}>
-                  Password
+                  {t("auth.password")}
                 </label>
                 <div className="relative flex items-center">
                   <Lock size={15} className="absolute left-3" style={{ color: "var(--text-muted)" }} />
@@ -225,21 +227,21 @@ export default function RegisterPage() {
                     type={showPw ? "text" : "password"}
                     value={form.password}
                     onChange={(e) => updateField("password", e.target.value)}
-                    placeholder="Create a password"
+                    placeholder={t("auth.createPassword")}
                     autoComplete="new-password"
                   />
-                  <button type="button" className="absolute right-2" onClick={() => setShowPw((v) => !v)} aria-label="Toggle password visibility">
+                  <button type="button" className="absolute right-2" onClick={() => setShowPw((v) => !v)} aria-label={t("auth.togglePassword")}>
                     {showPw ? <EyeOff size={15} /> : <Eye size={15} />}
                   </button>
                 </div>
                 <div className="mt-1.5">
-                  <PasswordRequirement met={form.password.length >= 8} label="At least 8 characters" />
+                  <PasswordRequirement met={form.password.length >= 8} label={t("auth.atLeast8")} />
                 </div>
               </div>
 
               <div>
                 <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--text-muted)" }}>
-                  Confirm Password
+                  {t("auth.confirmPassword")}
                 </label>
                 <div className="relative flex items-center">
                   <Lock size={15} className="absolute left-3" style={{ color: "var(--text-muted)" }} />
@@ -248,13 +250,13 @@ export default function RegisterPage() {
                     type={showPw ? "text" : "password"}
                     value={form.confirm}
                     onChange={(e) => updateField("confirm", e.target.value)}
-                    placeholder="Repeat password"
+                    placeholder={t("auth.repeatPassword")}
                     autoComplete="new-password"
                   />
                 </div>
                 {form.confirm.length > 0 && (
                   <div className="mt-1.5">
-                    <PasswordRequirement met={form.confirm === form.password} label="Passwords match" />
+                    <PasswordRequirement met={form.confirm === form.password} label={t("auth.passwordsMatch")} />
                   </div>
                 )}
               </div>
@@ -265,7 +267,7 @@ export default function RegisterPage() {
             <>
               <div>
                 <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--text-muted)" }}>
-                  Display Name
+                  {t("auth.displayName")}
                 </label>
                 <div className="relative flex items-center">
                   <User size={15} className="absolute left-3" style={{ color: "var(--text-muted)" }} />
@@ -273,18 +275,18 @@ export default function RegisterPage() {
                     className="input"
                     value={form.displayName}
                     onChange={(e) => updateField("displayName", e.target.value)}
-                    placeholder="How others will see you"
+                    placeholder={t("auth.displayNamePlaceholder")}
                     autoFocus
                   />
                 </div>
                 <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
-                  Optional — defaults to your username if left blank.
+                  {t("auth.displayNameOptional")}
                 </p>
               </div>
 
               <div>
                 <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--text-muted)" }}>
-                  Username
+                  {t("auth.username")}
                 </label>
                 <div className="relative flex items-center">
                   <User size={15} className="absolute left-3" style={{ color: "var(--text-muted)" }} />
@@ -292,7 +294,7 @@ export default function RegisterPage() {
                     className="input"
                     value={form.username}
                     onChange={(e) => updateField("username", e.target.value)}
-                    placeholder="yourname"
+                    placeholder={t("auth.usernamePlaceholder")}
                     autoComplete="username"
                   />
                 </div>
@@ -308,11 +310,11 @@ export default function RegisterPage() {
           {current === "birthday" && (
             <div>
               <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--text-muted)" }}>
-                Date of Birth
+                {t("auth.dateOfBirth")}
               </label>
               <BirthdayPicker value={form.dateOfBirth} onChange={(v) => updateField("dateOfBirth", v)} />
               <p className="text-xs mt-1.5" style={{ color: "var(--text-muted)" }}>
-                You must be at least 13 years old to use Vreedits.
+                {t("auth.ageRequirement")}
               </p>
             </div>
           )}
@@ -327,8 +329,8 @@ export default function RegisterPage() {
                   style={{ marginTop: 3 }}
                 />
                 <span className="text-sm">
-                  I agree to Vreedits' <Link href="/terms" className="btn-text">Terms of Service</Link> and{" "}
-                  <Link href="/privacy" className="btn-text">Privacy Policy</Link>.
+                  {t("auth.agreeToPrefix")} <Link href="/terms" className="btn-text">{t("auth.termsOfService")}</Link>{" "}
+                  {t("auth.and")} <Link href="/privacy" className="btn-text">{t("auth.privacyPolicy")}</Link>.
                 </span>
               </label>
             </div>
@@ -343,20 +345,20 @@ export default function RegisterPage() {
             }
           >
             {loading && <Loader2 size={15} className="animate-spin" />}
-            {isLastStep ? "Create Account" : "Continue"}
+            {isLastStep ? t("auth.createAccountBtn") : t("auth.continue")}
           </button>
         </form>
 
         {step === 0 && (
           <>
             <div className="text-center text-sm mt-4" style={{ color: "var(--text-muted)" }}>
-              Already have an account?{" "}
-              <Link href="/login" className="btn-text">Log in</Link>
+              {t("auth.alreadyHaveAccount")}{" "}
+              <Link href="/login" className="btn-text">{t("auth.logIn")}</Link>
             </div>
 
             <div className="flex items-center gap-2 my-4">
               <div style={{ flex: 1, height: 1, background: "var(--surface-2)" }} />
-              <span className="text-xs" style={{ color: "var(--text-muted)" }}>or</span>
+              <span className="text-xs" style={{ color: "var(--text-muted)" }}>{t("auth.or")}</span>
               <div style={{ flex: 1, height: 1, background: "var(--surface-2)" }} />
             </div>
 
@@ -366,11 +368,19 @@ export default function RegisterPage() {
               disabled={loading}
               className="btn-text text-center text-sm w-full"
             >
-              {loading ? "Starting..." : "Continue as Guest"}
+              {loading ? t("auth.starting") : t("auth.continueAsGuest")}
             </button>
           </>
         )}
       </div>
     </div>
+  );
+}
+
+export default function RegisterPage() {
+  return (
+    <LanguageProvider>
+      <RegisterInner />
+    </LanguageProvider>
   );
 }
