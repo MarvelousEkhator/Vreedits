@@ -3,25 +3,32 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Search, ChevronRight, Sparkles, MessageCircle, MessageSquare, Loader2, Pin, Trash2, Pencil, Share2, Check, X, Home } from "lucide-react";
+import { useLanguage } from "@/components/LanguageProvider";
 
 // Categories that already have their own dedicated section dashboard —
 // their tools should only show there, not in the general AI Tools list.
 const SECTION_OWNED_CATEGORIES = ["Business", "School", "Writing", "Travel", "Home Tools"];
 
-function relativeTime(dateStr) {
+function relativeTime(dateStr, lang = "en") {
   const diffMs = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diffMs / 60000);
-  if (mins < 1) return "Just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
-  return new Date(dateStr).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  try {
+    const rtf = new Intl.RelativeTimeFormat(lang, { numeric: "auto", style: "short" });
+    if (mins < 1) return rtf.format(0, "second");
+    if (mins < 60) return rtf.format(-mins, "minute");
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return rtf.format(-hours, "hour");
+    const days = Math.floor(hours / 24);
+    if (days < 7) return rtf.format(-days, "day");
+  } catch {
+    // fall through to the plain date below
+  }
+  return new Date(dateStr).toLocaleDateString(lang, { month: "short", day: "numeric" });
 }
 
 export default function AiToolsClient({ tools }) {
   const router = useRouter();
+  const { t, lang } = useLanguage();
   const [query, setQuery] = useState("");
   const [conversations, setConversations] = useState([]);
   const [loadingChats, setLoadingChats] = useState(true);
@@ -75,7 +82,7 @@ export default function AiToolsClient({ tools }) {
   }
 
   async function handleDelete(id) {
-    if (!window.confirm("Delete this chat?")) return;
+    if (!window.confirm(t("aiTools.deleteConfirm"))) return;
     await fetch(`/api/ai/conversations/${id}`, { method: "DELETE" });
     setConversations((prev) => prev.filter((c) => c.id !== id));
   }
@@ -96,14 +103,14 @@ export default function AiToolsClient({ tools }) {
       <div className="w-full max-w-[480px] mt-10">
         <div className="flex items-center justify-between mb-1">
           <h1 className="text-xl font-semibold" style={{ fontFamily: "var(--font-display)" }}>
-            AI Tools
+            {t("aiTools.title")}
           </h1>
-          <Link href="/dashboard" aria-label="Exit to Home" style={{ color: "var(--text-muted)" }}>
+          <Link href="/dashboard" aria-label={t("aiTools.exitHome")} style={{ color: "var(--text-muted)" }}>
             <Home size={18} />
           </Link>
         </div>
         <p className="text-sm mb-5" style={{ color: "var(--text-muted)" }}>
-          Powered by Syna.
+          {t("aiTools.poweredBy")}
         </p>
 
         <div className="relative flex items-center mb-6">
@@ -115,7 +122,7 @@ export default function AiToolsClient({ tools }) {
           <input
             className="input"
             style={{ paddingLeft: 38 }}
-            placeholder="Search AI Tools…"
+            placeholder={t("aiTools.searchPlaceholder")}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
@@ -134,9 +141,9 @@ export default function AiToolsClient({ tools }) {
               <MessageCircle size={18} />
             </div>
             <div>
-              <div className="text-sm font-semibold">Chat with Syna</div>
+              <div className="text-sm font-semibold">{t("aiTools.chatWithSyna")}</div>
               <div className="text-xs" style={{ color: "var(--text-muted)" }}>
-                Ask anything, no form needed
+                {t("aiTools.askAnything")}
               </div>
             </div>
           </div>
@@ -145,7 +152,7 @@ export default function AiToolsClient({ tools }) {
 
         {categories.length === 0 && query && (
           <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-            No tools match &quot;{query}&quot;.
+            {t("aiTools.noMatch", { query })}
           </p>
         )}
 
@@ -180,7 +187,7 @@ export default function AiToolsClient({ tools }) {
 
         <div className="mb-6">
           <h2 className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: "var(--text-muted)" }}>
-            Recent Chats
+            {t("aiTools.recentChats")}
           </h2>
           {loadingChats && (
             <div className="flex justify-center py-4" style={{ color: "var(--text-muted)" }}>
@@ -189,7 +196,7 @@ export default function AiToolsClient({ tools }) {
           )}
           {!loadingChats && conversations.length === 0 && (
             <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-              No conversations yet — start one above.
+              {t("aiTools.noConversations")}
             </p>
           )}
           {!loadingChats && conversations.length > 0 && (
@@ -208,10 +215,10 @@ export default function AiToolsClient({ tools }) {
                         onChange={(e) => setRenameValue(e.target.value)}
                         autoFocus
                       />
-                      <button onClick={() => confirmRename(c.id)} style={{ color: "var(--accent)", background: "none", border: "none" }} aria-label="Save name">
+                      <button onClick={() => confirmRename(c.id)} style={{ color: "var(--accent)", background: "none", border: "none" }} aria-label={t("aiTools.saveName")}>
                         <Check size={16} />
                       </button>
-                      <button onClick={() => setRenamingId(null)} style={{ color: "var(--text-muted)", background: "none", border: "none" }} aria-label="Cancel rename">
+                      <button onClick={() => setRenamingId(null)} style={{ color: "var(--text-muted)", background: "none", border: "none" }} aria-label={t("aiTools.cancelRename")}>
                         <X size={16} />
                       </button>
                     </div>
@@ -235,21 +242,21 @@ export default function AiToolsClient({ tools }) {
                             {c.title}
                           </div>
                           <div className="text-xs" style={{ color: "var(--text-muted)" }}>
-                            {relativeTime(c.updatedAt)}
+                            {relativeTime(c.updatedAt, lang)}
                           </div>
                         </div>
                       </div>
                       <div className="flex items-center gap-2.5 flex-shrink-0">
-                        <button onClick={() => togglePin(c)} aria-label="Pin chat" style={{ color: c.pinned ? "var(--accent)" : "var(--text-muted)", background: "none", border: "none" }}>
+                        <button onClick={() => togglePin(c)} aria-label={t("aiTools.pinChat")} style={{ color: c.pinned ? "var(--accent)" : "var(--text-muted)", background: "none", border: "none" }}>
                           <Pin size={14} fill={c.pinned ? "var(--accent)" : "none"} />
                         </button>
-                        <button onClick={() => startRename(c)} aria-label="Rename chat" style={{ color: "var(--text-muted)", background: "none", border: "none" }}>
+                        <button onClick={() => startRename(c)} aria-label={t("aiTools.renameChat")} style={{ color: "var(--text-muted)", background: "none", border: "none" }}>
                           <Pencil size={14} />
                         </button>
-                        <button onClick={() => handleShare(c)} aria-label="Share chat" style={{ color: shareCopiedId === c.id ? "var(--accent)" : "var(--text-muted)", background: "none", border: "none" }}>
+                        <button onClick={() => handleShare(c)} aria-label={t("aiTools.shareChat")} style={{ color: shareCopiedId === c.id ? "var(--accent)" : "var(--text-muted)", background: "none", border: "none" }}>
                           {shareCopiedId === c.id ? <Check size={14} /> : <Share2 size={14} />}
                         </button>
-                        <button onClick={() => handleDelete(c.id)} aria-label="Delete chat" style={{ color: "var(--text-muted)", background: "none", border: "none" }}>
+                        <button onClick={() => handleDelete(c.id)} aria-label={t("aiTools.deleteChat")} style={{ color: "var(--text-muted)", background: "none", border: "none" }}>
                           <Trash2 size={14} />
                         </button>
                       </div>
