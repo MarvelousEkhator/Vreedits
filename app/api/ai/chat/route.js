@@ -19,6 +19,26 @@ const TECH_DECLINE = "I don't have access to information about how Vreedits is b
 const COOLDOWN_MESSAGE = "Chat's temporarily unavailable for this account. Please try again later.";
 
 // ---------------------------------------------------------------------------
+// Language: turns the saved language code (request body or the
+// "vreedits-lang" cookie) into a name like "Portuguese" for the model.
+// ---------------------------------------------------------------------------
+function resolveLanguageName(req, bodyLang) {
+  const raw = bodyLang || req.cookies?.get?.("vreedits-lang")?.value || "en";
+  if (!/^[a-z]{2,3}(-[a-z]{2,4})?$/i.test(raw)) return "English";
+  try {
+    return new Intl.DisplayNames(["en"], { type: "language" }).of(raw) || "English";
+  } catch {
+    return "English";
+  }
+}
+
+function buildSystemText(languageName) {
+  return `${SYNA_SYSTEM_CONTEXT}
+
+LANGUAGE: The user's app language is ${languageName}. Always reply in ${languageName}, even if earlier messages in this conversation were written in another language, unless the user explicitly asks you to use a different language.`;
+}
+
+// ---------------------------------------------------------------------------
 // Identity resolution — works for logged-in users AND guests.
 // ADJUST THIS to match how your app actually tracks guest sessions.
 // ---------------------------------------------------------------------------
@@ -255,9 +275,7 @@ async function isRepeatOffender(actorId) {
     where: { actorId, createdAt: { gte: since } },
   });
   return recentCount >= 3;
-}
-
-// ---------------------------------------------------------------------------
+}// ---------------------------------------------------------------------------
 // Message/attachment helpers
 // ---------------------------------------------------------------------------
 function attachmentsForMessage(m) {
@@ -283,7 +301,7 @@ function roleForGemini(role) {
   return role === "assistant" ? "model" : "user";
 }
 
-async function callGemini(contents, apiKey) {
+async function callGemini(contents, apiKey, systemText) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
 
@@ -295,7 +313,7 @@ async function callGemini(contents, apiKey) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents,
-          systemInstruction: { parts: [{ text: SYNA_SYSTEM_CONTEXT }] },
+          systemInstruction: { parts: [{ text: systemText }] },
         }),
         signal: controller.signal,
       }
@@ -357,6 +375,9 @@ export async function POST(req) {
   if (messages.length === 0) {
     return NextResponse.json({ error: "No messages provided." }, { status: 400 });
   }
+
+  const languageName = resolveLanguageName(req, body.language);
+  const systemText = buildSystemText(languageName);
 
   const lastMessage = messages[messages.length - 1];
   const lastMessageText = typeof lastMessage.text === "string" ? lastMessage.text : "";
@@ -442,7 +463,7 @@ export async function POST(req) {
   }));
 
   try {
-    const replyText = await callGemini(contents, apiKey);
+    const replyText = await callGemini(contents, apiKey, systemText);
     return NextResponse.json({
       reply: { role: "assistant", text: await sanitizeReply(replyText, apiKey), usedFallback: false },
     });
@@ -450,7 +471,7 @@ export async function POST(req) {
     if (err.fallback) {
       console.error("Gemini unavailable, falling back to Cloudflare:", err.message);
       try {
-        const fallbackText = await generateTextReply(messages, SYNA_SYSTEM_CONTEXT);
+        const fallbackText = await generateTextReply(messages, systemText);
         return NextResponse.json({
           reply: { role: "assistant", text: await sanitizeReply(fallbackText, apiKey), usedFallback: true },
         });
