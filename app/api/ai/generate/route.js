@@ -4,15 +4,29 @@ import { getTool, buildPrompt } from "@/lib/aiTools";
 import { callGemini } from "@/lib/gemini";
 import { checkDomainAvailability } from "@/lib/domainCheck";
 
+// Turns the saved language code (from the request body or the
+// "vreedits-lang" cookie) into a name like "Portuguese".
+function resolveLanguageName(req, bodyLang) {
+  const raw = bodyLang || req.cookies?.get?.("vreedits-lang")?.value || "en";
+  if (!/^[a-z]{2,3}(-[a-z]{2,4})?$/i.test(raw)) return "English";
+  try {
+    return new Intl.DisplayNames(["en"], { type: "language" }).of(raw) || "English";
+  } catch {
+    return "English";
+  }
+}
+
 export async function POST(req) {
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
 
-  const { toolId, values, followUp, history } = await req.json();
+  const { toolId, values, followUp, history, language } = await req.json();
   const tool = getTool(toolId);
   if (!tool) {
     return NextResponse.json({ error: "Unknown tool." }, { status: 400 });
   }
+
+  const languageName = resolveLanguageName(req, language);
 
   let contents;
 
@@ -52,8 +66,15 @@ export async function POST(req) {
     contents = [{ role: "user", text: prompt }];
   }
 
+  // The language instruction is added only to what Gemini sees, so it isn't
+  // stored in the saved history (which would go stale if the language changes).
+  const languageNote = `\n\n(Write your entire response in ${languageName}.)`;
+  const geminiContents = contents.map((m, i) =>
+    i === contents.length - 1 ? { ...m, text: `${m.text}${languageNote}` } : m
+  );
+
   try {
-    const result = await callGemini(contents);
+    const result = await callGemini(geminiContents);
     const updatedHistory = [...contents, { role: "assistant", text: result }];
     return NextResponse.json({ ok: true, result, history: updatedHistory });
   } catch (err) {
