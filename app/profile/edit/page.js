@@ -8,18 +8,29 @@ import AvatarCropper from "@/components/AvatarCropper";
 const MAX_UPLOAD_BYTES = 1_000_000;
 const MAX_BIO_LENGTH = 150;
 
-function FieldSheet({ label, value, onSave, onClose, multiline, maxLength }) {
+function FieldSheet({ label, value, onSave, onClose, multiline, maxLength, lowercase, hint }) {
   const [draft, setDraft] = useState(value || "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
+  function handleChange(e) {
+    const raw = e.target.value;
+    // Usernames: small letters only, no spaces
+    setDraft(lowercase ? raw.toLowerCase().replace(/\s/g, "") : raw);
+  }
+
   async function handleSave() {
+    const finalValue = lowercase ? draft.trim().toLowerCase() : draft;
+    if (lowercase && !finalValue) {
+      setError("Username can't be empty.");
+      return;
+    }
     setSaving(true);
     setError("");
-    const ok = await onSave(draft);
+    const result = await onSave(finalValue);
     setSaving(false);
-    if (ok) onClose();
-    else setError("Could not save. Try again.");
+    if (result === true) onClose();
+    else setError(typeof result === "string" ? result : "Could not save. Try again.");
   }
 
   return (
@@ -33,6 +44,7 @@ function FieldSheet({ label, value, onSave, onClose, multiline, maxLength }) {
           position: "fixed", left: 0, right: 0, bottom: 0,
           background: "var(--surface)", borderRadius: "20px 20px 0 0",
           zIndex: 401, padding: 16,
+          paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 16px)",
         }}
       >
         <div className="flex items-center justify-between mb-3">
@@ -48,17 +60,24 @@ function FieldSheet({ label, value, onSave, onClose, multiline, maxLength }) {
             style={{ minHeight: 90, resize: "vertical", paddingTop: 10 }}
             value={draft}
             maxLength={maxLength}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={handleChange}
             autoFocus
           />
         ) : (
           <input
-            className="input mb-2"
+            className="input pl-3 mb-2"
             value={draft}
             maxLength={maxLength}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={handleChange}
             autoFocus
+            autoCapitalize={lowercase ? "none" : undefined}
+            autoCorrect={lowercase ? "off" : undefined}
+            autoComplete={lowercase ? "off" : undefined}
+            spellCheck={lowercase ? false : undefined}
           />
+        )}
+        {hint && (
+          <div className="text-xs mb-1" style={{ color: "var(--text-muted)" }}>{hint}</div>
         )}
         {maxLength && (
           <div className="text-xs mb-2" style={{ color: "var(--text-muted)", textAlign: "right" }}>
@@ -113,6 +132,7 @@ export default function EditProfilePage() {
 
   useEffect(() => { loadEverything(); }, []);
 
+  // Returns true on success, or an error message string on failure
   async function saveField(field, value) {
     setSuccess("");
     setError("");
@@ -123,16 +143,12 @@ export default function EditProfilePage() {
         body: JSON.stringify({ [field]: value }),
       });
       const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || "Could not save changes.");
-        return false;
-      }
+      if (!res.ok) return data.error || "Could not save changes.";
       setProfile(data.profile);
       setSuccess("Saved.");
       return true;
     } catch {
-      setError("Network error. Please try again.");
-      return false;
+      return "Network error. Please try again.";
     }
   }
 
@@ -196,9 +212,14 @@ export default function EditProfilePage() {
 
   const ROWS = [
     { key: "displayName", label: "Name", value: profile?.displayName, multiline: false, maxLength: 50 },
-    { key: "username", label: "Username", value: profile?.username, multiline: false, maxLength: 30 },
+    {
+      key: "username", label: "Username", value: profile?.username, multiline: false, maxLength: 30,
+      lowercase: true, hint: "Small letters only, no spaces.",
+    },
     { key: "bio", label: "Bio", value: profile?.bio || "", multiline: true, maxLength: MAX_BIO_LENGTH },
   ];
+
+  const activeRow = ROWS.find((r) => r.key === activeField);
 
   return (
     <NavShell user={user}>
@@ -290,12 +311,14 @@ export default function EditProfilePage() {
         </div>
       </div>
 
-      {activeField && (
+      {activeRow && (
         <FieldSheet
-          label={ROWS.find((r) => r.key === activeField).label}
-          value={ROWS.find((r) => r.key === activeField).value}
-          multiline={ROWS.find((r) => r.key === activeField).multiline}
-          maxLength={ROWS.find((r) => r.key === activeField).maxLength}
+          label={activeRow.label}
+          value={activeRow.value}
+          multiline={activeRow.multiline}
+          maxLength={activeRow.maxLength}
+          lowercase={activeRow.lowercase}
+          hint={activeRow.hint}
           onSave={(val) => saveField(activeField, val)}
           onClose={() => setActiveField(null)}
         />
