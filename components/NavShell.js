@@ -31,6 +31,15 @@ const NAV_ITEMS = [
   { id: "profile", labelKey: "nav.profile", href: "/profile", icon: User, gloss: "profile", available: true },
 ];
 
+// Bottom tab bar (mobile only). The hamburger menu still holds every section.
+const TAB_ITEMS = [
+  { id: "home", labelKey: "nav.home", href: "/feed", icon: Home },
+  { id: "inbox", labelKey: "nav.inbox", href: "/inbox", icon: MessageCircle },
+  { id: "ai-tools", labelKey: "nav.aiTools", href: "/ai-tools", icon: Bot },
+  { id: "communities", labelKey: "nav.communities", href: "/communities", icon: Users },
+  { id: "profile", labelKey: "nav.profile", href: "/profile", icon: User },
+];
+
 function NavShellInner({ children, user }) {
   const { t } = useLanguage();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -43,6 +52,12 @@ function NavShellInner({ children, user }) {
 
   const inFeedSection = pathname.startsWith("/feed") || pathname.startsWith("/settings/feed");
   const popoverSettingsHref = inFeedSection ? "/settings/feed" : "/settings";
+
+  // Screens that need the full height (chat-style screens with their own input bar)
+  const hideTabBar =
+    /^\/communities\/[^/]+/.test(pathname) ||
+    /^\/inbox\/[^/]+/.test(pathname) ||
+    pathname.startsWith("/ai-tools/chat");
 
   useEffect(() => {
     function handleClick(e) {
@@ -170,10 +185,34 @@ function NavShellInner({ children, user }) {
         .vreedits-nav-item.locked { opacity: 0.6; cursor: not-allowed; }
         .vreedits-lock-badge { margin-left: auto; }
         .vreedits-content { flex: 1; min-height: 0; overflow-y: auto; }
+
+        /* ───────── Bottom tab bar (mobile) ───────── */
+        .vreedits-tabbar {
+          display: flex; align-items: stretch; flex-shrink: 0; position: relative; z-index: 30;
+          padding: 6px 6px calc(6px + env(safe-area-inset-bottom, 0px));
+          border-top: 1px solid var(--border); background: var(--glass);
+          backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+        }
+        .vreedits-tab {
+          flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center;
+          gap: 3px; padding: 4px 0; border-radius: 12px; text-decoration: none;
+          color: var(--text-muted); font-size: 10.5px; font-weight: 500;
+          transition: color 0.15s ease, transform 0.1s ease;
+        }
+        .vreedits-tab:active { transform: scale(0.94); }
+        .vreedits-tab-icon {
+          width: 54px; height: 28px; border-radius: 999px; display: flex;
+          align-items: center; justify-content: center;
+          transition: background 0.2s ease;
+        }
+        .vreedits-tab.active { color: var(--accent); font-weight: 600; }
+        .vreedits-tab.active .vreedits-tab-icon { background: var(--accent-soft); }
+        .vreedits-tab-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        @media (min-width: 1024px) { .vreedits-tabbar { display: none; } }
       `}</style>
 
       <div className="vreedits-topbar">
-        <button ref={hamburgerRef} className="vreedits-hamburger" onClick={toggleMenu} aria-label="Open menu">
+        <button ref={hamburgerRef} className="vreedits-hamburger tappable" onClick={toggleMenu} aria-label="Open menu">
           <Menu size={20} />
         </button>
         <span className="vreedits-brand">Vreedits</span>
@@ -183,7 +222,7 @@ function NavShellInner({ children, user }) {
       <div className={`vreedits-overlay ${menuOpen ? "open" : ""}`} onClick={() => setMenuOpen(false)} />
 
       <nav ref={menuRef} className={`vreedits-menu ${menuOpen ? "open" : ""}`}>
-        <button className="vreedits-menu-close" onClick={() => setMenuOpen(false)} aria-label="Close menu">
+        <button className="vreedits-menu-close tappable" onClick={() => setMenuOpen(false)} aria-label="Close menu">
           <X size={17} />
         </button>
 
@@ -240,7 +279,7 @@ function NavShellInner({ children, user }) {
               <Link
                 key={item.id}
                 href={item.href}
-                className={`vreedits-nav-item ${isActive ? "active" : ""}`}
+                className={`vreedits-nav-item tappable ${isActive ? "active" : ""}`}
                 onClick={() => setMenuOpen(false)}
               >
                 <GlossIcon name={item.gloss} size={38} fallback={item.icon} />
@@ -252,6 +291,28 @@ function NavShellInner({ children, user }) {
       </nav>
 
       <div className="vreedits-content">{children}</div>
+
+      {!hideTabBar && (
+        <nav className="vreedits-tabbar" aria-label="Main">
+          {TAB_ITEMS.map((item) => {
+            const Icon = item.icon;
+            const active = isItemActive(item);
+            return (
+              <Link
+                key={item.id}
+                href={item.href}
+                className={`vreedits-tab ${active ? "active" : ""}`}
+                aria-current={active ? "page" : undefined}
+              >
+                <span className="vreedits-tab-icon">
+                  <Icon size={21} strokeWidth={active ? 2.4 : 2} />
+                </span>
+                <span className="vreedits-tab-label">{t(item.labelKey)}</span>
+              </Link>
+            );
+          })}
+        </nav>
+      )}
     </div>
   );
 }
