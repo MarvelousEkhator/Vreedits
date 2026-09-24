@@ -56,6 +56,13 @@ body {
   background: var(--bg);
   color: var(--text);
   transition: color 0.25s ease;
+  overscroll-behavior: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* No grey flash when tapping links/buttons on phones */
+a, button, [role="button"] {
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* Full-screen gradient behind the whole app */
@@ -170,6 +177,74 @@ body::before {
   font-size: 16px;
 }
 .v-search input::placeholder { color: var(--text-muted); }
+
+/* ───────── App feel: shared building blocks ───────── */
+
+/* Add class "tappable" to any button/link for a native-style press effect */
+.tappable {
+  transition: transform 0.1s ease, filter 0.15s ease;
+}
+.tappable:active {
+  transform: scale(0.96);
+}
+
+/* Subtle fade-in whenever a new page loads inside the app shell */
+@keyframes v-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.vreedits-content > * {
+  animation: v-fade-in 0.2s ease-out;
+}
+
+/* Skeleton loaders: use instead of blank screens while data loads.
+   Example: <div className="skeleton" style={{ height: 16, width: "60%" }} /> */
+@keyframes v-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.skeleton {
+  border-radius: 10px;
+  background: linear-gradient(
+    90deg,
+    var(--surface-2) 25%,
+    var(--accent-soft) 50%,
+    var(--surface-2) 75%
+  );
+  background-size: 200% 100%;
+  animation: v-shimmer 1.4s ease-in-out infinite;
+}
+.skeleton-circle { border-radius: 50%; }
+
+/* Empty state: for screens with nothing in them yet.
+   Example: <div className="empty-state"><Icon size={40} /><h3>No favorites yet</h3><p>Tap the heart...</p></div> */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 8px;
+  padding: 48px 24px;
+  color: var(--text-muted);
+}
+.empty-state h3 {
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 600;
+}
+.empty-state p {
+  font-size: 13.5px;
+  line-height: 1.5;
+  max-width: 280px;
+}
+
+/* Respect people who turn off animations on their phone */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; }
+  .vreedits-content > * { animation: none; }
+  .tappable, .tappable:active { transition: none; transform: none; }
+}
 
 /* ───────── Desktop / PC layout for communities ───────── */
 .cd-page { max-width: 960px; margin: 0 auto; }
