@@ -5,6 +5,9 @@ import { requireUser } from "@/lib/requireUser";
 const LANGUAGES = ["English", "French", "Spanish", "Arabic"];
 const MAX_BIO_LENGTH = 150;
 const MAX_DISPLAY_NAME_LENGTH = 50;
+const MIN_USERNAME_LENGTH = 3;
+const MAX_USERNAME_LENGTH = 30;
+const USERNAME_PATTERN = /^[a-z0-9_.]+$/;
 
 export async function GET() {
   const user = await requireUser();
@@ -35,12 +38,37 @@ export async function PATCH(req) {
   const data = {};
 
   if (typeof body.username === "string") {
-    const cleanUsername = body.username.trim();
-    if (cleanUsername.length < 3) {
-      return NextResponse.json({ error: "Username must be at least 3 characters." }, { status: 400 });
+    // Usernames are always small letters — no capitals allowed.
+    const cleanUsername = body.username.trim().toLowerCase();
+
+    if (cleanUsername.length < MIN_USERNAME_LENGTH) {
+      return NextResponse.json(
+        { error: `Username must be at least ${MIN_USERNAME_LENGTH} characters.` },
+        { status: 400 }
+      );
     }
+    if (cleanUsername.length > MAX_USERNAME_LENGTH) {
+      return NextResponse.json(
+        { error: `Username must be ${MAX_USERNAME_LENGTH} characters or fewer.` },
+        { status: 400 }
+      );
+    }
+    if (!USERNAME_PATTERN.test(cleanUsername)) {
+      return NextResponse.json(
+        { error: "Username can only use small letters, numbers, underscores and periods (no spaces)." },
+        { status: 400 }
+      );
+    }
+
     if (cleanUsername !== user.username) {
-      const taken = await prisma.user.findUnique({ where: { username: cleanUsername } });
+      // Case-insensitive check so "Marvy1" and "marvy1" can't both exist
+      const taken = await prisma.user.findFirst({
+        where: {
+          username: { equals: cleanUsername, mode: "insensitive" },
+          NOT: { id: user.id },
+        },
+        select: { id: true },
+      });
       if (taken) {
         return NextResponse.json({ error: "That username is already taken." }, { status: 409 });
       }
