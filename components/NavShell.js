@@ -32,12 +32,13 @@ const NAV_ITEMS = [
 ];
 
 // Bottom tab bar (mobile only). The hamburger menu still holds every section.
+// Uses the same glossy icons as the hamburger menu.
 const TAB_ITEMS = [
-  { id: "home", labelKey: "nav.home", href: "/feed", icon: Home },
-  { id: "inbox", labelKey: "nav.inbox", href: "/inbox", icon: MessageCircle },
-  { id: "ai-tools", labelKey: "nav.aiTools", href: "/ai-tools", icon: Bot },
-  { id: "communities", labelKey: "nav.communities", href: "/communities", icon: Users },
-  { id: "profile", labelKey: "nav.profile", href: "/profile", icon: User },
+  { id: "home", labelKey: "nav.home", href: "/feed", icon: Home, gloss: "home" },
+  { id: "inbox", labelKey: "nav.inbox", href: "/inbox", icon: MessageCircle, gloss: "inbox" },
+  { id: "ai-tools", labelKey: "nav.aiTools", href: "/ai-tools", icon: Bot, gloss: "ai-tools" },
+  { id: "communities", labelKey: "nav.communities", href: "/communities", icon: Users, gloss: "communities" },
+  { id: "profile", labelKey: "nav.profile", href: "/profile", icon: User, gloss: "profile" },
 ];
 
 function NavShellInner({ children, user }) {
@@ -195,18 +196,20 @@ function NavShellInner({ children, user }) {
         }
         .vreedits-tab {
           flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center;
-          gap: 3px; padding: 4px 0; border-radius: 12px; text-decoration: none;
+          gap: 2px; padding: 3px 0; border-radius: 12px; text-decoration: none;
           color: var(--text-muted); font-size: 10.5px; font-weight: 500;
           transition: color 0.15s ease, transform 0.1s ease;
         }
         .vreedits-tab:active { transform: scale(0.94); }
         .vreedits-tab-icon {
-          width: 54px; height: 28px; border-radius: 999px; display: flex;
-          align-items: center; justify-content: center;
-          transition: background 0.2s ease;
+          width: 56px; height: 38px; border-radius: 999px; display: flex;
+          align-items: center; justify-content: center; opacity: 0.8;
+          transition: background 0.2s ease, transform 0.2s ease, opacity 0.2s ease;
         }
         .vreedits-tab.active { color: var(--accent); font-weight: 600; }
-        .vreedits-tab.active .vreedits-tab-icon { background: var(--accent-soft); }
+        .vreedits-tab.active .vreedits-tab-icon {
+          background: var(--accent-soft); opacity: 1; transform: translateY(-1px) scale(1.06);
+        }
         .vreedits-tab-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         @media (min-width: 1024px) { .vreedits-tabbar { display: none; } }
       `}</style>
@@ -295,7 +298,6 @@ function NavShellInner({ children, user }) {
       {!hideTabBar && (
         <nav className="vreedits-tabbar" aria-label="Main">
           {TAB_ITEMS.map((item) => {
-            const Icon = item.icon;
             const active = isItemActive(item);
             return (
               <Link
@@ -305,7 +307,7 @@ function NavShellInner({ children, user }) {
                 aria-current={active ? "page" : undefined}
               >
                 <span className="vreedits-tab-icon">
-                  <Icon size={21} strokeWidth={active ? 2.4 : 2} />
+                  <GlossIcon name={item.gloss} size={34} fallback={item.icon} />
                 </span>
                 <span className="vreedits-tab-label">{t(item.labelKey)}</span>
               </Link>
