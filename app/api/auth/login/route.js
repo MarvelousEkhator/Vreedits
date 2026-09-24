@@ -1,84 +1,140 @@
 import { NextResponse } from "next/server";
-import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
-import { signSession, setSessionCookie } from "@/lib/auth";
-import {
-  generateCode, CODE_TTL_MS, isLockedOut,
-  MAX_FAILED_LOGINS, LOCKOUT_MS,
-} from "@/lib/security";
-import { sendVerificationEmail } from "@/lib/email";
+import { requireUser } from "@/lib/requireUser";
 
-export async function POST(req) {
-  const { email, password } = await req.json();
-  const cleanEmail = (email || "").trim().toLowerCase();
+const LANGUAGES = ["English", "French", "Spanish", "Arabic"];
+const MAX_BIO_LENGTH = 150;
+const MAX_DISPLAY_NAME_LENGTH = 50;
+const MIN_USERNAME_LENGTH = 3;
+const MAX_USERNAME_LENGTH = 30;
+const USERNAME_PATTERN = /^[a-z0-9_.]+$/;
 
-  if (!cleanEmail || !password) {
-    return NextResponse.json({ error: "Enter your email and password." }, { status: 400 });
+export async function GET() {
+  const user = await requireUser();
+  if (!user) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
+
+  return NextResponse.json({
+    profile: {
+      username: user.username,
+      displayName: user.displayName,
+      email: user.email,
+      avatarDataUrl: user.avatarDataUrl,
+      bio: user.bio,
+      allowDownloads: user.allowDownloads,
+      country: user.country,
+      language: user.language,
+      isPublic: user.isPublic,
+      online: user.online,
+      createdAt: user.createdAt,
+    },
+  });
+}
+
+export async function PATCH(req) {
+  const user = await requireUser();
+  if (!user) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
+
+  const body = await req.json();
+  const data = {};
+
+  if (typeof body.username === "string") {
+    // Usernames are always small letters — no capitals allowed.
+    const cleanUsername = body.username.trim().toLowerCase();
+
+    if (cleanUsername.length < MIN_USERNAME_LENGTH) {
+      return NextResponse.json(
+        { error: `Username must be at least ${MIN_USERNAME_LENGTH} characters.` },
+        { status: 400 }
+      );
+    }
+    if (cleanUsername.length > MAX_USERNAME_LENGTH) {
+      return NextResponse.json(
+        { error: `Username must be ${MAX_USERNAME_LENGTH} characters or fewer.` },
+        { status: 400 }
+      );
+    }
+    if (!USERNAME_PATTERN.test(cleanUsername)) {
+      return NextResponse.json(
+        { error: "Username can only use small letters, numbers, underscores and periods (no spaces)." },
+        { status: 400 }
+      );
+    }
+
+    if (cleanUsername !== user.username) {
+      // Case-insensitive check so "Marvy1" and "marvy1" can't both exist
+      const taken = await prisma.user.findFirst({
+        where: {
+          username: { equals: cleanUsername, mode: "insensitive" },
+          NOT: { id: user.id },
+        },
+        select: { id: true },
+      });
+      if (taken) {
+        return NextResponse.json({ error: "That username is already taken." }, { status: 409 });
+      }
+      data.username = cleanUsername;
+    }
   }
 
-  const user = await prisma.user.findUnique({ where: { email: cleanEmail } });
-  if (!user) {
-    return NextResponse.json({ error: "No account found with that email." }, { status: 404 });
+  if (typeof body.displayName === "string") {
+    const cleanDisplayName = body.displayName.trim();
+    if (cleanDisplayName.length > MAX_DISPLAY_NAME_LENGTH) {
+      return NextResponse.json(
+        { error: `Name must be ${MAX_DISPLAY_NAME_LENGTH} characters or fewer.` },
+        { status: 400 }
+      );
+    }
+    data.displayName = cleanDisplayName || null;
   }
 
-  if (isLockedOut(user)) {
-    const minutesLeft = Math.ceil((new Date(user.lockedUntil) - new Date()) / 60000);
-    return NextResponse.json(
-      { error: `Too many failed attempts. Try again in ${minutesLeft} minute(s).` },
-      { status: 429 }
-    );
+  if (typeof body.bio === "string") {
+    const cleanBio = body.bio.trim();
+    if (cleanBio.length > MAX_BIO_LENGTH) {
+      return NextResponse.json({ error: `Bio must be ${MAX_BIO_LENGTH} characters or fewer.` }, { status: 400 });
+    }
+    data.bio = cleanBio || null;
   }
 
-  const validPassword = await bcrypt.compare(password, user.passwordHash);
-  if (!validPassword) {
-    const attempts = user.failedLoginAttempts + 1;
-    const lockingOut = attempts >= MAX_FAILED_LOGINS;
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        failedLoginAttempts: lockingOut ? 0 : attempts,
-        lockedUntil: lockingOut ? new Date(Date.now() + LOCKOUT_MS) : null,
-      },
-    });
-    return NextResponse.json(
-      {
-        error: lockingOut
-          ? "Too many failed attempts. Account locked for 15 minutes."
-          : "Incorrect password.",
-      },
-      { status: 401 }
-    );
+  if (typeof body.allowDownloads === "boolean") {
+    data.allowDownloads = body.allowDownloads;
   }
 
-  if (user.failedLoginAttempts > 0 || user.lockedUntil) {
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { failedLoginAttempts: 0, lockedUntil: null },
-    });
+  if (typeof body.country === "string") {
+    data.country = body.country.trim() || null;
   }
 
-  if (!user.verified) {
-    const code = generateCode();
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        verificationCode: code,
-        verificationExpires: new Date(Date.now() + CODE_TTL_MS),
-        lastCodeSentAt: new Date(),
-      },
-    });
-    await sendVerificationEmail(user.email, code);
-    return NextResponse.json(
-      { needsVerification: true, email: user.email },
-      { status: 200 }
-    );
+  if (typeof body.language === "string") {
+    if (!LANGUAGES.includes(body.language)) {
+      return NextResponse.json({ error: "Unsupported language." }, { status: 400 });
+    }
+    data.language = body.language;
   }
 
-  await prisma.user.update({ where: { id: user.id }, data: { online: true } });
-  setSessionCookie(signSession(user.id));
+  if (typeof body.isPublic === "boolean") {
+    data.isPublic = body.isPublic;
+  }
+
+  if (typeof body.online === "boolean") {
+    data.online = body.online;
+    if (body.online) {
+      data.lastSeenAt = new Date();
+    }
+  }
+  const updated = await prisma.user.update({ where: { id: user.id }, data });
 
   return NextResponse.json({
     ok: true,
-    user: { id: user.id, username: user.username, email: user.email },
+    profile: {
+      username: updated.username,
+      displayName: updated.displayName,
+      email: updated.email,
+      avatarDataUrl: updated.avatarDataUrl,
+      bio: updated.bio,
+      allowDownloads: updated.allowDownloads,
+      country: updated.country,
+      language: updated.language,
+      isPublic: updated.isPublic,
+      online: updated.online,
+    },
   });
 }
