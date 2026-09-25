@@ -1,7 +1,8 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
-import { UserPlus, Check, X as XIcon, Loader2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { UserPlus, Check, X as XIcon, Loader2, MoreVertical, Ban, Trash2 } from "lucide-react";
 import GlossIcon from "@/components/GlossIcon";
 
 function Avatar({ user, size = 44 }) {
@@ -27,7 +28,45 @@ function relativeTime(dateStr) {
   return `${days}d`;
 }
 
+function ConversationMenu({ friend, open, onClose, onBlock, blocking }) {
+  if (!open) return null;
+  return (
+    <>
+      <div
+        onClick={onClose}
+        style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 200 }}
+      />
+      <div
+        className="card"
+        style={{
+          position: "fixed", left: 16, right: 16, bottom: 16, zIndex: 201,
+          padding: 8, maxWidth: 420, margin: "0 auto",
+        }}
+      >
+        <button
+          onClick={() => onBlock(friend)}
+          disabled={blocking}
+          className="flex items-center gap-3 w-full"
+          style={{ padding: "12px 10px", background: "none", border: "none", color: "var(--danger)", fontSize: 14, fontWeight: 600, textAlign: "left" }}
+        >
+          {blocking ? <Loader2 size={17} className="animate-spin" /> : <Ban size={17} />}
+          Block {friend.displayName || friend.username}
+        </button>
+        <button
+          onClick={onClose}
+          className="flex items-center gap-3 w-full"
+          style={{ padding: "12px 10px", background: "none", border: "none", color: "var(--text-muted)", fontSize: 14, fontWeight: 500, textAlign: "left" }}
+        >
+          <XIcon size={17} />
+          Cancel
+        </button>
+      </div>
+    </>
+  );
+}
+
 export default function InboxClient({ currentUserId }) {
+  const router = useRouter();
   const [conversations, setConversations] = useState([]);
   const [incoming, setIncoming] = useState([]);
   const [outgoing, setOutgoing] = useState([]);
@@ -38,6 +77,11 @@ export default function InboxClient({ currentUserId }) {
   const [addStatus, setAddStatus] = useState("");
   const [adding, setAdding] = useState(false);
   const [respondingId, setRespondingId] = useState(null);
+  const [unsendingId, setUnsendingId] = useState(null);
+
+  const [menuFriendId, setMenuFriendId] = useState(null);
+  const [blockingId, setBlockingId] = useState(null);
+  const pressTimer = useRef(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -90,11 +134,52 @@ export default function InboxClient({ currentUserId }) {
     load();
   }
 
+  // Cancels a request you sent that's still pending. Removes it from your
+  // own outgoing list only — nothing is sent to the other person.
+  async function handleUnsend(requestId) {
+    setUnsendingId(requestId);
+    setOutgoing((prev) => prev.filter((r) => r.id !== requestId));
+    try {
+      await fetch(`/api/friends/requests/${requestId}`, { method: "DELETE" });
+    } finally {
+      setUnsendingId(null);
+      load();
+    }
+  }
+
+  function openMenu(friendId) {
+    setMenuFriendId(friendId);
+  }
+  function handlePressStart(friendId) {
+    pressTimer.current = setTimeout(() => openMenu(friendId), 450);
+  }
+  function handlePressEnd() {
+    clearTimeout(pressTimer.current);
+  }
+
+  async function handleBlock(friend) {
+    if (!window.confirm(`Block ${friend.displayName || friend.username}? They won't be able to message you, and this removes them from your friends.`)) {
+      return;
+    }
+    setBlockingId(friend.id);
+    try {
+      const res = await fetch(`/api/users/${friend.id}/block`, { method: "POST" });
+      if (res.ok) {
+        setConversations((prev) => prev.filter((c) => c.friend.id !== friend.id));
+        setMenuFriendId(null);
+      }
+    } finally {
+      setBlockingId(null);
+    }
+  }
+
   const filtered = conversations.filter((c) => {
     if (!query.trim()) return true;
     const name = (c.friend.displayName || c.friend.username || "").toLowerCase();
     return name.includes(query.toLowerCase());
   });
+
+  const menuFriend = menuFriendId ? conversations.find((c) => c.friend.id === menuFriendId)?.friend : null;
 
   return (
     <div className="p-3">
@@ -176,11 +261,21 @@ export default function InboxClient({ currentUserId }) {
           </div>
           <div className="space-y-1">
             {outgoing.map((r) => (
-              <div key={r.id} className="flex items-center gap-2.5 px-1 py-1.5">
-                <Avatar user={r.receiver} size={28} />
-                <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-                  Waiting for {r.receiver.displayName || r.receiver.username}
-                </span>
+              <div key={r.id} className="flex items-center justify-between gap-2.5 px-1 py-1.5">
+                <div className="flex items-center gap-2.5" style={{ minWidth: 0 }}>
+                  <Avatar user={r.receiver} size={28} />
+                  <span className="text-xs" style={{ color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    Waiting for {r.receiver.displayName || r.receiver.username}
+                  </span>
+                </div>
+                <button
+                  onClick={() => handleUnsend(r.id)}
+                  disabled={unsendingId === r.id}
+                  className="text-xs font-semibold flex-shrink-0"
+                  style={{ background: "var(--surface-2)", color: "var(--text-muted)", border: "none", borderRadius: 999, padding: "5px 10px" }}
+                >
+                  {unsendingId === r.id ? <Loader2 size={12} className="animate-spin" /> : "Unsend"}
+                </button>
               </div>
             ))}
           </div>
@@ -198,39 +293,67 @@ export default function InboxClient({ currentUserId }) {
       ) : (
         <div className="space-y-1">
           {filtered.map(({ friend, lastMessage, unreadCount }) => (
-            <Link
+            <div
               key={friend.id}
-              href={`/inbox/${friend.username}`}
-              className="flex items-center gap-3 p-2.5 rounded-xl"
-              style={{ textDecoration: "none", color: "var(--text)" }}
+              className="flex items-center gap-1"
+              onTouchStart={() => handlePressStart(friend.id)}
+              onTouchEnd={handlePressEnd}
+              onTouchMove={handlePressEnd}
+              onMouseDown={() => handlePressStart(friend.id)}
+              onMouseUp={handlePressEnd}
+              onMouseLeave={handlePressEnd}
+              onContextMenu={(e) => { e.preventDefault(); openMenu(friend.id); }}
             >
-              <div style={{ position: "relative" }}>
-                <Avatar user={friend} size={48} />
-                <span
-                  style={{
-                    position: "absolute", bottom: -1, right: -1, width: 13, height: 13, borderRadius: "50%",
-                    border: "2.5px solid var(--surface)",
-                    background: friend.online ? "var(--success)" : "var(--text-muted)",
-                  }}
-                />
-              </div>
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold">{friend.displayName || friend.username}</span>
-                  <span className="text-xs" style={{ color: "var(--text-muted)" }}>{relativeTime(lastMessage?.createdAt)}</span>
+              <Link
+                href={`/inbox/${friend.username}`}
+                className="flex items-center gap-3 p-2.5 rounded-xl"
+                style={{ textDecoration: "none", color: "var(--text)", flex: 1, minWidth: 0 }}
+              >
+                <div style={{ position: "relative" }}>
+                  <Avatar user={friend} size={48} />
+                  <span
+                    style={{
+                      position: "absolute", bottom: -1, right: -1, width: 13, height: 13, borderRadius: "50%",
+                      border: "2.5px solid var(--surface)",
+                      background: friend.online ? "var(--success)" : "var(--text-muted)",
+                    }}
+                  />
                 </div>
-                <p className="text-xs" style={{ color: unreadCount > 0 ? "var(--text)" : "var(--text-muted)", fontWeight: unreadCount > 0 ? 600 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {lastMessage?.content || "Say hi 👋"}
-                </p>
-              </div>
-              {unreadCount > 0 && (
-                <span style={{ background: "var(--accent)", color: "white", fontSize: 11, fontWeight: 700, borderRadius: 999, minWidth: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 5px" }}>
-                  {unreadCount}
-                </span>
-              )}
-            </Link>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold">{friend.displayName || friend.username}</span>
+                    <span className="text-xs" style={{ color: "var(--text-muted)" }}>{relativeTime(lastMessage?.createdAt)}</span>
+                  </div>
+                  <p className="text-xs" style={{ color: unreadCount > 0 ? "var(--text)" : "var(--text-muted)", fontWeight: unreadCount > 0 ? 600 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {lastMessage?.content || "Say hi 👋"}
+                  </p>
+                </div>
+                {unreadCount > 0 && (
+                  <span style={{ background: "var(--accent)", color: "white", fontSize: 11, fontWeight: 700, borderRadius: 999, minWidth: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 5px" }}>
+                    {unreadCount}
+                  </span>
+                )}
+              </Link>
+              <button
+                onClick={() => openMenu(friend.id)}
+                aria-label="More options"
+                style={{ background: "none", border: "none", color: "var(--text-muted)", padding: 8, flexShrink: 0 }}
+              >
+                <MoreVertical size={17} />
+              </button>
+            </div>
           ))}
         </div>
+      )}
+
+      {menuFriend && (
+        <ConversationMenu
+          friend={menuFriend}
+          open={!!menuFriend}
+          onClose={() => setMenuFriendId(null)}
+          onBlock={handleBlock}
+          blocking={blockingId === menuFriend.id}
+        />
       )}
     </div>
   );
