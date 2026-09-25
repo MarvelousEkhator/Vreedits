@@ -26,5 +26,17 @@ export async function POST(req, { params }) {
   }
 
   await prisma.follow.create({ data: { followerId: user.id, followingId: targetId } });
+
+  // Notify the person being followed
+  const followerName = user.displayName || user.username;
+  await prisma.notification.create({
+    data: {
+      userId: targetId,
+      category: "follow",
+      title: "New follower",
+      description: `@${user.username} (${followerName}) started following you.`,
+    },
+  });
+
   return NextResponse.json({ ok: true, following: true });
 }
