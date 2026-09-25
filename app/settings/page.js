@@ -16,11 +16,20 @@ const LANGUAGES = [
 ];
 
 function SettingsInner({ user, profile, loading, savingLanguage, loggingOut, onLanguageChange, onLogout }) {
-  const { t, lang } = useLanguage();
+  // This useLanguage() call is inside NavShell's provider (SettingsInner is
+  // rendered as NavShell's child), so setLang here actually switches the
+  // app. Calling it from the page component one level up would silently
+  // no-op, since that call sits outside the provider NavShell creates.
+  const { t, lang, setLang } = useLanguage();
 
   function formatDate(dateStr) {
     const d = new Date(dateStr);
     return d.toLocaleDateString(lang, { year: "numeric", month: "long", day: "numeric" });
+  }
+
+  function handleSelectChange(e) {
+    setLang(e.target.value);
+    onLanguageChange(e);
   }
 
   if (loading) {
@@ -74,11 +83,11 @@ function SettingsInner({ user, profile, loading, savingLanguage, loggingOut, onL
                 className="input"
                 style={{ width: "auto", padding: "6px 10px", fontSize: 13 }}
                 value={profile?.language || "English"}
-                onChange={onLanguageChange}
+                onChange={handleSelectChange}
                 disabled={savingLanguage}
               >
-                {LANGUAGES.map((lang) => (
-                  <option key={lang} value={lang}>{lang}</option>
+                {LANGUAGES.map((l) => (
+                  <option key={l} value={l}>{l}</option>
                 ))}
               </select>
             </div>
@@ -147,7 +156,6 @@ function SettingsInner({ user, profile, loading, savingLanguage, loggingOut, onL
 
 export default function SettingsPage() {
   const router = useRouter();
-  const { setLang } = useLanguage();
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -165,10 +173,12 @@ export default function SettingsPage() {
     });
   }, []);
 
+  // The live language switch happens inside SettingsInner (via its own
+  // useLanguage() call, which is inside NavShell's provider). This handler
+  // only updates local state and persists the choice to the account.
   async function handleLanguageChange(e) {
     const language = e.target.value;
     setProfile((p) => ({ ...p, language }));
-    setLang(language);
     setSavingLanguage(true);
     try {
       await fetch("/api/profile", {
