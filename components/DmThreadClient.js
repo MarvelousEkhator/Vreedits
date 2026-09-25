@@ -1,7 +1,8 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, Send, Loader2 } from "lucide-react";
+import { Send, Loader2, MoreVertical, Flag, Ban, BellOff, Bell, X as XIcon } from "lucide-react";
+import BackButton from "@/components/BackButton";
 
 function Avatar({ user, size = 32 }) {
   if (user?.avatarDataUrl) {
@@ -24,6 +25,108 @@ function relativeTime(dateStr) {
   return new Date(dateStr).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+function ThreadMenu({ otherUser, open, onClose, muted, onToggleMute, onBlock, blocking, onReport }) {
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reason, setReason] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [done, setDone] = useState(false);
+
+  if (!open) return null;
+
+  async function submitReport() {
+    if (!reason.trim()) return;
+    setSubmitting(true);
+    const ok = await onReport(reason.trim());
+    setSubmitting(false);
+    if (ok) setDone(true);
+  }
+
+  return (
+    <>
+      <div
+        onClick={onClose}
+        style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 200 }}
+      />
+      <div
+        className="card"
+        style={{
+          position: "fixed", left: 16, right: 16, bottom: 16, zIndex: 201,
+          padding: 8, maxWidth: 420, margin: "0 auto",
+        }}
+      >
+        {!reportOpen ? (
+          <>
+            <button
+              onClick={onToggleMute}
+              className="flex items-center gap-3 w-full"
+              style={{ padding: "12px 10px", background: "none", border: "none", color: "var(--text)", fontSize: 14, fontWeight: 600, textAlign: "left" }}
+            >
+              {muted ? <Bell size={17} /> : <BellOff size={17} />}
+              {muted ? "Unmute" : "Mute"} {otherUser.displayName || otherUser.username}
+            </button>
+            <button
+              onClick={() => setReportOpen(true)}
+              className="flex items-center gap-3 w-full"
+              style={{ padding: "12px 10px", background: "none", border: "none", color: "var(--text)", fontSize: 14, fontWeight: 600, textAlign: "left" }}
+            >
+              <Flag size={17} />
+              Report {otherUser.displayName || otherUser.username}
+            </button>
+            <button
+              onClick={onBlock}
+              disabled={blocking}
+              className="flex items-center gap-3 w-full"
+              style={{ padding: "12px 10px", background: "none", border: "none", color: "var(--danger)", fontSize: 14, fontWeight: 600, textAlign: "left" }}
+            >
+              {blocking ? <Loader2 size={17} className="animate-spin" /> : <Ban size={17} />}
+              Block {otherUser.displayName || otherUser.username}
+            </button>
+            <button
+              onClick={onClose}
+              className="flex items-center gap-3 w-full"
+              style={{ padding: "12px 10px", background: "none", border: "none", color: "var(--text-muted)", fontSize: 14, fontWeight: 500, textAlign: "left" }}
+            >
+              <XIcon size={17} />
+              Cancel
+            </button>
+          </>
+        ) : done ? (
+          <div className="p-3 text-center">
+            <p className="text-sm font-medium mb-3">Thanks — we've received your report.</p>
+            <button onClick={onClose} className="btn-primary" style={{ maxWidth: 140, margin: "0 auto" }}>
+              Close
+            </button>
+          </div>
+        ) : (
+          <div className="p-2">
+            <p className="text-sm font-semibold mb-2">Why are you reporting {otherUser.displayName || otherUser.username}?</p>
+            <textarea
+              className="input pl-3"
+              style={{ minHeight: 70, resize: "vertical", fontSize: 13 }}
+              placeholder="Tell us what happened…"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              autoFocus
+            />
+            <div className="flex gap-2 mt-2">
+              <button onClick={submitReport} disabled={submitting || !reason.trim()} className="btn-primary">
+                {submitting ? <Loader2 size={14} className="animate-spin" /> : "Submit Report"}
+              </button>
+              <button
+                onClick={() => setReportOpen(false)}
+                className="btn-primary"
+                style={{ background: "var(--surface-2)", color: "var(--text)" }}
+              >
+                Back
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
 export default function DmThreadClient({ currentUserId, otherUsername }) {
   const router = useRouter();
   const [otherUser, setOtherUser] = useState(null);
@@ -32,6 +135,9 @@ export default function DmThreadClient({ currentUserId, otherUsername }) {
   const [loadError, setLoadError] = useState("");
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [muted, setMuted] = useState(false);
+  const [blocking, setBlocking] = useState(false);
   const scrollRef = useRef(null);
 
   const load = useCallback(async () => {
@@ -50,6 +156,23 @@ export default function DmThreadClient({ currentUserId, otherUsername }) {
   }, [otherUsername]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Mute has no backend yet (no per-conversation settings table), so it's
+  // remembered on this device only, keyed by the other person's username.
+  useEffect(() => {
+    try {
+      setMuted(localStorage.getItem(`vreedits-muted-${otherUsername}`) === "1");
+    } catch {}
+  }, [otherUsername]);
+
+  function toggleMute() {
+    const next = !muted;
+    setMuted(next);
+    try {
+      if (next) localStorage.setItem(`vreedits-muted-${otherUsername}`, "1");
+      else localStorage.removeItem(`vreedits-muted-${otherUsername}`);
+    } catch {}
+  }
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -75,6 +198,32 @@ export default function DmThreadClient({ currentUserId, otherUsername }) {
     }
   }
 
+  async function handleReport(reason) {
+    if (!otherUser) return false;
+    const res = await fetch(`/api/users/${otherUser.id}/report`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason }),
+    });
+    return res.ok;
+  }
+
+  async function handleBlock() {
+    if (!otherUser) return;
+    if (!window.confirm(`Block ${otherUser.displayName || otherUser.username}? They won't be able to message you, and this ends your friendship.`)) {
+      return;
+    }
+    setBlocking(true);
+    try {
+      const res = await fetch(`/api/users/${otherUser.id}/block`, { method: "POST" });
+      if (res.ok) {
+        router.push("/inbox");
+      }
+    } finally {
+      setBlocking(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex justify-center py-10" style={{ color: "var(--text-muted)" }}>
@@ -94,14 +243,22 @@ export default function DmThreadClient({ currentUserId, otherUsername }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <div className="flex items-center gap-3 p-4" style={{ borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
-        <button onClick={() => router.push("/inbox")} aria-label="Back" style={{ background: "none", border: "none", color: "var(--text)" }}>
-          <ChevronLeft size={22} />
-        </button>
+        <BackButton fallbackHref="/inbox" />
         <Avatar user={otherUser} size={32} />
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div className="text-sm font-semibold">{otherUser.displayName || otherUser.username}</div>
+          <div className="text-sm font-semibold flex items-center gap-1.5">
+            {otherUser.displayName || otherUser.username}
+            {muted && <BellOff size={12} style={{ color: "var(--text-muted)" }} />}
+          </div>
           <div className="text-xs" style={{ color: "var(--text-muted)" }}>{otherUser.online ? "Online" : "Offline"}</div>
         </div>
+        <button
+          onClick={() => setMenuOpen(true)}
+          aria-label="More options"
+          style={{ background: "none", border: "none", color: "var(--text-muted)", padding: 6, flexShrink: 0 }}
+        >
+          <MoreVertical size={19} />
+        </button>
       </div>
 
       <div ref={scrollRef} style={{ flex: 1, overflowY: "auto" }} className="p-3">
@@ -155,6 +312,17 @@ export default function DmThreadClient({ currentUserId, otherUsername }) {
           {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
         </button>
       </form>
+
+      <ThreadMenu
+        otherUser={otherUser}
+        open={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        muted={muted}
+        onToggleMute={toggleMute}
+        onBlock={handleBlock}
+        blocking={blocking}
+        onReport={handleReport}
+      />
     </div>
   );
 }
