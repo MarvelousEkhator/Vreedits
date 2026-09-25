@@ -1022,3 +1022,14 @@ model Block {
 
   @@unique([blockerId, blockedId])
 }
+model UserReport {
+  id           String   @id @default(uuid())
+  reporterId   String
+  targetUserId String
+  reason       String   @db.Text
+  status       String   @default("open")
+  createdAt    DateTime @default(now())
+
+  @@index([targetUserId])
+  @@index([reporterId])
+}
