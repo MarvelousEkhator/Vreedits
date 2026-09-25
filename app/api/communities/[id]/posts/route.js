@@ -91,7 +91,10 @@ export async function POST(request, { params }) {
   const body = await request.json().catch(() => ({}));
   const { channelId, content, imageUrl, title, replyToId } = body;
 
-  if (!content || typeof content !== "string" || !content.trim()) {
+  const hasContent = typeof content === "string" && content.trim().length > 0;
+  const hasImage = typeof imageUrl === "string" && imageUrl.length > 0;
+
+  if (!hasContent && !hasImage) {
     return NextResponse.json({ error: "Message can't be empty." }, { status: 400 });
   }
 
@@ -103,14 +106,24 @@ export async function POST(request, { params }) {
       return NextResponse.json({ error: "You must join this community to post here." }, { status: 403 });
     }
 
+    let channel = null;
     if (channelId) {
-      const channel = await prisma.channel.findUnique({ where: { id: channelId } });
+      channel = await prisma.channel.findUnique({ where: { id: channelId } });
       if (!channel) {
         return NextResponse.json({ error: "Channel not found." }, { status: 404 });
       }
       const roles = await prisma.role.findMany({ where: { communityId: params.id } });
       if (!canSendInChannel(channel, community, roles, userId)) {
         return NextResponse.json({ error: "You don't have permission to send messages in this channel." }, { status: 403 });
+      }
+    }
+
+    // Only the owner/admins can send images in a channel where it's off for everyone else
+    if (hasImage && channel && channel.canSendImages === false) {
+      const isOwner = community.ownerId === userId;
+      const isAdmin = (community.adminIds || []).includes(userId);
+      if (!isOwner && !isAdmin) {
+        return NextResponse.json({ error: "Images aren't allowed in this channel." }, { status: 403 });
       }
     }
 
@@ -127,8 +140,8 @@ export async function POST(request, { params }) {
         channelId: channelId || null,
         authorId: userId,
         title: title || null,
-        content: content.trim(),
-        imageUrl: imageUrl || null,
+        content: hasContent ? content.trim() : "",
+        imageUrl: hasImage ? imageUrl : null,
         replyToId: replyToId || null,
       },
       include: {
