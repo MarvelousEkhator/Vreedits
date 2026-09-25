@@ -8,13 +8,19 @@ export async function GET(req, { params }) {
 
   const target = await prisma.user.findUnique({
     where: { id: params.userId },
-    select: { id: true, hideFollowing: true },
+    select: { id: true },
   });
   if (!target) return NextResponse.json({ error: "Not found." }, { status: 404 });
 
-  const isOwner = viewer.id === target.id;
-  if (target.hideFollowing && !isOwner) {
-    return NextResponse.json({ error: "This list is private.", following: [] }, { status: 403 });
+  // This list respects hideFollowing — if the profile owner has chosen to
+  // hide who they follow, only they can see it; everyone else gets an
+  // empty list rather than an error, so the UI doesn't break.
+  const targetUser = await prisma.user.findUnique({
+    where: { id: target.id },
+    select: { hideFollowing: true },
+  });
+  if (targetUser?.hideFollowing && viewer.id !== target.id) {
+    return NextResponse.json({ following: [] });
   }
 
   const follows = await prisma.follow.findMany({
