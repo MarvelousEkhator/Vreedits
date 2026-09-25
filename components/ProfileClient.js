@@ -1,8 +1,7 @@
 "use client";
-import BackButton from "@/components/BackButton";
 import { useState, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
-import { Settings as SettingsIcon, Share2, ChevronDown, Loader2, ArrowLeft, X } from "lucide-react";
+import BackButton from "@/components/BackButton";
+import { Settings as SettingsIcon, Share2, ChevronDown, Loader2, X } from "lucide-react";
 import Link from "next/link";
 
 function Avatar({ user, size = 96 }) {
@@ -74,7 +73,6 @@ function UserListSheet({ title, open, onClose, users, loading, error }) {
 }
 
 export default function ProfileClient({ profileId }) {
-  const router = useRouter();
   const [data, setData] = useState(null);
   const [tab, setTab] = useState("posts");
   const [loading, setLoading] = useState(true);
@@ -94,14 +92,6 @@ export default function ProfileClient({ profileId }) {
   }, [profileId]);
 
   useEffect(() => { load(); }, [load]);
-
-  function handleExit() {
-    if (typeof window !== "undefined" && window.history.length > 1) {
-      router.back();
-    } else {
-      router.push("/");
-    }
-  }
 
   async function handleFollow() {
     if (!data) return;
@@ -155,13 +145,7 @@ export default function ProfileClient({ profileId }) {
   return (
     <div className="pt-6 pb-16" style={{ maxWidth: 480, margin: "0 auto" }}>
       <div className="flex items-center justify-between mb-4 px-4">
-        <button
-          onClick={handleExit}
-          aria-label="Exit profile"
-          style={{ background: "none", border: "none", color: "var(--text)", padding: 0 }}
-        >
-          <ArrowLeft size={22} />
-        </button>
+        <BackButton fallbackHref="/feed" label="Exit profile" />
         <span className="text-xs" style={{ color: "var(--text-muted)" }} />
         <div className="flex items-center gap-3">
           <button aria-label="Share profile" style={{ background: "none", border: "none", color: "var(--text)" }}>
