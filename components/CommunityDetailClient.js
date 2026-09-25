@@ -6,9 +6,10 @@ import {
   UserPlus, Link2, X as XIcon, Hash, Plus, Settings, ChevronLeft, ChevronDown,
   ChevronRight, Image as ImageIcon, Shield, ShieldOff, Calendar, ZoomIn, Tag,
   SlidersHorizontal, Flag, Pencil, Reply, CornerUpRight, Copy, BookOpen,
-  HelpCircle, ExternalLink, Smile, Sticker, Check,
+  HelpCircle, ExternalLink, Smile, Sticker, Check, Keyboard,
 } from "lucide-react";
 import CommunitySettingsPage, { resolveSettingsPage } from "@/components/CommunitySettingsPages";
+import EmojiPicker, { renderMessageContent } from "@/components/EmojiPicker";
 
 function relativeTime(dateStr) {
   const diffMs = Date.now() - new Date(dateStr).getTime();
@@ -44,15 +45,17 @@ function Avatar({ user, size = 32 }) {
   );
 }
 
-function PostReactionPills({ postId, currentUserId }) {
+// refreshKey: bump it to make the pills reload (used after reacting from the action sheet)
+function PostReactionPills({ postId, currentUserId, refreshKey = 0 }) {
   const [grouped, setGrouped] = useState({});
   useEffect(() => {
     let cancelled = false;
     fetch(`/api/posts/${postId}/reactions`)
       .then((r) => r.json())
-      .then((d) => { if (!cancelled) setGrouped(d.grouped || {}); });
+      .then((d) => { if (!cancelled) setGrouped(d.grouped || {}); })
+      .catch(() => {});
     return () => { cancelled = true; };
-  }, [postId]);
+  }, [postId, refreshKey]);
 
   async function toggle(emoji) {
     setGrouped((prev) => {
@@ -82,7 +85,7 @@ function PostReactionPills({ postId, currentUserId }) {
   );
 }
 
-function PostActionSheet({ post, currentUserId, onClose, onQuickReact, onReply, onEdit, onDelete, onReport, onToggleThread, reportedIds }) {
+function PostActionSheet({ post, currentUserId, onClose, onQuickReact, onMoreReactions, onReply, onEdit, onDelete, onReport, onToggleThread, reportedIds }) {
   const isOwner = post.author.id === currentUserId;
   function Row({ icon, label, onClick, danger }) {
     return (
@@ -94,10 +97,20 @@ function PostActionSheet({ post, currentUserId, onClose, onQuickReact, onReply, 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 200, display: "flex", alignItems: "flex-end" }} onClick={onClose}>
       <div style={{ width: "100%", background: "var(--surface)", borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingBottom: 20, maxHeight: "70vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
-        <div style={{ display: "flex", justifyContent: "center", gap: 14, padding: "16px 12px" }}>
+        <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 14, padding: "16px 12px" }}>
           {["❤️", "😢", "😂", "👍", "💀", "😮"].map((e) => (
             <button key={e} onClick={() => { onQuickReact(e); onClose(); }} style={{ fontSize: 24, background: "none", border: "none" }}>{e}</button>
           ))}
+          <button
+            onClick={() => { onMoreReactions(post); onClose(); }}
+            aria-label="More reactions"
+            style={{
+              width: 34, height: 34, borderRadius: "50%", background: "var(--surface-2)", border: "none",
+              color: "var(--text)", display: "flex", alignItems: "center", justifyContent: "center",
+            }}
+          >
+            <Plus size={18} />
+          </button>
         </div>
         {isOwner && <Row icon={<Pencil size={16} />} label="Edit Message" onClick={() => { onEdit(post); onClose(); }} />}
         <Row icon={<Reply size={16} />} label="Reply" onClick={() => { onReply(post); onClose(); }} />
@@ -659,10 +672,19 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
   const [creatingEmoji, setCreatingEmoji] = useState(false);
   const [emojiError, setEmojiError] = useState("");
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
+const [newPostImage, setNewPostImage] = useState(null);
+  const [newChannelAllowImages, setNewChannelAllowImages] = useState(true);
+  const messageImageInputRef = useRef(null);
 
-  const canManage = community && (community.isOwner || community.isAdmin);
+  // Message box: remembers where the cursor was so emojis go in at the right spot
+  const messageInputRef = useRef(null);
+  const caretRef = useRef(null);
+  // Reacting with the full picker (opened from the long-press sheet)
+  const [reactionPickerPostId, setReactionPickerPostId] = useState(null);
+  // Bumped per post so its reaction pills reload after reacting
+  const [reactionTick, setReactionTick] = useState({});
 
-  const load = useCallback(async () => {
+  const canManage = community && (community.isOwner || community.isAdmin);const load = useCallback(async () => {
     setLoading(true);
     setLoadError("");
     try {
@@ -891,7 +913,8 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
     const title = newPostTitle.trim();
     const activeChannel = channels.find((c) => c.id === activeChannelId);
     const isForum = activeChannel?.type === "forum";
-    if (!content || !activeChannelId) return;
+    if (!content && !newPostImage) return;
+    if (!activeChannelId) return;
     if (isForum && !title) return;
     setError("");
     setPosting(true);
@@ -902,6 +925,7 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
         body: JSON.stringify({
           content,
           channelId: activeChannelId,
+          ...(newPostImage ? { imageUrl: newPostImage } : {}),
           ...(isForum ? { title } : {}),
           ...(replyingTo ? { replyToId: replyingTo.id } : {}),
         }),
@@ -919,6 +943,7 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
       }
       setNewPost("");
       setNewPostTitle("");
+      setNewPostImage(null);
       setShowNewPostForm(false);
       setReplyingTo(null);
       setPosts((prev) => [...prev, data.post]);
@@ -1135,6 +1160,7 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
         name,
         sectionId: newChannelSection || null,
         type: newChannelType,
+        canSendImages: newChannelAllowImages,
         viewAccess: newChannelView,
         sendAccess: newChannelSend,
         threadAccess: newChannelThreads,
@@ -1160,6 +1186,25 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
     if (activeChannelId === channel.id) {
       setActiveChannelId(remaining[0]?.id || null);
       setChannelViewOpen(false);
+    }
+  }
+
+  // Owner/admin-only toggle for whether members can send images in a channel.
+  async function handleToggleChannelImages(channel) {
+    const next = !channel.canSendImages;
+    setChannels((prev) => prev.map((c) => (c.id === channel.id ? { ...c, canSendImages: next } : c)));
+    try {
+      const res = await fetch(`/api/communities/${communityId}/channels/${channel.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ canSendImages: next }),
+      });
+      if (!res.ok) {
+        // Revert if the server rejected it (e.g. route doesn't support PATCH yet)
+        setChannels((prev) => prev.map((c) => (c.id === channel.id ? { ...c, canSendImages: !next } : c)));
+      }
+    } catch {
+      setChannels((prev) => prev.map((c) => (c.id === channel.id ? { ...c, canSendImages: !next } : c)));
     }
   }
 
@@ -1572,9 +1617,73 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
     setEmojis((prev) => prev.filter((e) => e.id !== emoji.id));
   }
 
-  function insertEmojiShortcode(emoji) {
-    setNewPost((prev) => `${prev}${prev && !prev.endsWith(" ") ? " " : ""}:${emoji.name}:`);
-    setEmojiPickerOpen(false);
+  // Inserts a unicode emoji at the cursor position in the message box
+  function insertUnicodeIntoMessage(ch) {
+    const el = messageInputRef.current;
+    const { value, caret } = (function () {
+      const start = el?.selectionStart ?? newPost.length;
+      const end = el?.selectionEnd ?? newPost.length;
+      return { value: newPost.slice(0, start) + ch + newPost.slice(end), caret: start + ch.length };
+    })();
+    setNewPost(value);
+    requestAnimationFrame(() => {
+      el?.focus();
+      el?.setSelectionRange(caret, caret);
+    });
+  }
+
+  // Inserts a custom emoji/sticker shortcode at the cursor position
+  function insertCustomIntoMessage(emoji) {
+    const shortcode = `:${emoji.name}:`;
+    const el = messageInputRef.current;
+    const start = el?.selectionStart ?? newPost.length;
+    const end = el?.selectionEnd ?? newPost.length;
+    const spaced = start > 0 && newPost[start - 1] !== " " && newPost[start - 1] !== undefined ? " " : "";
+    const insert = spaced + shortcode;
+    const value = newPost.slice(0, start) + insert + newPost.slice(end);
+    const caret = start + insert.length;
+    setNewPost(value);
+    requestAnimationFrame(() => {
+      el?.focus();
+      el?.setSelectionRange(caret, caret);
+    });
+  }
+
+  // Reacting from the action sheet's quick-react row or the full picker
+  async function reactToPost(post, emoji) {
+    if (emoji === "❤️") {
+      handleLike(post);
+      return;
+    }
+    await fetch(`/api/posts/${post.id}/reactions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ emoji }),
+    });
+    setReactionTick((prev) => ({ ...prev, [post.id]: (prev[post.id] || 0) + 1 }));
+  }
+
+  // ── Message images ──
+  function pickMessageImage() {
+    messageImageInputRef.current?.click();
+  }
+
+  function handleMessageImageChange(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setError("Please choose an image file.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setError("Image is too large — please choose one under 5MB.");
+      return;
+    }
+    setError("");
+    const reader = new FileReader();
+    reader.onload = () => setNewPostImage(reader.result);
+    reader.readAsDataURL(file);
   }
 
   if (loading) {
@@ -1603,6 +1712,8 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
     onboardingStatus.enabled &&
     !onboardingStatus.completed &&
     !onboardingDismissed;
+  // Only the owner/admins can send images in a channel where it's turned off for everyone else
+  const canSendImagesHere = activeChannel ? (activeChannel.canSendImages !== false || canManage) : false;
 
   function handleSettingsBack() {
     if (settingsPage) {
@@ -1615,8 +1726,7 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
   function openChannel(channelId) {
     setActiveChannelId(channelId);
     setChannelViewOpen(true);
-  }
-  return (
+  }return (
     <div>
       {cropTarget && (
         <CropModal
@@ -1629,6 +1739,7 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
       )}
       <input ref={bannerInputRef} type="file" accept="image/*" onChange={(e) => handleImageFileChange(e, "banner")} style={{ display: "none" }} />
       <input ref={iconInputRef} type="file" accept="image/*" onChange={(e) => handleImageFileChange(e, "icon")} style={{ display: "none" }} />
+      <input ref={messageImageInputRef} type="file" accept="image/*" onChange={handleMessageImageChange} style={{ display: "none" }} />
 
       {showOnboardingFlow && (
         <OnboardingFlowModal
@@ -1645,14 +1756,8 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
           post={actionSheetPost}
           currentUserId={currentUserId}
           onClose={() => setActionSheetPostId(null)}
-          onQuickReact={(emoji) => {
-            if (emoji === "❤️") { handleLike(actionSheetPost); return; }
-            fetch(`/api/posts/${actionSheetPost.id}/reactions`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ emoji }),
-            });
-          }}
+          onQuickReact={(emoji) => reactToPost(actionSheetPost, emoji)}
+          onMoreReactions={(post) => setReactionPickerPostId(post.id)}
           onReply={(post) => setReplyingTo(post)}
           onEdit={(post) => startEdit(post)}
           onDelete={(id) => handleDeletePost(id)}
@@ -1660,6 +1765,29 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
           onToggleThread={(postId) => setOpenThreads((prev) => ({ ...prev, [postId]: !prev[postId] }))}
           reportedIds={reportedIds}
         />
+      )}
+
+      {reactionPickerPostId && (
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 230, display: "flex", alignItems: "flex-end" }}
+          onClick={() => setReactionPickerPostId(null)}
+        >
+          <div style={{ width: "100%" }} onClick={(e) => e.stopPropagation()}>
+            <EmojiPicker
+              customEmojis={emojis}
+              onPickUnicode={(ch) => {
+                const post = posts.find((p) => p.id === reactionPickerPostId);
+                if (post) reactToPost(post, ch);
+                setReactionPickerPostId(null);
+              }}
+              onPickCustom={(e) => {
+                const post = posts.find((p) => p.id === reactionPickerPostId);
+                if (post) reactToPost(post, `:${e.name}:`);
+                setReactionPickerPostId(null);
+              }}
+            />
+          </div>
+        </div>
       )}
 
       {view === "settings" && canManage && (
@@ -1932,22 +2060,34 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
                 </form>
 
                 <h3 className="text-xs font-semibold mb-2" style={{ color: "var(--text-muted)" }}>Channels</h3>
-                <div className="space-y-1 mb-3">
+                <div className="space-y-2 mb-3">
                   {channels.map((c) => (
-                    <div key={c.id} className="flex items-center justify-between text-sm py-1">
-                      <span className="flex items-center gap-1">
-                        <Hash size={13} /> {c.name}
-                        <span className="text-xs" style={{ color: "var(--text-muted)", textTransform: "capitalize" }}>· {c.type}</span>
-                        {c.sectionId && (
-                          <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-                            · {sections.find((s) => s.id === c.sectionId)?.name}
-                          </span>
+                    <div key={c.id} className="card p-2">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="flex items-center gap-1">
+                          <Hash size={13} /> {c.name}
+                          <span className="text-xs" style={{ color: "var(--text-muted)", textTransform: "capitalize" }}>· {c.type}</span>
+                          {c.sectionId && (
+                            <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+                              · {sections.find((s) => s.id === c.sectionId)?.name}
+                            </span>
+                          )}
+                        </span>
+                        {channels.length > 1 && (
+                          <button onClick={() => handleDeleteChannel(c)} style={{ background: "none", border: "none", color: "var(--text-muted)" }} aria-label={`Delete #${c.name}`}>
+                            <XIcon size={14} />
+                          </button>
                         )}
-                      </span>
-                      {channels.length > 1 && (
-                        <button onClick={() => handleDeleteChannel(c)} style={{ background: "none", border: "none", color: "var(--text-muted)" }} aria-label={`Delete #${c.name}`}>
-                          <XIcon size={14} />
-                        </button>
+                      </div>
+                      {c.type !== "forum" && (
+                        <label className="flex items-center justify-between text-xs mt-2 pt-2" style={{ borderTop: "1px solid var(--border)", color: "var(--text-muted)" }}>
+                          <span>Members can send images</span>
+                          <input
+                            type="checkbox"
+                            checked={c.canSendImages !== false}
+                            onChange={() => handleToggleChannelImages(c)}
+                          />
+                        </label>
                       )}
                     </div>
                   ))}
@@ -1991,6 +2131,17 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
                       <option value="voice">Voice — talk live with your community</option>
                       <option value="event">Event — schedule and manage events</option>
                     </select>
+
+                    {newChannelType !== "forum" && (
+                      <label className="flex items-center gap-2 text-xs py-1" style={{ color: "var(--text-muted)" }}>
+                        <input
+                          type="checkbox"
+                          checked={newChannelAllowImages}
+                          onChange={(e) => setNewChannelAllowImages(e.target.checked)}
+                        />
+                        Allow members to send images in this channel
+                      </label>
+                    )}
 
                     <div className="mt-2 pt-2" style={{ borderTop: "1px solid var(--border)" }}>
                       <AccessControlRow label="Who can view this channel?" value={newChannelView} onChange={setNewChannelView} roles={roles} />
@@ -2083,9 +2234,7 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
                   </button>
                 </form>
               </div>
-            )}
-
-            {settingsPage === "threads" && (
+            )}{settingsPage === "threads" && (
               <div>
                 {threadsLoading ? (
                   <div className="flex justify-center py-10" style={{ color: "var(--text-muted)" }}>
@@ -2927,8 +3076,7 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
             </p>
           )}
         </div>
-      )}
-{view === "feed" && channelViewOpen && activeChannel && (
+      )}{view === "feed" && channelViewOpen && activeChannel && (
         <div
           style={{
             position: "fixed", inset: 0, background: "var(--surface)", zIndex: 150,
@@ -2979,7 +3127,16 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
                           <span className="text-sm font-semibold">{post.author.username}</span>
                           <span className="text-xs" style={{ color: "var(--text-muted)" }}>{relativeTime(post.createdAt)}</span>
                         </div>
-                        <p className="text-sm mb-3" style={{ overflowWrap: "anywhere", lineHeight: 1.5 }}>{post.content}</p>
+                        <p className="text-sm mb-2" style={{ overflowWrap: "anywhere", lineHeight: 1.5 }}>
+                          {renderMessageContent(post.content, emojis)}
+                        </p>
+                        {post.imageUrl && (
+                          <img
+                            src={post.imageUrl}
+                            alt=""
+                            style={{ maxWidth: "100%", maxHeight: 320, borderRadius: 12, marginBottom: 12, display: "block" }}
+                          />
+                        )}
                         <div className="flex items-center gap-3 pb-3" style={{ borderBottom: "1px solid var(--border)" }}>
                           <button onClick={() => handleLike(post)} className="flex items-center gap-1 text-xs" style={{ color: post.likedByMe ? "var(--danger)" : "var(--text-muted)", background: "none", border: "none" }}>
                             <Heart size={13} fill={post.likedByMe ? "var(--danger)" : "none"} /> {post.likeCount > 0 && post.likeCount}
@@ -3130,10 +3287,23 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
                               </button>
                             </div>
                           ) : (
-                            <p className="text-sm" style={{ overflowWrap: "anywhere", lineHeight: 1.45 }}>{post.content}</p>
+                            <>
+                              {post.content && (
+                                <p className="text-sm" style={{ overflowWrap: "anywhere", lineHeight: 1.45 }}>
+                                  {renderMessageContent(post.content, emojis)}
+                                </p>
+                              )}
+                              {post.imageUrl && (
+                                <img
+                                  src={post.imageUrl}
+                                  alt=""
+                                  style={{ maxWidth: "70%", maxHeight: 280, borderRadius: 12, marginTop: 4, display: "block" }}
+                                />
+                              )}
+                            </>
                           )}
 
-                          <PostReactionPills postId={post.id} currentUserId={currentUserId} />
+                          <PostReactionPills postId={post.id} currentUserId={currentUserId} refreshKey={reactionTick[post.id] || 0} />
 
                           {openThreads[post.id] && (
                             <div className="mt-2 pl-3 py-2" style={{ borderLeft: "2px solid var(--border)" }}>
@@ -3240,34 +3410,32 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
                   </button>
                 </div>
               )}
+              {newPostImage && (
+                <div style={{ position: "relative", width: 72, marginBottom: 4 }}>
+                  <img src={newPostImage} alt="" style={{ width: 72, height: 72, objectFit: "cover", borderRadius: 10 }} />
+                  <button
+                    type="button"
+                    onClick={() => setNewPostImage(null)}
+                    aria-label="Remove image"
+                    style={{
+                      position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: "50%",
+                      background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text)",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                    }}
+                  >
+                    <XIcon size={12} />
+                  </button>
+                </div>
+              )}
               {emojiPickerOpen && (
-                <div
-                  className="card p-2"
-                  style={{ position: "absolute", bottom: "100%", left: 12, marginBottom: 8, maxWidth: 260, maxHeight: 220, overflowY: "auto", zIndex: 5 }}
-                >
-                  {emojis.length === 0 ? (
-                    <p className="text-xs p-2" style={{ color: "var(--text-muted)" }}>
-                      No custom emojis or stickers yet.{canManage ? " Add some from Settings → Emojis & Stickers." : ""}
-                    </p>
-                  ) : (
-                    <div className="flex flex-wrap gap-1.5">
-                      {emojis.map((e) => (
-                        <button
-                          key={e.id}
-                          type="button"
-                          onClick={() => insertEmojiShortcode(e)}
-                          title={e.name}
-                          style={{ background: "none", border: "none", padding: 2, borderRadius: 6 }}
-                        >
-                          <img
-                            src={e.imageDataUrl}
-                            alt={e.name}
-                            style={{ width: e.type === "sticker" ? 40 : 24, height: e.type === "sticker" ? 40 : 24, objectFit: "cover", borderRadius: 4 }}
-                          />
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                <div style={{ position: "absolute", bottom: "100%", left: 0, right: 0, marginBottom: 4, zIndex: 5 }}>
+                  <EmojiPicker
+                    customEmojis={emojis}
+                    canUpload={canManage}
+                    onUpload={() => { setEmojiPickerOpen(false); setView("settings"); setSettingsPage("emojis-stickers"); }}
+                    onPickUnicode={insertUnicodeIntoMessage}
+                    onPickCustom={insertCustomIntoMessage}
+                  />
                 </div>
               )}
               <div className="flex items-center gap-2">
@@ -3284,7 +3452,22 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
                 >
                   <Smile size={18} />
                 </button>
+                {canSendImagesHere && (
+                  <button
+                    type="button"
+                    onClick={pickMessageImage}
+                    aria-label="Attach image"
+                    style={{
+                      width: 40, height: 40, borderRadius: "50%", flexShrink: 0,
+                      background: "var(--surface-2)", color: "var(--text-muted)",
+                      border: "none", display: "flex", alignItems: "center", justifyContent: "center",
+                    }}
+                  >
+                    <ImageIcon size={18} />
+                  </button>
+                )}
                 <input
+                  ref={messageInputRef}
                   className="input pl-4"
                   style={{
                     flex: 1, borderRadius: 999, height: 46,
@@ -3297,12 +3480,12 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
                 <button
                   type="submit"
                   aria-label="Send"
-                  disabled={posting || !newPost.trim()}
+                  disabled={posting || (!newPost.trim() && !newPostImage)}
                   style={{
                     width: 46, height: 46, borderRadius: "50%", flexShrink: 0,
                     background: "var(--accent)", color: "white", border: "none",
                     display: "flex", alignItems: "center", justifyContent: "center",
-                    opacity: posting || !newPost.trim() ? 0.5 : 1,
+                    opacity: posting || (!newPost.trim() && !newPostImage) ? 0.5 : 1,
                   }}
                 >
                   {posting ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
