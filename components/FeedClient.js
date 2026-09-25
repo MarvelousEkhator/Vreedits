@@ -1697,14 +1697,6 @@ export default function FeedClient({ user }) {
     setMuted(false);
   }
 
-  function handleExit() {
-    if (typeof window !== "undefined" && window.history.length > 1) {
-      router.back();
-    } else {
-      router.push("/");
-    }
-  }
-
   function handleLongPress(post) {
     const video = videoRefsMap.current.get(post.id);
     wasPlayingBeforeActionsRef.current = !!video && !video.paused;
@@ -1956,18 +1948,9 @@ export default function FeedClient({ user }) {
         }}
       >
         <div className="flex items-center justify-between px-4" style={{ height: 56 }}>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={handleExit}
-              aria-label="Exit feed"
-              style={{ background: "none", border: "none", color: "white" }}
-            >
-              <ArrowLeft size={22} />
-            </button>
-            <Link href="/profile" aria-label="My Profile" style={{ background: "none", border: "none", color: "white" }}>
-              <UserIcon size={22} />
-            </Link>
-          </div>
+          <Link href="/profile" aria-label="My Profile" style={{ background: "none", border: "none", color: "white" }}>
+            <UserIcon size={22} />
+          </Link>
           <div className="flex items-center gap-3">
             <button
               onClick={() => setMuted((m) => !m)}
