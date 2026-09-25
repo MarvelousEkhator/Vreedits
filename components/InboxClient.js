@@ -1,8 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { UserPlus, Check, X as XIcon, Loader2, MoreVertical, Ban, Trash2 } from "lucide-react";
+import { UserPlus, Check, X as XIcon, Loader2, MoreVertical, Ban, Flag } from "lucide-react";
 import GlossIcon from "@/components/GlossIcon";
 
 function Avatar({ user, size = 44 }) {
@@ -28,8 +27,22 @@ function relativeTime(dateStr) {
   return `${days}d`;
 }
 
-function ConversationMenu({ friend, open, onClose, onBlock, blocking }) {
+function ConversationMenu({ friend, open, onClose, onBlock, blocking, onReport }) {
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reason, setReason] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [done, setDone] = useState(false);
+
   if (!open) return null;
+
+  async function submitReport() {
+    if (!reason.trim()) return;
+    setSubmitting(true);
+    const ok = await onReport(friend, reason.trim());
+    setSubmitting(false);
+    if (ok) setDone(true);
+  }
+
   return (
     <>
       <div
@@ -43,30 +56,76 @@ function ConversationMenu({ friend, open, onClose, onBlock, blocking }) {
           padding: 8, maxWidth: 420, margin: "0 auto",
         }}
       >
-        <button
-          onClick={() => onBlock(friend)}
-          disabled={blocking}
-          className="flex items-center gap-3 w-full"
-          style={{ padding: "12px 10px", background: "none", border: "none", color: "var(--danger)", fontSize: 14, fontWeight: 600, textAlign: "left" }}
-        >
-          {blocking ? <Loader2 size={17} className="animate-spin" /> : <Ban size={17} />}
-          Block {friend.displayName || friend.username}
-        </button>
-        <button
-          onClick={onClose}
-          className="flex items-center gap-3 w-full"
-          style={{ padding: "12px 10px", background: "none", border: "none", color: "var(--text-muted)", fontSize: 14, fontWeight: 500, textAlign: "left" }}
-        >
-          <XIcon size={17} />
-          Cancel
-        </button>
+        {!reportOpen ? (
+          <>
+            <button
+              onClick={() => setReportOpen(true)}
+              className="flex items-center gap-3 w-full"
+              style={{ padding: "12px 10px", background: "none", border: "none", color: "var(--text)", fontSize: 14, fontWeight: 600, textAlign: "left" }}
+            >
+              <Flag size={17} />
+              Report {friend.displayName || friend.username}
+            </button>
+            <button
+              onClick={() => onBlock(friend)}
+              disabled={blocking}
+              className="flex items-center gap-3 w-full"
+              style={{ padding: "12px 10px", background: "none", border: "none", color: "var(--danger)", fontSize: 14, fontWeight: 600, textAlign: "left" }}
+            >
+              {blocking ? <Loader2 size={17} className="animate-spin" /> : <Ban size={17} />}
+              Block {friend.displayName || friend.username}
+            </button>
+            <button
+              onClick={onClose}
+              className="flex items-center gap-3 w-full"
+              style={{ padding: "12px 10px", background: "none", border: "none", color: "var(--text-muted)", fontSize: 14, fontWeight: 500, textAlign: "left" }}
+            >
+              <XIcon size={17} />
+              Cancel
+            </button>
+          </>
+        ) : done ? (
+          <div className="p-3 text-center">
+            <p className="text-sm font-medium mb-3">Thanks — we've received your report.</p>
+            <button onClick={onClose} className="btn-primary" style={{ maxWidth: 140, margin: "0 auto" }}>
+              Close
+            </button>
+          </div>
+        ) : (
+          <div className="p-2">
+            <p className="text-sm font-semibold mb-2">Why are you reporting {friend.displayName || friend.username}?</p>
+            <textarea
+              className="input pl-3"
+              style={{ minHeight: 70, resize: "vertical", fontSize: 13 }}
+              placeholder="Tell us what happened…"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              autoFocus
+            />
+            <div className="flex gap-2 mt-2">
+              <button
+                onClick={submitReport}
+                disabled={submitting || !reason.trim()}
+                className="btn-primary"
+              >
+                {submitting ? <Loader2 size={14} className="animate-spin" /> : "Submit Report"}
+              </button>
+              <button
+                onClick={() => setReportOpen(false)}
+                className="btn-primary"
+                style={{ background: "var(--surface-2)", color: "var(--text)" }}
+              >
+                Back
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </>
   );
 }
 
 export default function InboxClient({ currentUserId }) {
-  const router = useRouter();
   const [conversations, setConversations] = useState([]);
   const [incoming, setIncoming] = useState([]);
   const [outgoing, setOutgoing] = useState([]);
@@ -134,8 +193,7 @@ export default function InboxClient({ currentUserId }) {
     load();
   }
 
-  // Cancels a request you sent that's still pending. Removes it from your
-  // own outgoing list only — nothing is sent to the other person.
+  // Cancels a request you sent that's still pending.
   async function handleUnsend(requestId) {
     setUnsendingId(requestId);
     setOutgoing((prev) => prev.filter((r) => r.id !== requestId));
@@ -171,6 +229,15 @@ export default function InboxClient({ currentUserId }) {
     } finally {
       setBlockingId(null);
     }
+  }
+
+  async function handleReport(friend, reason) {
+    const res = await fetch(`/api/users/${friend.id}/report`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason }),
+    });
+    return res.ok;
   }
 
   const filtered = conversations.filter((c) => {
@@ -353,6 +420,7 @@ export default function InboxClient({ currentUserId }) {
           onClose={() => setMenuFriendId(null)}
           onBlock={handleBlock}
           blocking={blockingId === menuFriend.id}
+          onReport={handleReport}
         />
       )}
     </div>
