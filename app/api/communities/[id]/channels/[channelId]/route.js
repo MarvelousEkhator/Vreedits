@@ -31,6 +31,7 @@ export async function PATCH(request, { params }) {
       data.name = body.name.trim().toLowerCase().replace(/\s+/g, "-");
     }
     if (typeof body.archived === "boolean") data.archived = body.archived;
+    if (typeof body.canSendImages === "boolean") data.canSendImages = body.canSendImages;
     if (VALID_TYPES.includes(body.type)) data.type = body.type;
 
     if (body.viewAccess !== undefined) {
