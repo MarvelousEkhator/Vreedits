@@ -3,9 +3,17 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 
 // One shared back/exit arrow for the whole app.
-// - Default: goes to browser history if there is any, otherwise falls back to `fallbackHref`.
-// - Pass `onClick` to override with custom logic (e.g. "close this panel" instead of navigating).
-export default function BackButton({ fallbackHref = "/", onClick, size = 22, label = "Back", variant = "plain" }) {
+//
+// It never uses router.back() by default. Mixing the bottom tab bar
+// (which pushes a new history entry every tap) with history-based "back"
+// is what caused the arrow to sometimes land on a stale screen. Instead,
+// every arrow goes to one explicit `fallbackHref` you set per screen, so
+// where it takes you is always predictable, no matter how you got there.
+//
+// Pass `onClick` instead of relying on navigation when the arrow should
+// just close a panel within the same screen (e.g. leaving Settings but
+// staying inside a community) rather than change the URL.
+export default function BackButton({ fallbackHref = "/feed", onClick, size = 22, label = "Back", variant = "plain" }) {
   const router = useRouter();
 
   function handleClick() {
@@ -13,11 +21,7 @@ export default function BackButton({ fallbackHref = "/", onClick, size = 22, lab
       onClick();
       return;
     }
-    if (typeof window !== "undefined" && window.history.length > 1) {
-      router.back();
-    } else {
-      router.push(fallbackHref);
-    }
+    router.push(fallbackHref);
   }
 
   const style =
