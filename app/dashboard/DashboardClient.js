@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { User, Settings, HelpCircle, Phone, ChevronRight, MessageSquare, Sparkles, Loader2 } from "lucide-react";
+import { useLanguage } from "@/components/LanguageProvider";
 
 function relativeTime(dateStr) {
   const diffMs = Date.now() - new Date(dateStr).getTime();
@@ -16,6 +17,7 @@ function relativeTime(dateStr) {
 }
 
 export default function DashboardClient({ user }) {
+  const { t } = useLanguage();
   const [conversations, setConversations] = useState([]);
   const [loadingChats, setLoadingChats] = useState(true);
 
@@ -27,10 +29,10 @@ export default function DashboardClient({ user }) {
   }, []);
 
   const quickActions = [
-    { label: "Edit Profile", href: "/profile", icon: User },
-    { label: "Settings", href: "/settings", icon: Settings },
-    { label: "Help Center", href: "/help", icon: HelpCircle },
-    { label: "Contact Us", href: "/contact", icon: Phone },
+    { labelKey: "settings.editProfile", href: "/profile", icon: User },
+    { labelKey: "nav.settings", href: "/settings", icon: Settings },
+    { labelKey: "settings.helpCenter", href: "/help", icon: HelpCircle },
+    { labelKey: "settings.contactUs", href: "/contact", icon: Phone },
   ];
 
   return (
@@ -54,20 +56,20 @@ export default function DashboardClient({ user }) {
           )}
           <div>
             <h1 className="text-xl font-semibold" style={{ fontFamily: "var(--font-display)" }}>
-              Welcome back, {user.username}
+              {t("dash.welcomeBack")}, {user.username}
             </h1>
             <div className="text-xs" style={{ color: "var(--text-muted)" }}>
-              {user.online ? "Online now" : "Offline"}
+              {user.online ? t("settings.onlineAuto") : t("common.offline")}
             </div>
           </div>
         </div>
 
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
-            Recent AI Activity
+            {t("dash.recentAi")}
           </h2>
           <Link href="/ai-tools/chat" className="text-xs font-semibold" style={{ color: "var(--accent)" }}>
-            New chat
+            {t("dash.newChat")}
           </Link>
         </div>
 
@@ -85,8 +87,8 @@ export default function DashboardClient({ user }) {
           >
             <Sparkles size={18} style={{ color: "var(--accent)" }} />
             <div>
-              <div className="text-sm font-semibold">Start your first chat with Syna</div>
-              <div className="text-xs" style={{ color: "var(--text-muted)" }}>Ask anything to get going</div>
+              <div className="text-sm font-semibold">{t("dash.startChat")}</div>
+              <div className="text-xs" style={{ color: "var(--text-muted)" }}>{t("dash.askAnything")}</div>
             </div>
           </Link>
         )}
@@ -121,7 +123,7 @@ export default function DashboardClient({ user }) {
         )}
 
         <h2 className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: "var(--text-muted)" }}>
-          Quick actions
+          {t("dash.quickActions")}
         </h2>
         <div className="card" style={{ padding: 6 }}>
           {quickActions.map((action, i) => (
@@ -135,7 +137,7 @@ export default function DashboardClient({ user }) {
             >
               <div className="flex items-center gap-2.5 text-sm font-medium">
                 <action.icon size={16} />
-                {action.label}
+                {t(action.labelKey)}
               </div>
               <ChevronRight size={16} style={{ color: "var(--text-muted)" }} />
             </Link>
@@ -144,4 +146,4 @@ export default function DashboardClient({ user }) {
       </div>
     </div>
   );
-    }
+}
