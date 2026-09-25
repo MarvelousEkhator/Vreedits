@@ -124,7 +124,14 @@ function NavShellInner({ children, user }) {
           background: var(--surface-2); display: flex; align-items: center; justify-content: center;
           cursor: pointer; color: var(--text);
         }
-        .vreedits-brand { font-size: 17px; font-weight: 600; font-family: var(--font-display); }
+        .vreedits-brand {
+          font-family: var(--font-display);
+          font-size: 26px;
+          font-weight: 700;
+          line-height: 1;
+          color: var(--accent);
+          letter-spacing: 0.3px;
+        }
         .vreedits-overlay {
           position: fixed; inset: 0; background: rgba(0,0,0,0.5); opacity: 0; pointer-events: none;
           transition: opacity 0.25s ease; z-index: 40;
