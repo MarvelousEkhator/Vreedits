@@ -6,8 +6,9 @@ import PresenceHeartbeat from "@/components/PresenceHeartbeat";
 import GlossIcon from "@/components/GlossIcon";
 import ThemeToggle from "@/components/ThemeToggle";
 import { LanguageProvider, useLanguage } from "@/components/LanguageProvider";
+import { isTabRoot, getBackFallback } from "@/lib/backRoutes";
 import {
-  Menu, X, Home, Bot, GraduationCap, Briefcase, PenLine, Plane, Wrench,
+  Menu, X, ArrowLeft, Home, Bot, GraduationCap, Briefcase, PenLine, Plane, Wrench,
   Users, Heart, History, FolderOpen, Bell, Crown, Settings, User,
   HelpCircle, Phone, LogOut, Lock, MessageCircle,
 } from "lucide-react";
@@ -60,6 +61,14 @@ function NavShellInner({ children, user }) {
     /^\/inbox\/[^/]+/.test(pathname) ||
     pathname.startsWith("/ai-tools/chat");
 
+  // Whether this page gets a back arrow (any sub-page) instead of the
+  // hamburger menu (home tabs only). This is the ONE thing that decides
+  // the top-left button everywhere in the app — no other file needs to
+  // import or render anything for this to work on a new page. Add a rule
+  // to lib/backRoutes.js if a new page needs a specific "back to" target.
+  const showBack = !isTabRoot(pathname);
+  const backHref = getBackFallback(pathname);
+
   useEffect(() => {
     function handleClick(e) {
       if (
@@ -81,6 +90,14 @@ function NavShellInner({ children, user }) {
     document.addEventListener("keydown", handleKey);
     return () => document.removeEventListener("keydown", handleKey);
   }, []);
+
+  // The hamburger button isn't rendered while showBack is true, so if the
+  // menu was left open before navigating into a sub-page, close it here —
+  // otherwise there'd be no way to close it (the outside-click handler
+  // above needs hamburgerRef, which won't exist on this page).
+  useEffect(() => {
+    if (showBack) setMenuOpen(false);
+  }, [showBack]);
 
   function isItemActive(item) {
     if (pathname === item.href) return true;
@@ -222,9 +239,19 @@ function NavShellInner({ children, user }) {
       `}</style>
 
       <div className="vreedits-topbar">
-        <button ref={hamburgerRef} className="vreedits-hamburger tappable" onClick={toggleMenu} aria-label="Open menu">
-          <Menu size={20} />
-        </button>
+        {showBack ? (
+          <button
+            className="vreedits-hamburger tappable"
+            onClick={() => router.push(backHref)}
+            aria-label="Back"
+          >
+            <ArrowLeft size={20} />
+          </button>
+        ) : (
+          <button ref={hamburgerRef} className="vreedits-hamburger tappable" onClick={toggleMenu} aria-label="Open menu">
+            <Menu size={20} />
+          </button>
+        )}
         <span className="vreedits-brand">Vreedits</span>
         <ThemeToggle />
       </div>
