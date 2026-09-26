@@ -105,6 +105,7 @@ export async function GET(req, { params }) {
       bio: target.bio,
       avatarDataUrl: target.avatarDataUrl,
       isPublic: target.isPublic,
+      hideLikedVideos: target.hideLikedVideos,
       createdAt: target.createdAt,
     },
     isOwner,
