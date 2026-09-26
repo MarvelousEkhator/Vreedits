@@ -195,9 +195,21 @@ export async function GET(req) {
     authorFilter = { OR: [{ authorId: user.id }, { authorId: { notIn: excludeIds } }] };
   }
 
+  // Creators this user has muted never show up in any tab. Muting hides
+  // a creator's posts without unfollowing or blocking them, and neither
+  // side is ever notified about it.
+  const muted = await prisma.mutedCreator.findMany({
+    where: { userId: user.id },
+    select: { mutedUserId: true },
+  });
+  const mutedIds = muted.map((m) => m.mutedUserId);
+  const where = mutedIds.length
+    ? { isPrivate: false, AND: [authorFilter, { authorId: { notIn: mutedIds } }] }
+    : { isPrivate: false, ...authorFilter };
+
   const posts = await prisma.feedPost.findMany({
     take: 10,
-    where: { isPrivate: false, ...authorFilter },
+    where,
     ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
     orderBy: { createdAt: "desc" },
     include: {
