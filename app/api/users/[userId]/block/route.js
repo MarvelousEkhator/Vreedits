@@ -33,5 +33,19 @@ export async function POST(req, { params }) {
     },
   });
 
+  // Blocking also ends any DM friendship/pending request between the two —
+  // otherwise the DM thread route would still treat them as friends and
+  // let messages through, which defeats the point of blocking.
+  const [a, b] = [user.id, targetId].sort();
+  await prisma.friendship.deleteMany({ where: { userAId: a, userBId: b } });
+  await prisma.friendRequest.deleteMany({
+    where: {
+      OR: [
+        { senderId: user.id, receiverId: targetId },
+        { senderId: targetId, receiverId: user.id },
+      ],
+    },
+  });
+
   return NextResponse.json({ ok: true, blocked: true });
 }
