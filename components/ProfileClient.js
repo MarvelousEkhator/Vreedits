@@ -123,6 +123,7 @@ export default function ProfileClient({ profileId }) {
   const [tab, setTab] = useState("posts");
   const [loading, setLoading] = useState(true);
   const [followLoading, setFollowLoading] = useState(false);
+  const [likedHintDismissed, setLikedHintDismissed] = useState(false);
 
   const [sheet, setSheet] = useState(null); // "following" | "followers" | null
   const [sheetLoading, setSheetLoading] = useState(false);
@@ -203,6 +204,11 @@ export default function ProfileClient({ profileId }) {
     saved: "Nothing saved yet — tap the bookmark icon on a post to save it here.",
     liked: isOwner ? "Videos you like will show up here." : "No liked videos to show.",
   }[tab];
+
+  // Only the owner, on their own Likes tab, sees the hint that their
+  // liked-videos list is currently hidden from everyone else — same
+  // moment TikTok shows it, and it links straight to the setting.
+  const showLikedHint = tab === "liked" && isOwner && user.hideLikedVideos && !likedHintDismissed;
 
   const displayName = user.displayName || user.username;
   const handle = (user.username || "").toLowerCase();
@@ -310,6 +316,27 @@ export default function ProfileClient({ profileId }) {
           </button>
         ))}
       </div>
+
+      {showLikedHint && (
+        <div
+          className="flex items-start justify-between gap-3 mx-1.5 mt-1.5 p-3"
+          style={{ background: "var(--surface-2)", borderRadius: 10, fontSize: 13, lineHeight: 1.4 }}
+        >
+          <p style={{ color: "var(--text-muted)" }}>
+            You can make liked videos public in{" "}
+            <Link href="/settings/feed" style={{ color: "var(--accent)", fontWeight: 600 }}>
+              Privacy settings
+            </Link>
+          </p>
+          <button
+            onClick={() => setLikedHintDismissed(true)}
+            aria-label="Dismiss"
+            style={{ background: "none", border: "none", color: "var(--text-muted)", flexShrink: 0, padding: 2 }}
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
 
       {!posts || posts.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-8 px-6 text-center">
