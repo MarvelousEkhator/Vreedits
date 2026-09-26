@@ -1033,3 +1033,12 @@ model UserReport {
   @@index([targetUserId])
   @@index([reporterId])
 }
+model ConversationHide {
+  id           String   @id @default(uuid())
+  userId       String
+  otherUserId  String
+  hiddenBefore DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([userId, otherUserId])
+}
