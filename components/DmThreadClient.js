@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Send, Loader2, MoreVertical, Flag, Ban, BellOff, Bell, X as XIcon } from "lucide-react";
+import { Send, Loader2, MoreVertical, Flag, Ban, BellOff, Bell, Trash2, X as XIcon } from "lucide-react";
 import BackButton from "@/components/BackButton";
 
 function Avatar({ user, size = 32 }) {
@@ -25,7 +25,7 @@ function relativeTime(dateStr) {
   return new Date(dateStr).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-function ThreadMenu({ otherUser, open, onClose, muted, onToggleMute, onBlock, blocking, onReport }) {
+function ThreadMenu({ otherUser, open, onClose, muted, onToggleMute, onBlock, blocking, onReport, onDelete, deleting }) {
   const [reportOpen, setReportOpen] = useState(false);
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -63,6 +63,15 @@ function ThreadMenu({ otherUser, open, onClose, muted, onToggleMute, onBlock, bl
             >
               {muted ? <Bell size={17} /> : <BellOff size={17} />}
               {muted ? "Unmute" : "Mute"} {otherUser.displayName || otherUser.username}
+            </button>
+            <button
+              onClick={onDelete}
+              disabled={deleting}
+              className="flex items-center gap-3 w-full"
+              style={{ padding: "12px 10px", background: "none", border: "none", color: "var(--text)", fontSize: 14, fontWeight: 600, textAlign: "left" }}
+            >
+              {deleting ? <Loader2 size={17} className="animate-spin" /> : <Trash2 size={17} />}
+              Delete conversation
             </button>
             <button
               onClick={() => setReportOpen(true)}
@@ -138,6 +147,7 @@ export default function DmThreadClient({ currentUserId, otherUsername }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [muted, setMuted] = useState(false);
   const [blocking, setBlocking] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const scrollRef = useRef(null);
 
   const load = useCallback(async () => {
@@ -221,6 +231,21 @@ export default function DmThreadClient({ currentUserId, otherUsername }) {
       }
     } finally {
       setBlocking(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!window.confirm("Delete this conversation? It'll be removed from your inbox, but the other person still has their copy.")) {
+      return;
+    }
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/dm/${otherUsername}`, { method: "DELETE" });
+      if (res.ok) {
+        router.push("/inbox");
+      }
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -322,6 +347,8 @@ export default function DmThreadClient({ currentUserId, otherUsername }) {
         onBlock={handleBlock}
         blocking={blocking}
         onReport={handleReport}
+        onDelete={handleDelete}
+        deleting={deleting}
       />
     </div>
   );
