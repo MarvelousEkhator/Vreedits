@@ -18,7 +18,13 @@ export async function GET(req, { params }) {
   }
 
   const posts = await prisma.feedPost.findMany({
-    where: { likedBy: { has: target.id }, isPrivate: false },
+    where: {
+      likedBy: { has: target.id },
+      // A liked post normally has to be public to show here — except when
+      // the viewer is its own author, so someone doesn't lose sight of a
+      // private post they liked, in their own liked-videos list.
+      OR: [{ isPrivate: false }, { authorId: viewer.id }],
+    },
     orderBy: { createdAt: "desc" },
     select: { id: true, mediaUrl: true, mediaType: true },
     take: 60,
