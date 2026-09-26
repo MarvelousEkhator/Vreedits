@@ -2,7 +2,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Send, Loader2, MoreVertical, Flag, Ban, BellOff, Bell, Trash2, X as XIcon } from "lucide-react";
-import BackButton from "@/components/BackButton";
 
 function Avatar({ user, size = 32 }) {
   if (user?.avatarDataUrl) {
@@ -15,17 +14,7 @@ function Avatar({ user, size = 32 }) {
   );
 }
 
-function relativeTime(dateStr) {
-  const diffMs = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diffMs / 60000);
-  if (mins < 1) return "Just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return new Date(dateStr).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
-
-function ThreadMenu({ otherUser, open, onClose, muted, onToggleMute, onBlock, blocking, onReport, onDelete, deleting }) {
+function ThreadMenu({ otherUser, isSelf, open, onClose, muted, onToggleMute, onBlock, blocking, onReport, onDelete, deleting }) {
   const [reportOpen, setReportOpen] = useState(false);
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -56,14 +45,16 @@ function ThreadMenu({ otherUser, open, onClose, muted, onToggleMute, onBlock, bl
       >
         {!reportOpen ? (
           <>
-            <button
-              onClick={onToggleMute}
-              className="flex items-center gap-3 w-full"
-              style={{ padding: "12px 10px", background: "none", border: "none", color: "var(--text)", fontSize: 14, fontWeight: 600, textAlign: "left" }}
-            >
-              {muted ? <Bell size={17} /> : <BellOff size={17} />}
-              {muted ? "Unmute" : "Mute"} {otherUser.displayName || otherUser.username}
-            </button>
+            {!isSelf && (
+              <button
+                onClick={onToggleMute}
+                className="flex items-center gap-3 w-full"
+                style={{ padding: "12px 10px", background: "none", border: "none", color: "var(--text)", fontSize: 14, fontWeight: 600, textAlign: "left" }}
+              >
+                {muted ? <Bell size={17} /> : <BellOff size={17} />}
+                {muted ? "Unmute" : "Mute"} {otherUser.displayName || otherUser.username}
+              </button>
+            )}
             <button
               onClick={onDelete}
               disabled={deleting}
@@ -71,25 +62,29 @@ function ThreadMenu({ otherUser, open, onClose, muted, onToggleMute, onBlock, bl
               style={{ padding: "12px 10px", background: "none", border: "none", color: "var(--text)", fontSize: 14, fontWeight: 600, textAlign: "left" }}
             >
               {deleting ? <Loader2 size={17} className="animate-spin" /> : <Trash2 size={17} />}
-              Delete conversation
+              {isSelf ? "Clear notes" : "Delete conversation"}
             </button>
-            <button
-              onClick={() => setReportOpen(true)}
-              className="flex items-center gap-3 w-full"
-              style={{ padding: "12px 10px", background: "none", border: "none", color: "var(--text)", fontSize: 14, fontWeight: 600, textAlign: "left" }}
-            >
-              <Flag size={17} />
-              Report {otherUser.displayName || otherUser.username}
-            </button>
-            <button
-              onClick={onBlock}
-              disabled={blocking}
-              className="flex items-center gap-3 w-full"
-              style={{ padding: "12px 10px", background: "none", border: "none", color: "var(--danger)", fontSize: 14, fontWeight: 600, textAlign: "left" }}
-            >
-              {blocking ? <Loader2 size={17} className="animate-spin" /> : <Ban size={17} />}
-              Block {otherUser.displayName || otherUser.username}
-            </button>
+            {!isSelf && (
+              <>
+                <button
+                  onClick={() => setReportOpen(true)}
+                  className="flex items-center gap-3 w-full"
+                  style={{ padding: "12px 10px", background: "none", border: "none", color: "var(--text)", fontSize: 14, fontWeight: 600, textAlign: "left" }}
+                >
+                  <Flag size={17} />
+                  Report {otherUser.displayName || otherUser.username}
+                </button>
+                <button
+                  onClick={onBlock}
+                  disabled={blocking}
+                  className="flex items-center gap-3 w-full"
+                  style={{ padding: "12px 10px", background: "none", border: "none", color: "var(--danger)", fontSize: 14, fontWeight: 600, textAlign: "left" }}
+                >
+                  {blocking ? <Loader2 size={17} className="animate-spin" /> : <Ban size={17} />}
+                  Block {otherUser.displayName || otherUser.username}
+                </button>
+              </>
+            )}
             <button
               onClick={onClose}
               className="flex items-center gap-3 w-full"
@@ -149,6 +144,8 @@ export default function DmThreadClient({ currentUserId, otherUsername }) {
   const [blocking, setBlocking] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const scrollRef = useRef(null);
+
+  const isSelf = otherUser?.id === currentUserId;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -235,14 +232,20 @@ export default function DmThreadClient({ currentUserId, otherUsername }) {
   }
 
   async function handleDelete() {
-    if (!window.confirm("Delete this conversation? It'll be removed from your inbox, but the other person still has their copy.")) {
-      return;
-    }
+    const message = isSelf
+      ? "Clear all your notes to self? This can't be undone."
+      : "Delete this conversation? It'll be removed from your inbox, but the other person still has their copy.";
+    if (!window.confirm(message)) return;
     setDeleting(true);
     try {
       const res = await fetch(`/api/dm/${otherUsername}`, { method: "DELETE" });
       if (res.ok) {
-        router.push("/inbox");
+        if (isSelf) {
+          setMessages([]);
+          setMenuOpen(false);
+        } else {
+          router.push("/inbox");
+        }
       }
     } finally {
       setDeleting(false);
@@ -268,14 +271,15 @@ export default function DmThreadClient({ currentUserId, otherUsername }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <div className="flex items-center gap-3 p-4" style={{ borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
-        <BackButton fallbackHref="/inbox" />
         <Avatar user={otherUser} size={32} />
         <div style={{ minWidth: 0, flex: 1 }}>
           <div className="text-sm font-semibold flex items-center gap-1.5">
-            {otherUser.displayName || otherUser.username}
-            {muted && <BellOff size={12} style={{ color: "var(--text-muted)" }} />}
+            {isSelf ? "You" : (otherUser.displayName || otherUser.username)}
+            {muted && !isSelf && <BellOff size={12} style={{ color: "var(--text-muted)" }} />}
           </div>
-          <div className="text-xs" style={{ color: "var(--text-muted)" }}>{otherUser.online ? "Online" : "Offline"}</div>
+          <div className="text-xs" style={{ color: "var(--text-muted)" }}>
+            {isSelf ? "Notes only you can see" : (otherUser.online ? "Online" : "Offline")}
+          </div>
         </div>
         <button
           onClick={() => setMenuOpen(true)}
@@ -289,7 +293,7 @@ export default function DmThreadClient({ currentUserId, otherUsername }) {
       <div ref={scrollRef} style={{ flex: 1, overflowY: "auto" }} className="p-3">
         {messages.length === 0 && (
           <p className="text-sm text-center py-8" style={{ color: "var(--text-muted)" }}>
-            Say hi to {otherUser.displayName || otherUser.username} 👋
+            {isSelf ? "Jot down anything you want to remember 📝" : `Say hi to ${otherUser.displayName || otherUser.username} 👋`}
           </p>
         )}
         {messages.map((m, i) => {
@@ -298,14 +302,14 @@ export default function DmThreadClient({ currentUserId, otherUsername }) {
           const grouped = prev && prev.senderId === m.senderId &&
             (new Date(m.createdAt) - new Date(prev.createdAt)) < 5 * 60 * 1000;
           return (
-            <div key={m.id} style={{ display: "flex", justifyContent: isMine ? "flex-end" : "flex-start", marginTop: grouped ? 2 : 10 }}>
+            <div key={m.id} style={{ display: "flex", justifyContent: isSelf ? "flex-start" : (isMine ? "flex-end" : "flex-start"), marginTop: grouped ? 2 : 10 }}>
               <div
                 style={{
                   maxWidth: "75%",
                   padding: "8px 12px",
                   borderRadius: 16,
-                  background: isMine ? "var(--accent)" : "var(--surface-2)",
-                  color: isMine ? "white" : "var(--text)",
+                  background: isSelf ? "var(--surface-2)" : (isMine ? "var(--accent)" : "var(--surface-2)"),
+                  color: isSelf ? "var(--text)" : (isMine ? "white" : "var(--text)"),
                 }}
               >
                 <p className="text-sm" style={{ overflowWrap: "anywhere", lineHeight: 1.4 }}>{m.content}</p>
@@ -319,7 +323,7 @@ export default function DmThreadClient({ currentUserId, otherUsername }) {
         <input
           className="input pl-4"
           style={{ flex: 1, borderRadius: 999, height: 46, background: "var(--surface-2)", border: "1px solid var(--border)" }}
-          placeholder={`Message @${otherUser.username}`}
+          placeholder={isSelf ? "Write a note to yourself…" : `Message @${otherUser.username}`}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
         />
@@ -340,6 +344,7 @@ export default function DmThreadClient({ currentUserId, otherUsername }) {
 
       <ThreadMenu
         otherUser={otherUser}
+        isSelf={isSelf}
         open={menuOpen}
         onClose={() => setMenuOpen(false)}
         muted={muted}
