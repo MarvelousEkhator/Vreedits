@@ -1697,6 +1697,14 @@ export default function FeedClient({ user }) {
     setMuted(false);
   }
 
+  // Feed is a bottom-tab home screen with nothing "above" it to return to
+  // in this app's structure — so this goes to the quieter dashboard hub
+  // rather than using router.back(), which can land on a stale or wrong
+  // screen depending on how the person navigated in.
+  function handleExit() {
+    router.push("/dashboard");
+  }
+
   function handleLongPress(post) {
     const video = videoRefsMap.current.get(post.id);
     wasPlayingBeforeActionsRef.current = !!video && !video.paused;
@@ -1948,9 +1956,18 @@ export default function FeedClient({ user }) {
         }}
       >
         <div className="flex items-center justify-between px-4" style={{ height: 56 }}>
-          <Link href="/profile" aria-label="My Profile" style={{ background: "none", border: "none", color: "white" }}>
-            <UserIcon size={22} />
-          </Link>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleExit}
+              aria-label="Exit feed"
+              style={{ background: "none", border: "none", color: "white" }}
+            >
+              <ArrowLeft size={22} />
+            </button>
+            <Link href="/profile" aria-label="My Profile" style={{ background: "none", border: "none", color: "white" }}>
+              <UserIcon size={22} />
+            </Link>
+          </div>
           <div className="flex items-center gap-3">
             <button
               onClick={() => setMuted((m) => !m)}
