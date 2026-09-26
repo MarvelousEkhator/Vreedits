@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
-import { UserPlus, Check, X as XIcon, Loader2, MoreVertical, Ban, Flag } from "lucide-react";
+import { UserPlus, Check, X as XIcon, Loader2, MoreVertical, Ban, Flag, Bookmark } from "lucide-react";
 import GlossIcon from "@/components/GlossIcon";
 
 function Avatar({ user, size = 44 }) {
@@ -103,11 +103,7 @@ function ConversationMenu({ friend, open, onClose, onBlock, blocking, onReport }
               autoFocus
             />
             <div className="flex gap-2 mt-2">
-              <button
-                onClick={submitReport}
-                disabled={submitting || !reason.trim()}
-                className="btn-primary"
-              >
+              <button onClick={submitReport} disabled={submitting || !reason.trim()} className="btn-primary">
                 {submitting ? <Loader2 size={14} className="animate-spin" /> : "Submit Report"}
               </button>
               <button
@@ -241,12 +237,13 @@ export default function InboxClient({ currentUserId }) {
   }
 
   const filtered = conversations.filter((c) => {
+    if (c.isSelf) return true; // "You" always shows, regardless of search
     if (!query.trim()) return true;
     const name = (c.friend.displayName || c.friend.username || "").toLowerCase();
     return name.includes(query.toLowerCase());
   });
 
-  const menuFriend = menuFriendId ? conversations.find((c) => c.friend.id === menuFriendId)?.friend : null;
+  const menuFriend = menuFriendId ? conversations.find((c) => !c.isSelf && c.friend.id === menuFriendId)?.friend : null;
 
   return (
     <div className="p-3">
@@ -359,40 +356,57 @@ export default function InboxClient({ currentUserId }) {
         </p>
       ) : (
         <div className="space-y-1">
-          {filtered.map(({ friend, lastMessage, unreadCount }) => (
+          {filtered.map(({ friend, lastMessage, unreadCount, isSelf }) => (
             <div
-              key={friend.id}
+              key={isSelf ? "self" : friend.id}
               className="flex items-center gap-1"
-              onTouchStart={() => handlePressStart(friend.id)}
+              onTouchStart={() => !isSelf && handlePressStart(friend.id)}
               onTouchEnd={handlePressEnd}
               onTouchMove={handlePressEnd}
-              onMouseDown={() => handlePressStart(friend.id)}
+              onMouseDown={() => !isSelf && handlePressStart(friend.id)}
               onMouseUp={handlePressEnd}
               onMouseLeave={handlePressEnd}
-              onContextMenu={(e) => { e.preventDefault(); openMenu(friend.id); }}
+              onContextMenu={(e) => { if (!isSelf) { e.preventDefault(); openMenu(friend.id); } }}
             >
               <Link
                 href={`/inbox/${friend.username}`}
                 className="flex items-center gap-3 p-2.5 rounded-xl"
-                style={{ textDecoration: "none", color: "var(--text)", flex: 1, minWidth: 0 }}
+                style={{
+                  textDecoration: "none", color: "var(--text)", flex: 1, minWidth: 0,
+                  ...(isSelf ? { background: "var(--accent-soft)" } : {}),
+                }}
               >
                 <div style={{ position: "relative" }}>
                   <Avatar user={friend} size={48} />
-                  <span
-                    style={{
-                      position: "absolute", bottom: -1, right: -1, width: 13, height: 13, borderRadius: "50%",
-                      border: "2.5px solid var(--surface)",
-                      background: friend.online ? "var(--success)" : "var(--text-muted)",
-                    }}
-                  />
+                  {isSelf ? (
+                    <span
+                      style={{
+                        position: "absolute", bottom: -1, right: -1, width: 18, height: 18, borderRadius: "50%",
+                        border: "2.5px solid var(--surface)", background: "var(--accent)",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                      }}
+                    >
+                      <Bookmark size={10} color="white" fill="white" />
+                    </span>
+                  ) : (
+                    <span
+                      style={{
+                        position: "absolute", bottom: -1, right: -1, width: 13, height: 13, borderRadius: "50%",
+                        border: "2.5px solid var(--surface)",
+                        background: friend.online ? "var(--success)" : "var(--text-muted)",
+                      }}
+                    />
+                  )}
                 </div>
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-semibold">{friend.displayName || friend.username}</span>
+                    <span className="text-sm font-semibold">
+                      {isSelf ? "You" : (friend.displayName || friend.username)}
+                    </span>
                     <span className="text-xs" style={{ color: "var(--text-muted)" }}>{relativeTime(lastMessage?.createdAt)}</span>
                   </div>
                   <p className="text-xs" style={{ color: unreadCount > 0 ? "var(--text)" : "var(--text-muted)", fontWeight: unreadCount > 0 ? 600 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {lastMessage?.content || "Say hi 👋"}
+                    {isSelf ? (lastMessage?.content || "Save a note for later") : (lastMessage?.content || "Say hi 👋")}
                   </p>
                 </div>
                 {unreadCount > 0 && (
@@ -401,13 +415,15 @@ export default function InboxClient({ currentUserId }) {
                   </span>
                 )}
               </Link>
-              <button
-                onClick={() => openMenu(friend.id)}
-                aria-label="More options"
-                style={{ background: "none", border: "none", color: "var(--text-muted)", padding: 8, flexShrink: 0 }}
-              >
-                <MoreVertical size={17} />
-              </button>
+              {!isSelf && (
+                <button
+                  onClick={() => openMenu(friend.id)}
+                  aria-label="More options"
+                  style={{ background: "none", border: "none", color: "var(--text-muted)", padding: 8, flexShrink: 0 }}
+                >
+                  <MoreVertical size={17} />
+                </button>
+              )}
             </div>
           ))}
         </div>
