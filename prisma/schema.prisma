@@ -1042,3 +1042,23 @@ model ConversationHide {
 
   @@unique([userId, otherUserId])
 }
+model PostReport {
+  id        String   @id @default(uuid())
+  postId    String
+  reporterId String
+  reason    String   @db.Text
+  status    String   @default("open")
+  createdAt DateTime @default(now())
+
+  @@index([postId])
+  @@index([reporterId])
+}
+
+model MutedCreator {
+  id           String   @id @default(uuid())
+  userId       String   // the person doing the muting
+  mutedUserId  String   // the creator being muted
+  createdAt    DateTime @default(now())
+
+  @@unique([userId, mutedUserId])
+}
