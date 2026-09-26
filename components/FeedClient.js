@@ -6,7 +6,7 @@ import {
   Heart, MessageCircle, Share2, Bookmark, RotateCw, Plus, X, Send,
   Loader2, Search, User as UserIcon, Download, Trash2, Music2,
   Volume2, VolumeX, Check, Play, Pause, Pin, Languages, Copy, ArrowLeft,
-  Star, Globe, Lock,
+  Star, Globe, Lock, Flag, BellOff, Bell,
 } from "lucide-react";
 import CameraCapture from "@/components/CameraCapture";
 import GlossIcon from "@/components/GlossIcon";
@@ -412,19 +412,47 @@ function CommentsSheet({ postId, postAuthorId, currentUserId, open, onClose }) {
   );
 }
 
-function PostActionsSheet({ post, open, isOwner, onClose, onDownload, onShare, onDelete }) {
+function PostActionsSheet({ post, open, isOwner, muted, onClose, onDownload, onShare, onDelete, onReport, onToggleMute }) {
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reason, setReason] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [done, setDone] = useState(false);
+
   if (!post) return null;
 
+  const canDownload = isOwner || post.author?.allowDownloads !== false;
+
+  async function submitReport() {
+    if (!reason.trim()) return;
+    setSubmitting(true);
+    const ok = await onReport(post, reason.trim());
+    setSubmitting(false);
+    if (ok) setDone(true);
+  }
+
+  function handleClose() {
+    setReportOpen(false);
+    setReason("");
+    setDone(false);
+    onClose();
+  }
+
   const actions = [
-    { key: "download", label: "Save video", icon: Download, onClick: () => onDownload(post) },
+    ...(canDownload ? [{ key: "download", label: "Save video", icon: Download, onClick: () => onDownload(post) }] : []),
     { key: "share", label: "Share", icon: Share2, onClick: () => onShare(post) },
+    ...(!isOwner
+      ? [
+          { key: "mute", label: muted ? "Unmute creator" : "Mute creator", icon: muted ? Bell : BellOff, onClick: () => onToggleMute(post) },
+          { key: "report", label: "Report", icon: Flag, onClick: () => setReportOpen(true) },
+        ]
+      : []),
     ...(isOwner ? [{ key: "delete", label: "Delete", icon: Trash2, danger: true, onClick: () => onDelete(post) }] : []),
   ];
 
   return (
     <>
       <div
-        onClick={onClose}
+        onClick={handleClose}
         style={{
           position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)",
           opacity: open ? 1 : 0, pointerEvents: open ? "auto" : "none",
@@ -445,52 +473,87 @@ function PostActionsSheet({ post, open, isOwner, onClose, onDownload, onShare, o
           <div style={{ width: 36, height: 4, borderRadius: 2, background: "var(--border)" }} />
         </div>
 
-        <div className="flex items-center gap-3 mb-5">
-          <div style={{ width: 44, height: 60, borderRadius: 8, overflow: "hidden", flexShrink: 0, background: "#000" }}>
-            {post.mediaUrl ? (
-              post.mediaType === "video" ? (
-                <video src={post.mediaUrl} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-              ) : (
-                <img src={post.mediaUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-              )
-            ) : null}
-          </div>
-          <div style={{ minWidth: 0 }}>
-            <div className="text-sm font-semibold" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {post.author.displayName || post.author.username}
+        {!reportOpen ? (
+          <>
+            <div className="flex items-center gap-3 mb-5">
+              <div style={{ width: 44, height: 60, borderRadius: 8, overflow: "hidden", flexShrink: 0, background: "#000" }}>
+                {post.mediaUrl ? (
+                  post.mediaType === "video" ? (
+                    <video src={post.mediaUrl} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  ) : (
+                    <img src={post.mediaUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  )
+                ) : null}
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <div className="text-sm font-semibold" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {post.author.displayName || post.author.username}
+                </div>
+                {post.caption && (
+                  <div className="text-xs" style={{ color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {post.caption}
+                  </div>
+                )}
+              </div>
             </div>
-            {post.caption && (
-              <div className="text-xs" style={{ color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {post.caption}
-              </div>
-            )}
-          </div>
-        </div>
 
-        <div style={{ display: "flex", gap: 20 }}>
-          {actions.map((a) => (
-            <button
-              key={a.key}
-              onClick={() => { a.onClick(); onClose(); }}
-              className="flex flex-col items-center gap-1.5"
-              style={{ background: "none", border: "none", width: 64 }}
-            >
-              <div
-                className="flex items-center justify-center"
-                style={{
-                  width: 48, height: 48, borderRadius: "50%",
-                  background: "var(--surface-2)",
-                  color: a.danger ? "var(--danger, #e55)" : "var(--text)",
-                }}
-              >
-                <a.icon size={20} />
-              </div>
-              <span className="text-xs" style={{ color: a.danger ? "var(--danger, #e55)" : "var(--text-muted)" }}>
-                {a.label}
-              </span>
+            <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
+              {actions.map((a) => (
+                <button
+                  key={a.key}
+                  onClick={() => { if (a.key !== "report") { a.onClick(); handleClose(); } else { a.onClick(); } }}
+                  className="flex flex-col items-center gap-1.5"
+                  style={{ background: "none", border: "none", width: 64 }}
+                >
+                  <div
+                    className="flex items-center justify-center"
+                    style={{
+                      width: 48, height: 48, borderRadius: "50%",
+                      background: "var(--surface-2)",
+                      color: a.danger ? "var(--danger, #e55)" : "var(--text)",
+                    }}
+                  >
+                    <a.icon size={20} />
+                  </div>
+                  <span className="text-xs" style={{ color: a.danger ? "var(--danger, #e55)" : "var(--text-muted)" }}>
+                    {a.label}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </>
+        ) : done ? (
+          <div className="p-3 text-center">
+            <p className="text-sm font-medium mb-3">Thanks — we've received your report.</p>
+            <button onClick={handleClose} className="btn-primary" style={{ maxWidth: 140, margin: "0 auto" }}>
+              Close
             </button>
-          ))}
-        </div>
+          </div>
+        ) : (
+          <div className="p-2">
+            <p className="text-sm font-semibold mb-2">Why are you reporting this post?</p>
+            <textarea
+              className="input pl-3"
+              style={{ minHeight: 70, resize: "vertical", fontSize: 13 }}
+              placeholder="Tell us what's wrong…"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              autoFocus
+            />
+            <div className="flex gap-2 mt-2">
+              <button onClick={submitReport} disabled={submitting || !reason.trim()} className="btn-primary">
+                {submitting ? <Loader2 size={14} className="animate-spin" /> : "Submit Report"}
+              </button>
+              <button
+                onClick={() => setReportOpen(false)}
+                className="btn-primary"
+                style={{ background: "var(--surface-2)", color: "var(--text)" }}
+              >
+                Back
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </>
   );
@@ -1082,7 +1145,9 @@ function SearchOverlay({ onClose, onOpenProfile, onOpenSound }) {
       )}
     </div>
   );
-}function CreatePostModal({ open, onClose, onCreated, user, initialSound }) {
+}
+
+function CreatePostModal({ open, onClose, onCreated, user, initialSound }) {
   const [caption, setCaption] = useState("");
   const [media, setMedia] = useState(null);
   const [sound, setSound] = useState(null);
@@ -1646,7 +1711,7 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
         <style>{`@keyframes vreedits-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
       </div>
 
-      <div style={{ position: "absolute", left: 14, right: 90, bottom: 40, zIndex: 2 }}>
+      <div style={{ position: "absolute", left: 14, right: 100, bottom: 40, zIndex: 2 }}>
         <button
           onClick={(e) => { e.stopPropagation(); onOpenProfile(post.author.id); }}
           className="flex flex-col items-start mb-1"
@@ -1693,6 +1758,7 @@ export default function FeedClient({ user }) {
   const [activeTab, setActiveTab] = useState("for-you");
   const [searchOpen, setSearchOpen] = useState(false);
   const [soundTarget, setSoundTarget] = useState(null);
+  const [mutedCreatorIds, setMutedCreatorIds] = useState(new Set());
   const overlayPausedRef = useRef([]);
   const overlayDepthRef = useRef(0);
   const hasInteractedRef = useRef(false);
@@ -1945,6 +2011,45 @@ export default function FeedClient({ user }) {
     }
   }
 
+  // Reports a specific post's content (not the person overall — that's the
+  // separate user-report flow in Inbox). Never removes the post from your
+  // own view; it just files the report.
+  async function handleReportPost(post, reason) {
+    const res = await fetch(`/api/feed/${post.id}/report`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason }),
+    });
+    return res.ok;
+  }
+
+  // Muting hides a creator's posts from your own feed without unfollowing
+  // them or blocking them — they're never notified either way. The server
+  // now filters muted creators out of every feed fetch, so this client-side
+  // removal just makes the current session feel instant.
+  async function handleToggleMuteCreator(post) {
+    const authorId = post.author.id;
+    const wasMuted = mutedCreatorIds.has(authorId);
+
+    setMutedCreatorIds((prev) => {
+      const next = new Set(prev);
+      if (wasMuted) next.delete(authorId); else next.add(authorId);
+      return next;
+    });
+    if (!wasMuted) {
+      setPosts((prev) => prev.filter((p) => p.author.id !== authorId));
+    }
+
+    const res = await fetch(`/api/users/${authorId}/mute`, { method: "POST" });
+    if (!res.ok) {
+      setMutedCreatorIds((prev) => {
+        const next = new Set(prev);
+        if (wasMuted) next.add(authorId); else next.delete(authorId);
+        return next;
+      });
+    }
+  }
+
   function handlePostCreated(newPost) {
     // "Only me" posts live on your profile, not in the public feed.
     if (newPost.isPrivate) return;
@@ -2068,7 +2173,7 @@ export default function FeedClient({ user }) {
 
       <div
         className="flex items-center justify-center gap-3"
-        style={{ position: "absolute", bottom: 20, left: 0, right: 0, zIndex: 10 }}
+        style={{ position: "absolute", bottom: 100, left: 0, right: 0, zIndex: 10 }}
       >
         <button
           onClick={handleRefresh}
@@ -2102,10 +2207,13 @@ export default function FeedClient({ user }) {
           post={actionsPost}
           open={!!actionsPost}
           isOwner={user?.id === actionsPost.author.id}
+          muted={mutedCreatorIds.has(actionsPost.author.id)}
           onClose={handleCloseActionsSheet}
           onDownload={handleDownload}
           onShare={handleShare}
           onDelete={handleDeletePost}
+          onReport={handleReportPost}
+          onToggleMute={handleToggleMuteCreator}
         />
       )}
       {soundTarget && (
