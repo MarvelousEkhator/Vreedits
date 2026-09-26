@@ -24,6 +24,7 @@ export async function GET(req, { params }) {
       bio: true,
       avatarDataUrl: true,
       isPublic: true,
+      hideLikedVideos: true,
       createdAt: true,
     },
   });
@@ -65,6 +66,37 @@ export async function GET(req, { params }) {
       : [];
   }
 
+  // Saved/Favorites: always private to the owner, like a bookmarks folder —
+  // nobody else's saved list is ever exposed, isPublic has no bearing here.
+  let savedPosts = [];
+  if (isOwner) {
+    const saves = await prisma.feedSave.findMany({
+      where: { userId: target.id },
+      orderBy: { createdAt: "desc" },
+      include: { post: { select: { id: true, mediaUrl: true, mediaType: true } } },
+    });
+    savedPosts = saves.map((s) => s.post);
+  }
+
+  // Liked videos: visible to the owner always; visible to anyone else only
+  // if this user hasn't hidden it in Privacy settings (User.hideLikedVideos).
+  const likedVisible = isOwner || !target.hideLikedVideos;
+  let likedPosts = [];
+  if (likedVisible) {
+    const liked = await prisma.feedPost.findMany({
+      where: {
+        likedBy: { has: target.id },
+        // Never surface someone else's private post on a liked list unless
+        // the viewer is that post's own author — liking it once doesn't
+        // grant permanent visibility into someone else's private content.
+        OR: [{ isPrivate: false }, { authorId: viewer.id }],
+      },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, mediaUrl: true, mediaType: true },
+    });
+    likedPosts = liked;
+  }
+
   return NextResponse.json({
     profile: {
       id: target.id,
@@ -85,6 +117,9 @@ export async function GET(req, { params }) {
     posts: publicPosts,
     publicPosts,
     privatePosts,
+    savedPosts,
+    likedPosts,
+    likedVisible,
   });
 }
 
