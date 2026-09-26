@@ -20,6 +20,10 @@ async function requireFriend(userId, otherUsername) {
   const other = await prisma.user.findUnique({ where: { username: otherUsername } });
   if (!other) return { error: "User not found", status: 404 };
 
+  // Messaging yourself needs no friendship — you're always "friends" with
+  // your own notes-to-self thread, and blocking is meaningless here too.
+  if (other.id === userId) return { other };
+
   if (await isBlockedEitherWay(userId, other.id)) {
     return { error: "This conversation is not available.", status: 403 };
   }
@@ -93,8 +97,6 @@ export async function POST(req, { params }) {
 }
 
 // "Delete conversation" — hides everything up to now, for this user only.
-// New messages after this point still show up normally, so the thread can
-// come back to life if either person messages again.
 export async function DELETE(req, { params }) {
   const userId = getSessionUserId();
   if (!userId) {
