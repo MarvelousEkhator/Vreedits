@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { ArrowLeft, ChevronRight, Lock, Loader2, X } from "lucide-react";
+import { ArrowLeft, ChevronRight, Lock, Loader2, X, Check } from "lucide-react";
 import NavShell from "@/components/NavShell";
 import { useLanguage } from "@/components/LanguageProvider";
 
@@ -64,6 +64,84 @@ function SegmentedControl({ value, onChange, disabled }) {
         </button>
       ))}
     </div>
+  );
+}
+
+// TikTok-style row: a settings row that shows its current value inline and
+// opens a sheet to change it, instead of a switch — used for choices with
+// a human-readable value worth showing at a glance (e.g. "Only you").
+function ValueRow({ label, value, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex items-center justify-between w-full p-3 rounded-xl text-left"
+      style={{ background: "none", border: "none" }}
+    >
+      <span className="text-sm font-medium">{label}</span>
+      <span className="flex items-center gap-1.5">
+        <span className="text-sm" style={{ color: "var(--text-muted)" }}>{value}</span>
+        <ChevronRight size={16} style={{ color: "var(--text-muted)" }} />
+      </span>
+    </button>
+  );
+}
+
+// Bottom sheet with radio-style options — used for the "Liked videos"
+// visibility choice, matching the row-plus-sheet pattern TikTok uses for
+// this exact setting instead of a plain on/off switch.
+function RadioSheet({ title, open, onClose, options, value, onSelect }) {
+  return (
+    <>
+      <div
+        onClick={onClose}
+        style={{
+          position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)",
+          opacity: open ? 1 : 0, pointerEvents: open ? "auto" : "none",
+          transition: "opacity 0.2s ease", zIndex: 200,
+        }}
+      />
+      <div
+        style={{
+          position: "fixed", left: 0, right: 0, bottom: 0,
+          background: "var(--surface)", borderRadius: "20px 20px 0 0",
+          transform: open ? "translateY(0)" : "translateY(100%)",
+          transition: "transform 0.28s cubic-bezier(0.22,1,0.36,1)", zIndex: 201,
+          paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 8px)",
+        }}
+      >
+        <div className="flex items-center justify-between p-4" style={{ borderBottom: "1px solid var(--border)" }}>
+          <h2 className="text-sm font-semibold">{title}</h2>
+          <button onClick={onClose} aria-label="Close" style={{ color: "var(--text-muted)", background: "none", border: "none" }}>
+            <X size={18} />
+          </button>
+        </div>
+        <div className="p-2">
+          {options.map((opt) => {
+            const selected = opt.id === value;
+            return (
+              <button
+                key={opt.id}
+                onClick={() => onSelect(opt.id)}
+                className="flex items-center justify-between w-full p-3 rounded-xl text-left"
+                style={{ background: "none", border: "none" }}
+              >
+                <span className="text-sm font-medium">{opt.label}</span>
+                <span
+                  style={{
+                    width: 20, height: 20, borderRadius: "50%",
+                    border: selected ? "none" : "2px solid var(--border)",
+                    background: selected ? "var(--accent)" : "transparent",
+                    display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                  }}
+                >
+                  {selected && <Check size={13} color="white" />}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -149,67 +227,15 @@ function UserListSheet({ title, open, onClose, users, loading, error, onUnblock 
   );
 }
 
-function VideoGridSheet({ title, open, onClose, posts, loading, error }) {
-  const { t } = useLanguage();
-  return (
-    <>
-      <div
-        onClick={onClose}
-        style={{
-          position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)",
-          opacity: open ? 1 : 0, pointerEvents: open ? "auto" : "none",
-          transition: "opacity 0.2s ease", zIndex: 200,
-        }}
-      />
-      <div
-        style={{
-          position: "fixed", left: 0, right: 0, bottom: 0, maxHeight: "75vh",
-          background: "var(--surface)", borderRadius: "20px 20px 0 0",
-          transform: open ? "translateY(0)" : "translateY(100%)",
-          transition: "transform 0.28s cubic-bezier(0.22,1,0.36,1)", zIndex: 201,
-          display: "flex", flexDirection: "column",
-        }}
-      >
-        <div className="flex items-center justify-between p-4" style={{ borderBottom: "1px solid var(--border)" }}>
-          <h2 className="text-sm font-semibold">{title}</h2>
-          <button onClick={onClose} aria-label={t("feedSettings.close")} style={{ color: "var(--text-muted)", background: "none", border: "none" }}>
-            <X size={18} />
-          </button>
-        </div>
-        <div className="p-3" style={{ overflowY: "auto", flex: 1 }}>
-          {loading ? (
-            <div className="flex justify-center py-8" style={{ color: "var(--text-muted)" }}>
-              <Loader2 size={20} className="animate-spin" />
-            </div>
-          ) : error ? (
-            <p className="text-sm text-center py-8" style={{ color: "var(--text-muted)" }}>{error}</p>
-          ) : posts.length === 0 ? (
-            <p className="text-sm text-center py-8" style={{ color: "var(--text-muted)" }}>{t("feedSettings.nothingHere")}</p>
-          ) : (
-            <div className="grid grid-cols-3 gap-1">
-              {posts.map((p) => (
-                <div key={p.id} style={{ aspectRatio: "9/16", background: "#111", borderRadius: 6, overflow: "hidden" }}>
-                  {p.mediaType === "video" ? (
-                    <video src={p.mediaUrl} muted style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                  ) : p.mediaUrl ? (
-                    <img src={p.mediaUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </>
-  );
-}
-
 function FeedSettingsInner({
   user, profile, privacy, saving,
-  sheet, sheetLoading, sheetError, sheetUsers, sheetPosts,
+  sheet, sheetLoading, sheetError, sheetUsers,
   patchField, patchPrivacy, handleShareProfile, openSheet, handleUnblock, setSheet,
 }) {
   const { t } = useLanguage();
+  const [likedSheetOpen, setLikedSheetOpen] = useState(false);
+
+  const likedValue = privacy.hideLikedVideos ? t("feedSettings.onlyYou") : t("feedSettings.everyone");
 
   const stillLockedSections = [
     { header: t("feedSettings.activity"), items: [t("feedSettings.contentPreferences"), t("feedSettings.timeWellbeing"), t("feedSettings.familyPairing")] },
@@ -314,21 +340,16 @@ function FeedSettingsInner({
             <ChevronRight size={16} style={{ color: "var(--text-muted)" }} />
           </button>
 
-          <div className="flex items-center justify-between p-3 rounded-xl" style={{ borderBottom: "1px solid var(--border)" }}>
-            <div>
-              <div className="text-sm font-medium">{t("feedSettings.hideLiked")}</div>
-              <div className="text-xs" style={{ color: "var(--text-muted)" }}>{t("feedSettings.hideLikedDesc")}</div>
-            </div>
-            <ToggleSwitch checked={privacy.hideLikedVideos} onChange={(v) => patchPrivacy("hideLikedVideos", v)} disabled={saving} />
-          </div>
-          <button
-            onClick={() => openSheet("liked")}
-            className="flex items-center justify-between w-full p-3 rounded-xl text-left"
-            style={{ background: "none", border: "none" }}
-          >
-            <span className="text-sm font-medium">{t("feedSettings.viewLiked")}</span>
-            <ChevronRight size={16} style={{ color: "var(--text-muted)" }} />
-          </button>
+          {/* TikTok-style value row: shows "Only you" / "Everyone" inline and
+              opens a radio-choice sheet, replacing the old toggle + separate
+              "View liked" button. Viewing your own liked videos is already
+              covered by the Likes tab on your profile, so no separate viewer
+              is needed here anymore. */}
+          <ValueRow
+            label={t("feedSettings.likedVideos")}
+            value={likedValue}
+            onClick={() => setLikedSheetOpen(true)}
+          />
         </div>
 
         {stillLockedSections.map((section) => (
@@ -360,13 +381,20 @@ function FeedSettingsInner({
         error={sheetError}
         onUnblock={sheet === "blocked" ? handleUnblock : null}
       />
-      <VideoGridSheet
-        title={t("feedSettings.likedVideos")}
-        open={sheet === "liked"}
-        onClose={() => setSheet(null)}
-        posts={sheetPosts}
-        loading={sheetLoading}
-        error={sheetError}
+
+      <RadioSheet
+        title={t("feedSettings.allowLikedSeenBy")}
+        open={likedSheetOpen}
+        onClose={() => setLikedSheetOpen(false)}
+        options={[
+          { id: "everyone", label: t("feedSettings.everyone") },
+          { id: "onlyYou", label: t("feedSettings.onlyYou") },
+        ]}
+        value={privacy.hideLikedVideos ? "onlyYou" : "everyone"}
+        onSelect={(id) => {
+          patchPrivacy("hideLikedVideos", id === "onlyYou");
+          setLikedSheetOpen(false);
+        }}
       />
     </>
   );
@@ -379,11 +407,10 @@ export default function FeedSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  const [sheet, setSheet] = useState(null); // "blocked" | "following" | "liked" | null
+  const [sheet, setSheet] = useState(null); // "blocked" | "following" | null
   const [sheetLoading, setSheetLoading] = useState(false);
   const [sheetError, setSheetError] = useState("");
   const [sheetUsers, setSheetUsers] = useState([]);
-  const [sheetPosts, setSheetPosts] = useState([]);
 
   useEffect(() => {
     Promise.all([
@@ -441,7 +468,6 @@ export default function FeedSettingsPage() {
     setSheetError("");
     setSheetLoading(true);
     setSheetUsers([]);
-    setSheetPosts([]);
     try {
       if (type === "blocked") {
         const res = await fetch("/api/users/blocked");
@@ -452,11 +478,6 @@ export default function FeedSettingsPage() {
         const res = await fetch(`/api/users/${user.id}/following-list`);
         const data = await res.json();
         if (res.ok) setSheetUsers(data.following);
-        else setSheetError(data.error || "Could not load.");
-      } else if (type === "liked") {
-        const res = await fetch(`/api/users/${user.id}/liked-videos`);
-        const data = await res.json();
-        if (res.ok) setSheetPosts(data.posts);
         else setSheetError(data.error || "Could not load.");
       }
     } catch {
@@ -492,7 +513,6 @@ export default function FeedSettingsPage() {
         sheetLoading={sheetLoading}
         sheetError={sheetError}
         sheetUsers={sheetUsers}
-        sheetPosts={sheetPosts}
         patchField={patchField}
         patchPrivacy={patchPrivacy}
         handleShareProfile={handleShareProfile}
