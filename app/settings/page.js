@@ -9,18 +9,25 @@ import {
 } from "lucide-react";
 import NavShell from "@/components/NavShell";
 import { useLanguage } from "@/components/LanguageProvider";
-
-const LANGUAGES = [
-  "English", "Spanish", "French", "Arabic", "Korean", "Chinese",
-  "Japanese", "Portuguese", "German", "Hindi", "Russian", "Italian",
-];
+import { LANGUAGES } from "@/lib/i18n";
 
 function SettingsInner({ user, profile, loading, savingLanguage, loggingOut, onLanguageChange, onLogout }) {
   // This useLanguage() call is inside NavShell's provider (SettingsInner is
   // rendered as NavShell's child), so setLang here actually switches the
-  // app. Calling it from the page component one level up would silently
-  // no-op, since that call sits outside the provider NavShell creates.
+  // app for real, everywhere.
   const { t, lang, setLang } = useLanguage();
+
+  // The dropdown must reflect what's actually on screen right now (`lang`),
+  // not the saved database value (`profile.language`) — those two can
+  // disagree (e.g. this device switched language locally, or the save to
+  // the account never went through). Binding the dropdown to the database
+  // value instead of the live value was the actual bug: if the dropdown
+  // already displayed "English" while the app was really running in
+  // Portuguese, picking "English" again was a no-op as far as the browser
+  // was concerned — a <select> only fires onChange when its value changes,
+  // so nothing happened until a different language was picked first.
+  const currentLanguageName =
+    LANGUAGES.find((l) => l.code === lang)?.name || "English";
 
   function formatDate(dateStr) {
     const d = new Date(dateStr);
@@ -82,12 +89,12 @@ function SettingsInner({ user, profile, loading, savingLanguage, loggingOut, onL
               <select
                 className="input"
                 style={{ width: "auto", padding: "6px 10px", fontSize: 13 }}
-                value={profile?.language || "English"}
+                value={currentLanguageName}
                 onChange={handleSelectChange}
                 disabled={savingLanguage}
               >
                 {LANGUAGES.map((l) => (
-                  <option key={l} value={l}>{l}</option>
+                  <option key={l.code} value={l.name}>{l.name}</option>
                 ))}
               </select>
             </div>
