@@ -294,12 +294,12 @@ export default function ProfileClient({ profileId }) {
         )}
       </div>
 
-      <div className="flex items-center w-full mb-1" style={{ borderBottom: "1px solid var(--border)" }}>
+      <div className="flex items-center w-full" style={{ borderBottom: "1px solid var(--border)" }}>
         {tabs.map((t) => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
-            className="text-sm font-semibold pb-3 pt-1 transition-colors"
+            className="text-sm font-semibold pb-2.5 pt-1 transition-colors"
             style={{
               background: "none", border: "none", flex: 1,
               color: tab === t.id ? "var(--accent)" : "var(--text-muted)",
@@ -312,11 +312,11 @@ export default function ProfileClient({ profileId }) {
       </div>
 
       {!posts || posts.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
+        <div className="flex flex-col items-center justify-center py-8 px-6 text-center">
           <p className="text-sm font-medium" style={{ color: "var(--text-muted)" }}>{emptyMessage}</p>
         </div>
       ) : (
-        <div className="grid grid-cols-3 gap-1.5 px-1.5">
+        <div className="grid grid-cols-3 gap-1.5 px-1.5 pt-1.5">
           {posts.map((p) => (
             <div
               key={p.id}
