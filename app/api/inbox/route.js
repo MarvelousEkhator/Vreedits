@@ -34,32 +34,34 @@ export async function GET() {
   const hides = await prisma.conversationHide.findMany({ where: { userId } });
   const hideByFriendId = new Map(hides.map((h) => [h.otherUserId, h.hiddenBefore]));
 
+  async function buildConversation(friend, hiddenBefore) {
+    const lastMessage = await prisma.directMessage.findFirst({
+      where: {
+        OR: [
+          { senderId: userId, receiverId: friend.id },
+          { senderId: friend.id, receiverId: userId },
+        ],
+        ...(hiddenBefore ? { createdAt: { gt: hiddenBefore } } : {}),
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const unreadCount = await prisma.directMessage.count({
+      where: {
+        senderId: friend.id,
+        receiverId: userId,
+        read: false,
+        ...(hiddenBefore ? { createdAt: { gt: hiddenBefore } } : {}),
+      },
+    });
+
+    return { friend, lastMessage, unreadCount, hiddenBefore };
+  }
+
   const conversations = await Promise.all(
-    friendships.map(async (f) => {
+    friendships.map((f) => {
       const friend = f.userAId === userId ? f.userB : f.userA;
-      const hiddenBefore = hideByFriendId.get(friend.id);
-
-      const lastMessage = await prisma.directMessage.findFirst({
-        where: {
-          OR: [
-            { senderId: userId, receiverId: friend.id },
-            { senderId: friend.id, receiverId: userId },
-          ],
-          ...(hiddenBefore ? { createdAt: { gt: hiddenBefore } } : {}),
-        },
-        orderBy: { createdAt: "desc" },
-      });
-
-      const unreadCount = await prisma.directMessage.count({
-        where: {
-          senderId: friend.id,
-          receiverId: userId,
-          read: false,
-          ...(hiddenBefore ? { createdAt: { gt: hiddenBefore } } : {}),
-        },
-      });
-
-      return { friend, lastMessage, unreadCount, hiddenBefore };
+      return buildConversation(friend, hideByFriendId.get(friend.id));
     })
   );
 
@@ -78,7 +80,24 @@ export async function GET() {
     return new Date(bTime) - new Date(aTime);
   });
 
-  const result = visible.map(({ friend, lastMessage, unreadCount }) => ({ friend, lastMessage, unreadCount }));
+  // Notes-to-self: there's no Friendship row with yourself, so this thread
+  // is built separately and always pinned first, regardless of whether
+  // you've ever sent yourself a message.
+  const me = await prisma.user.findUnique({ where: { id: userId }, select: FRIEND_SELECT });
+  const selfConversation = me
+    ? await buildConversation(me, hideByFriendId.get(userId))
+    : null;
+
+  const result = visible.map(({ friend, lastMessage, unreadCount }) => ({ friend, lastMessage, unreadCount, isSelf: false }));
+
+  if (selfConversation && (selfConversation.lastMessage || !selfConversation.hiddenBefore)) {
+    result.unshift({
+      friend: selfConversation.friend,
+      lastMessage: selfConversation.lastMessage,
+      unreadCount: 0,
+      isSelf: true,
+    });
+  }
 
   return NextResponse.json({ conversations: result });
 }
