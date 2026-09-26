@@ -1,12 +1,21 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import BackButton from "@/components/BackButton";
-import { Settings as SettingsIcon, Share2, ChevronDown, Loader2, X } from "lucide-react";
+import { Settings as SettingsIcon, Share2, ChevronDown, Loader2, X, ImageOff } from "lucide-react";
 import Link from "next/link";
 
 function Avatar({ user, size = 96 }) {
-  if (user?.avatarDataUrl) {
-    return <img src={user.avatarDataUrl} alt="" style={{ width: size, height: size, borderRadius: "50%", objectFit: "cover" }} />;
+  const [failed, setFailed] = useState(false);
+
+  if (user?.avatarDataUrl && !failed) {
+    return (
+      <img
+        src={user.avatarDataUrl}
+        alt=""
+        onError={() => setFailed(true)}
+        style={{ width: size, height: size, borderRadius: "50%", objectFit: "cover" }}
+      />
+    );
   }
   return (
     <div style={{
@@ -17,6 +26,43 @@ function Avatar({ user, size = 96 }) {
     }}>
       {(user?.displayName || user?.username)?.slice(0, 2).toUpperCase() || "?"}
     </div>
+  );
+}
+
+// Grid thumbnail: falls back to a neutral "media unavailable" tile instead
+// of a raw broken-image icon or whatever a corrupted source happens to render.
+function PostThumb({ post }) {
+  const [failed, setFailed] = useState(false);
+
+  if (failed || !post.mediaUrl) {
+    return (
+      <div
+        style={{
+          width: "100%", height: "100%", display: "flex", alignItems: "center",
+          justifyContent: "center", background: "var(--surface-2)", color: "var(--text-muted)",
+        }}
+      >
+        <ImageOff size={22} />
+      </div>
+    );
+  }
+
+  return post.mediaType === "video" ? (
+    <video
+      src={post.mediaUrl}
+      muted
+      playsInline
+      preload="metadata"
+      onError={() => setFailed(true)}
+      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+    />
+  ) : (
+    <img
+      src={post.mediaUrl}
+      alt=""
+      onError={() => setFailed(true)}
+      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+    />
   );
 }
 
@@ -160,10 +206,17 @@ export default function ProfileClient({ profileId }) {
       </div>
 
       <div className="flex flex-col items-center text-center mb-5 px-4">
-        <Avatar user={user} />
+        <div
+          style={{
+            padding: 4, borderRadius: "50%",
+            background: "linear-gradient(135deg, var(--accent), transparent 70%)",
+          }}
+        >
+          <Avatar user={user} />
+        </div>
 
         <div className="flex items-center gap-1 mt-3">
-          <h1 className="text-xl font-bold leading-tight">
+          <h1 className="text-xl font-bold leading-tight" style={{ fontFamily: "var(--font-display)" }}>
             {displayName}
           </h1>
           {isOwner && <ChevronDown size={18} style={{ color: "var(--text-muted)", marginTop: 2 }} />}
@@ -174,7 +227,13 @@ export default function ProfileClient({ profileId }) {
         </span>
       </div>
 
-      <div className="flex items-center justify-center gap-8 mb-5 px-4">
+      <div
+        className="flex items-center justify-center gap-8 mb-5 mx-4 py-3"
+        style={{
+          background: "var(--glass)", border: "1px solid var(--border)", borderRadius: 16,
+          backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)",
+        }}
+      >
         <button onClick={() => openSheet("following")} className="text-center flex flex-col items-center" style={{ background: "none", border: "none" }}>
           <div className="text-lg font-bold">{followingCount}</div>
           <div className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>Following</div>
@@ -224,8 +283,8 @@ export default function ProfileClient({ profileId }) {
             className="text-sm font-semibold pb-3 pt-1 transition-colors"
             style={{
               background: "none", border: "none", flex: 1,
-              color: tab === t.id ? "var(--text)" : "var(--text-muted)",
-              borderBottom: tab === t.id ? "2px solid var(--text)" : "2px solid transparent",
+              color: tab === t.id ? "var(--accent)" : "var(--text-muted)",
+              borderBottom: tab === t.id ? "2px solid var(--accent)" : "2px solid transparent",
             }}
           >
             {t.label}
@@ -238,14 +297,16 @@ export default function ProfileClient({ profileId }) {
           <p className="text-sm font-medium" style={{ color: "var(--text-muted)" }}>Nothing here yet.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-3 gap-0.5">
+        <div className="grid grid-cols-3 gap-1.5 px-1.5">
           {posts.map((p) => (
-            <div key={p.id} style={{ aspectRatio: "9/16", background: "var(--surface-2)", position: "relative", overflow: "hidden" }}>
-              {p.mediaType === "video" ? (
-                <video src={p.mediaUrl} muted style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-              ) : p.mediaUrl ? (
-                <img src={p.mediaUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-              ) : null}
+            <div
+              key={p.id}
+              style={{
+                aspectRatio: "9/16", position: "relative", overflow: "hidden",
+                borderRadius: 10, border: "1px solid var(--border)",
+              }}
+            >
+              <PostThumb post={p} />
             </div>
           ))}
         </div>
