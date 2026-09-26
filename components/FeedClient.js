@@ -1082,9 +1082,7 @@ function SearchOverlay({ onClose, onOpenProfile, onOpenSound }) {
       )}
     </div>
   );
-}
-
-function CreatePostModal({ open, onClose, onCreated, user, initialSound }) {
+}function CreatePostModal({ open, onClose, onCreated, user, initialSound }) {
   const [caption, setCaption] = useState("");
   const [media, setMedia] = useState(null);
   const [sound, setSound] = useState(null);
@@ -1530,11 +1528,25 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
           style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", display: "block" }}
         />
       ) : post.mediaUrl ? (
-        <img
-          src={post.mediaUrl}
-          alt=""
-          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-        />
+        <>
+          {/* Blurred, zoomed copy fills the frame behind the real image so
+              non-vertical photos never get cropped like they were before. */}
+          <img
+            src={post.mediaUrl}
+            alt=""
+            aria-hidden="true"
+            style={{
+              position: "absolute", inset: 0, width: "100%", height: "100%",
+              objectFit: "cover", filter: "blur(30px) brightness(0.6)",
+              transform: "scale(1.15)", display: "block",
+            }}
+          />
+          <img
+            src={post.mediaUrl}
+            alt=""
+            style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", display: "block" }}
+          />
+        </>
       ) : (
         <div
           style={{
