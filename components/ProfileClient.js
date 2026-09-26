@@ -177,13 +177,32 @@ export default function ProfileClient({ profileId }) {
   }
   if (!data) return null;
 
-  const { profile: user, isOwner, isFollowedByMe, followerCount, followingCount, likeCount, publicPosts, privatePosts } = data;
+  const {
+    profile: user, isOwner, isFollowedByMe, followerCount, followingCount, likeCount,
+    publicPosts, privatePosts, savedPosts, likedPosts, likedVisible,
+  } = data;
 
-  const tabs = isOwner
-    ? [{ id: "posts", label: "Posts" }, { id: "private", label: "Private" }]
-    : [{ id: "posts", label: "Posts" }];
+  const tabs = [
+    { id: "posts", label: "Posts" },
+    ...(isOwner ? [{ id: "private", label: "Private" }] : []),
+    ...(isOwner ? [{ id: "saved", label: "Favorites" }] : []),
+    ...(likedVisible ? [{ id: "liked", label: "Likes" }] : []),
+  ];
 
-  const posts = tab === "private" ? privatePosts : publicPosts;
+  const postsByTab = {
+    posts: publicPosts,
+    private: privatePosts,
+    saved: savedPosts,
+    liked: likedPosts,
+  };
+  const posts = postsByTab[tab] || [];
+
+  const emptyMessage = {
+    posts: "Nothing here yet.",
+    private: "No private posts yet.",
+    saved: "Nothing saved yet — tap the bookmark icon on a post to save it here.",
+    liked: isOwner ? "Videos you like will show up here." : "No liked videos to show.",
+  }[tab];
 
   const displayName = user.displayName || user.username;
   const handle = (user.username || "").toLowerCase();
@@ -293,8 +312,8 @@ export default function ProfileClient({ profileId }) {
       </div>
 
       {!posts || posts.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16">
-          <p className="text-sm font-medium" style={{ color: "var(--text-muted)" }}>Nothing here yet.</p>
+        <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
+          <p className="text-sm font-medium" style={{ color: "var(--text-muted)" }}>{emptyMessage}</p>
         </div>
       ) : (
         <div className="grid grid-cols-3 gap-1.5 px-1.5">
