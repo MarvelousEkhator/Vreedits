@@ -1652,46 +1652,46 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
 
       <div
         style={{
-          position: "absolute", right: 10, bottom: 24, zIndex: 2,
-          display: "flex", flexDirection: "column", alignItems: "center", gap: 18,
+          position: "absolute", right: 8, bottom: 16, zIndex: 2,
+          display: "flex", flexDirection: "column", alignItems: "center", gap: 12,
         }}
       >
         <button
           onClick={(e) => { e.stopPropagation(); onOpenProfile(post.author.id); }}
           aria-label={`View profile`}
-          style={{ position: "relative", marginBottom: 4, background: "none", border: "none", padding: 0 }}
+          style={{ position: "relative", marginBottom: 2, background: "none", border: "none", padding: 0 }}
         >
-          <Avatar user={post.author} size={44} />
+          <Avatar user={post.author} size={36} />
         </button>
         {!isOwner && (
           <button
             onClick={(e) => { e.stopPropagation(); onFollow(post); }}
             aria-label={post.followedByMe ? "Unfollow" : "Follow"}
             style={{
-              position: "relative", marginTop: -16, marginBottom: 4,
-              width: 18, height: 18, borderRadius: "50%",
+              position: "relative", marginTop: -12, marginBottom: 2,
+              width: 16, height: 16, borderRadius: "50%",
               background: post.followedByMe ? "var(--surface-2)" : "var(--accent)",
               color: "white", display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: 13, fontWeight: 700, border: "2px solid #000", lineHeight: 1, padding: 0,
+              fontSize: 11, fontWeight: 700, border: "2px solid #000", lineHeight: 1, padding: 0,
             }}
           >
-            {post.followedByMe ? <Check size={11} /> : "+"}
+            {post.followedByMe ? <Check size={9} /> : "+"}
           </button>
         )}
 
-        <button onClick={(e) => { e.stopPropagation(); onLike(post); }} aria-label="Like" style={{ background: "none", border: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-          <Heart size={30} color="white" fill={post.likedByMe ? "#ff4d67" : "none"} stroke={post.likedByMe ? "#ff4d67" : "white"} />
-          <span style={{ color: "white", fontSize: 12, fontWeight: 600 }}>{abbreviateCount(post.likeCount)}</span>
+        <button onClick={(e) => { e.stopPropagation(); onLike(post); }} aria-label="Like" style={{ background: "none", border: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+          <Heart size={24} color="white" fill={post.likedByMe ? "#ff4d67" : "none"} stroke={post.likedByMe ? "#ff4d67" : "white"} />
+          <span style={{ color: "white", fontSize: 11, fontWeight: 600 }}>{abbreviateCount(post.likeCount)}</span>
         </button>
-        <button onClick={(e) => { e.stopPropagation(); onOpenComments(post); }} aria-label="Comments" style={{ background: "none", border: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-          <MessageCircle size={30} color="white" />
-          <span style={{ color: "white", fontSize: 12, fontWeight: 600 }}>{abbreviateCount(post.commentCount)}</span>
+        <button onClick={(e) => { e.stopPropagation(); onOpenComments(post); }} aria-label="Comments" style={{ background: "none", border: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+          <MessageCircle size={24} color="white" />
+          <span style={{ color: "white", fontSize: 11, fontWeight: 600 }}>{abbreviateCount(post.commentCount)}</span>
         </button>
-        <button onClick={(e) => { e.stopPropagation(); onSave(post); }} aria-label="Save" style={{ background: "none", border: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-          <Bookmark size={28} color="white" fill={post.savedByMe ? "white" : "none"} />
+        <button onClick={(e) => { e.stopPropagation(); onSave(post); }} aria-label="Save" style={{ background: "none", border: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+          <Bookmark size={22} color="white" fill={post.savedByMe ? "white" : "none"} />
         </button>
-        <button onClick={(e) => { e.stopPropagation(); onShare(post); }} aria-label="Share" style={{ background: "none", border: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-          <Share2 size={28} color="white" />
+        <button onClick={(e) => { e.stopPropagation(); onShare(post); }} aria-label="Share" style={{ background: "none", border: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+          <Share2 size={22} color="white" />
         </button>
 
         {isVideo && (
@@ -1702,7 +1702,7 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
           >
             <div
               style={{
-                width: 44, height: 44, borderRadius: "50%",
+                width: 36, height: 36, borderRadius: "50%",
                 background: "linear-gradient(135deg, #2a2a2a, #000)",
                 border: "2px solid rgba(255,255,255,0.25)",
                 display: "flex", alignItems: "center", justifyContent: "center",
@@ -1710,8 +1710,8 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
                 animationPlayState: isPaused ? "paused" : "running",
               }}
             >
-              <div style={{ width: 26, height: 26, borderRadius: "50%", overflow: "hidden" }}>
-                <Avatar user={post.author} size={26} />
+              <div style={{ width: 21, height: 21, borderRadius: "50%", overflow: "hidden" }}>
+                <Avatar user={post.author} size={21} />
               </div>
             </div>
           </button>
@@ -1724,23 +1724,23 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
           onClick={(e) => { e.stopPropagation(); onRefresh(); }}
           aria-label="Refresh feed"
           style={{
-            width: 40, height: 40, borderRadius: "50%",
+            width: 32, height: 32, borderRadius: "50%",
             background: "rgba(255,255,255,0.15)", border: "none", color: "white",
             display: "flex", alignItems: "center", justifyContent: "center",
           }}
         >
-          <RotateCw size={17} className={refreshing ? "animate-spin" : ""} />
+          <RotateCw size={14} className={refreshing ? "animate-spin" : ""} />
         </button>
         <button
           onClick={(e) => { e.stopPropagation(); onCreate(); }}
           aria-label="Create post"
           style={{
-            width: 40, height: 40, borderRadius: 10,
+            width: 32, height: 32, borderRadius: 9,
             background: "var(--accent)", border: "none", color: "white",
             display: "flex", alignItems: "center", justifyContent: "center",
           }}
         >
-          <Plus size={19} />
+          <Plus size={16} />
         </button>
 
         <style>{`@keyframes vreedits-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
