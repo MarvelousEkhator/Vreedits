@@ -1652,7 +1652,7 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
 
       <div
         style={{
-          position: "absolute", right: 10, bottom: 90, zIndex: 2,
+          position: "absolute", right: 10, bottom: 24, zIndex: 2,
           display: "flex", flexDirection: "column", alignItems: "center", gap: 18,
         }}
       >
