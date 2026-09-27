@@ -7,6 +7,10 @@ import { extractHashtags } from "@/lib/hashtags";
 // (about 45 million characters, roughly 33 MB of video).
 const MAX_MEDIA_CHARS = 45_000_000;
 
+// Trending looks at engagement within this rolling window rather than
+// all-time, so a post from months ago can't outrank what's hot today.
+const TRENDING_WINDOW_HOURS = 48;
+
 const FEED_AUTHOR_SELECT = {
   id: true, username: true, displayName: true, avatarDataUrl: true, allowDownloads: true, school: true,
 };
@@ -36,6 +40,37 @@ async function resolveSound(postId, viewerId) {
   }
   if (src.isPrivate && src.authorId !== viewerId) return null;
   return src;
+}
+
+// Shared shaping used by every feed tab so the object shape FeedClient.js
+// expects (likeCount, likedByMe, soundOwner, followedByMe, etc.) stays
+// identical no matter which tab produced the posts.
+async function shapePosts(posts, user, followedIds) {
+  const soundIds = [...new Set(posts.map((p) => p.soundId).filter(Boolean))];
+  const soundSources = soundIds.length
+    ? await prisma.feedPost.findMany({
+        where: { id: { in: soundIds } },
+        select: { id: true, author: { select: SOUND_OWNER_SELECT } },
+      })
+    : [];
+  const soundOwnerById = new Map(soundSources.map((s) => [s.id, s.author]));
+
+  return posts.map((p) => ({
+    id: p.id,
+    caption: p.caption,
+    mediaUrl: p.mediaUrl,
+    mediaType: p.mediaType,
+    tags: p.tags,
+    createdAt: p.createdAt,
+    author: p.author,
+    soundId: p.soundId || null,
+    soundOwner: p.soundId ? soundOwnerById.get(p.soundId) || null : null,
+    likeCount: p.likedBy.length,
+    likedByMe: p.likedBy.includes(user.id),
+    commentCount: p._count.comments,
+    savedByMe: p.saves.length > 0,
+    followedByMe: p.authorId === user.id ? true : followedIds.has(p.authorId),
+  }));
 }
 
 export async function GET(req) {
@@ -166,7 +201,7 @@ export async function GET(req) {
   // ── Normal feed ───────────────────────────────────────────────
   const cursor = searchParams.get("cursor");
   const rawTab = searchParams.get("tab");
-  const tab = ["school", "following"].includes(rawTab) ? rawTab : "for-you";
+  const tab = ["school", "following", "trending", "explore"].includes(rawTab) ? rawTab : "for-you";
 
   const friendships = await prisma.friendship.findMany({
     where: { OR: [{ userAId: user.id }, { userBId: user.id }] },
@@ -182,6 +217,57 @@ export async function GET(req) {
   const knownIds = [...new Set([user.id, ...friendIds, ...followingIds])];
   const excludeIds = knownIds.filter((id) => id !== user.id);
 
+  // Creators this user has muted never show up in any tab. Muting hides
+  // a creator's posts without unfollowing or blocking them, and neither
+  // side is ever notified about it.
+  const mutedRows = await prisma.mutedCreator.findMany({
+    where: { userId: user.id },
+    select: { mutedUserId: true },
+  });
+  const mutedIds = mutedRows.map((m) => m.mutedUserId);
+
+  // ── Trending: engagement-ranked posts from the last 48 hours ───
+  // This is a bounded, single-page list (score isn't something the
+  // database can paginate by cursor), so nextCursor is always null here —
+  // scrolling to the bottom of Trending just won't load more for now.
+  if (tab === "trending") {
+    const cutoff = new Date(Date.now() - TRENDING_WINDOW_HOURS * 60 * 60 * 1000);
+    const where = {
+      isPrivate: false,
+      isDraft: false,
+      createdAt: { gte: cutoff },
+      ...(mutedIds.length ? { authorId: { notIn: mutedIds } } : {}),
+    };
+
+    const rawPosts = await prisma.feedPost.findMany({
+      where,
+      include: {
+        author: { select: FEED_AUTHOR_SELECT },
+        _count: { select: { comments: true } },
+        saves: { where: { userId: user.id }, select: { id: true } },
+      },
+    });
+
+    const authorIds = [...new Set(rawPosts.map((p) => p.authorId))];
+    const authorFollows = await prisma.follow.findMany({
+      where: { followerId: user.id, followingId: { in: authorIds } },
+      select: { followingId: true },
+    });
+    const followedIds = new Set(authorFollows.map((f) => f.followingId));
+
+    const shaped = await shapePosts(rawPosts, user, followedIds);
+    // Score = likes + (comments * 2), weighted toward comments since they
+    // signal deeper engagement than a like.
+    shaped.sort((a, b) => (b.likeCount + b.commentCount * 2) - (a.likeCount + a.commentCount * 2));
+
+    return NextResponse.json({
+      posts: shaped.slice(0, 30),
+      tab,
+      viewerSchool: user.school || null,
+      nextCursor: null,
+    });
+  }
+
   let authorFilter;
   if (tab === "following") {
     authorFilter = { authorId: { in: knownIds } };
@@ -191,21 +277,17 @@ export async function GET(req) {
     authorFilter = user.school
       ? { author: { school: user.school } }
       : { authorId: { in: [] } };
+  } else if (tab === "explore") {
+    // Explore is the true global feed — everyone's public posts, not
+    // filtered down to people you already follow or don't yet know.
+    authorFilter = {};
   } else {
     authorFilter = { OR: [{ authorId: user.id }, { authorId: { notIn: excludeIds } }] };
   }
 
-  // Creators this user has muted never show up in any tab. Muting hides
-  // a creator's posts without unfollowing or blocking them, and neither
-  // side is ever notified about it.
-  const muted = await prisma.mutedCreator.findMany({
-    where: { userId: user.id },
-    select: { mutedUserId: true },
-  });
-  const mutedIds = muted.map((m) => m.mutedUserId);
   const where = mutedIds.length
-    ? { isPrivate: false, AND: [authorFilter, { authorId: { notIn: mutedIds } }] }
-    : { isPrivate: false, ...authorFilter };
+    ? { isPrivate: false, isDraft: false, AND: [authorFilter, { authorId: { notIn: mutedIds } }] }
+    : { isPrivate: false, isDraft: false, ...authorFilter };
 
   const posts = await prisma.feedPost.findMany({
     take: 10,
@@ -226,32 +308,7 @@ export async function GET(req) {
   });
   const followedIds = new Set(authorFollows.map((f) => f.followingId));
 
-  // Who owns the sound each video uses (for the "original sound - name" label)
-  const soundIds = [...new Set(posts.map((p) => p.soundId).filter(Boolean))];
-  const soundSources = soundIds.length
-    ? await prisma.feedPost.findMany({
-        where: { id: { in: soundIds } },
-        select: { id: true, author: { select: SOUND_OWNER_SELECT } },
-      })
-    : [];
-  const soundOwnerById = new Map(soundSources.map((s) => [s.id, s.author]));
-
-  const shaped = posts.map((p) => ({
-    id: p.id,
-    caption: p.caption,
-    mediaUrl: p.mediaUrl,
-    mediaType: p.mediaType,
-    tags: p.tags,
-    createdAt: p.createdAt,
-    author: p.author,
-    soundId: p.soundId || null,
-    soundOwner: p.soundId ? soundOwnerById.get(p.soundId) || null : null,
-    likeCount: p.likedBy.length,
-    likedByMe: p.likedBy.includes(user.id),
-    commentCount: p._count.comments,
-    savedByMe: p.saves.length > 0,
-    followedByMe: p.authorId === user.id ? true : followedIds.has(p.authorId),
-  }));
+  const shaped = await shapePosts(posts, user, followedIds);
 
   return NextResponse.json({
     posts: shaped,
