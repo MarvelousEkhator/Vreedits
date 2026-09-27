@@ -35,6 +35,15 @@ function soundNameFor(author) {
   return `original sound - ${(author?.username || "").toLowerCase()}`;
 }
 
+// mm:ss readout for the video scrubber.
+function formatTime(seconds) {
+  if (!seconds || !isFinite(seconds)) return "0:00";
+  const total = Math.floor(seconds);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
 function Avatar({ user, size = 40 }) {
   if (user?.avatarDataUrl) {
     return <img src={user.avatarDataUrl} alt="" style={{ width: size, height: size, borderRadius: "50%", objectFit: "cover" }} />;
@@ -567,19 +576,35 @@ function PostActionsSheet({ post, open, isOwner, muted, onClose, onDownload, onS
   );
 }
 
-function SoundMarquee({ text }) {
+function SoundMarquee({ text, avatarUser }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 6, maxWidth: "100%" }}>
-      <Music2 size={13} color="white" style={{ flexShrink: 0 }} />
-      <div style={{ overflow: "hidden", flex: 1, minWidth: 0 }}>
+    <div
+      style={{
+        display: "flex", alignItems: "center", gap: 6, maxWidth: "100%", width: "fit-content",
+        background: "rgba(0,0,0,0.35)", borderRadius: 14, padding: "3px 10px 3px 3px",
+      }}
+    >
+      <div
+        style={{
+          width: 18, height: 18, borderRadius: "50%", overflow: "hidden", flexShrink: 0,
+          animation: "vreedits-sound-spin 4s linear infinite",
+        }}
+      >
+        <Avatar user={avatarUser} size={18} />
+      </div>
+      <Music2 size={12} color="white" style={{ flexShrink: 0 }} />
+      <div style={{ overflow: "hidden", flex: 1, minWidth: 0, maxWidth: 160 }}>
         <div style={{ display: "inline-block", whiteSpace: "nowrap", animation: "vreedits-marquee 9s linear infinite" }}>
-          <span style={{ color: "white", fontSize: 13 }}>{text}</span>
-          <span style={{ color: "white", fontSize: 13, padding: "0 20px" }}>•</span>
-          <span style={{ color: "white", fontSize: 13 }}>{text}</span>
-          <span style={{ color: "white", fontSize: 13, padding: "0 20px" }}>•</span>
+          <span style={{ color: "white", fontSize: 12 }}>{text}</span>
+          <span style={{ color: "white", fontSize: 12, padding: "0 16px" }}>•</span>
+          <span style={{ color: "white", fontSize: 12 }}>{text}</span>
+          <span style={{ color: "white", fontSize: 12, padding: "0 16px" }}>•</span>
         </div>
       </div>
-      <style>{`@keyframes vreedits-marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }`}</style>
+      <style>{`
+        @keyframes vreedits-marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+        @keyframes vreedits-sound-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+      `}</style>
     </div>
   );
 }
@@ -1483,6 +1508,8 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
   const touchStartRef = useRef(null);
   const [burst, setBurst] = useState(null);
   const [isPaused, setIsPaused] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
 
   function startPress() {
     pressTimer.current = setTimeout(() => onLongPress(post), 500);
@@ -1529,17 +1556,25 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
     registerVideoRef(post.id, el);
   }
 
+  // Tracks play state plus current time / duration for the scrubber below.
   useEffect(() => {
     const video = videoElRef.current;
     if (!video) return;
     const onPlay = () => setIsPaused(false);
     const onPause = () => setIsPaused(true);
+    const onTimeUpdate = () => setCurrentTime(video.currentTime);
+    const onLoadedMetadata = () => setDuration(video.duration || 0);
     video.addEventListener("play", onPlay);
     video.addEventListener("pause", onPause);
+    video.addEventListener("timeupdate", onTimeUpdate);
+    video.addEventListener("loadedmetadata", onLoadedMetadata);
     setIsPaused(video.paused);
+    if (video.duration) setDuration(video.duration);
     return () => {
       video.removeEventListener("play", onPlay);
       video.removeEventListener("pause", onPause);
+      video.removeEventListener("timeupdate", onTimeUpdate);
+      video.removeEventListener("loadedmetadata", onLoadedMetadata);
     };
   }, [post.mediaType]);
 
@@ -1548,6 +1583,14 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
     if (!video) return;
     if (video.paused) video.play().catch(() => {});
     else video.pause();
+  }
+
+  function handleSeek(e) {
+    const video = videoElRef.current;
+    if (!video) return;
+    const value = parseFloat(e.target.value);
+    video.currentTime = value;
+    setCurrentTime(value);
   }
 
   function handleMediaClick(e) {
@@ -1572,6 +1615,7 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
   // A video made with someone's sound points back to the original post.
   const soundKey = post.soundId || post.id;
   const soundLabel = soundNameFor(post.soundOwner || post.author);
+  const progressPct = duration ? (currentTime / duration) * 100 : 0;
 
   return (
     <div
@@ -1638,60 +1682,145 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
       {burst && <HeartBurst x={burst.x} y={burst.y} />}
 
       {post.mediaType === "video" && isPaused && (
+        <>
+          <div
+            style={{
+              position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
+              zIndex: 2, width: 68, height: 68, borderRadius: "50%",
+              background: "rgba(0,0,0,0.35)", display: "flex", alignItems: "center", justifyContent: "center",
+              pointerEvents: "none",
+            }}
+          >
+            <Play size={30} color="white" fill="white" style={{ marginLeft: 4 }} />
+          </div>
+          {/* Time readout while paused, so you can tell where you are before scrubbing. */}
+          <div
+            style={{
+              position: "absolute", left: 0, right: 0, bottom: 26, zIndex: 2,
+              display: "flex", justifyContent: "center", pointerEvents: "none",
+            }}
+          >
+            <span
+              style={{
+                color: "white", fontSize: 12, fontWeight: 600,
+                background: "rgba(0,0,0,0.5)", padding: "3px 10px", borderRadius: 10,
+              }}
+            >
+              {formatTime(currentTime)} / {formatTime(duration)}
+            </span>
+          </div>
+        </>
+      )}
+
+      {isVideo && (
         <div
-          style={{
-            position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
-            zIndex: 2, width: 68, height: 68, borderRadius: "50%",
-            background: "rgba(0,0,0,0.35)", display: "flex", alignItems: "center", justifyContent: "center",
-            pointerEvents: "none",
-          }}
+          onClick={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          style={{ position: "absolute", left: 0, right: 0, bottom: 0, zIndex: 2, padding: "0 2px" }}
         >
-          <Play size={30} color="white" fill="white" style={{ marginLeft: 4 }} />
+          <input
+            type="range"
+            min={0}
+            max={duration || 0}
+            step={0.05}
+            value={currentTime}
+            onChange={handleSeek}
+            className="vreedits-progress"
+            style={{ "--progress": `${progressPct}%` }}
+            aria-label="Seek video"
+          />
+          <style>{`
+            .vreedits-progress {
+              -webkit-appearance: none;
+              appearance: none;
+              width: 100%;
+              height: 18px;
+              background: transparent;
+              margin: 0;
+              display: block;
+              cursor: pointer;
+            }
+            .vreedits-progress::-webkit-slider-runnable-track {
+              height: 3px;
+              border-radius: 2px;
+              background: linear-gradient(to right, #fff var(--progress), rgba(255,255,255,0.3) var(--progress));
+            }
+            .vreedits-progress::-webkit-slider-thumb {
+              -webkit-appearance: none;
+              width: 11px;
+              height: 11px;
+              border-radius: 50%;
+              background: #fff;
+              margin-top: -4px;
+              box-shadow: 0 0 2px rgba(0,0,0,0.5);
+            }
+            .vreedits-progress::-moz-range-track {
+              height: 3px;
+              border-radius: 2px;
+              background: rgba(255,255,255,0.3);
+            }
+            .vreedits-progress::-moz-range-progress {
+              height: 3px;
+              border-radius: 2px;
+              background: #fff;
+            }
+            .vreedits-progress::-moz-range-thumb {
+              width: 11px;
+              height: 11px;
+              border-radius: 50%;
+              background: #fff;
+              border: none;
+            }
+          `}</style>
         </div>
       )}
 
       <div
         style={{
-          position: "absolute", right: 8, bottom: 16, zIndex: 2,
-          display: "flex", flexDirection: "column", alignItems: "center", gap: 12,
+          position: "absolute", right: 10, bottom: 18, zIndex: 2,
+          display: "flex", flexDirection: "column", alignItems: "center", gap: 16,
         }}
       >
-        <button
-          onClick={(e) => { e.stopPropagation(); onOpenProfile(post.author.id); }}
-          aria-label={`View profile`}
-          style={{ position: "relative", marginBottom: 2, background: "none", border: "none", padding: 0 }}
-        >
-          <Avatar user={post.author} size={36} />
-        </button>
-        {!isOwner && (
+        <div style={{ position: "relative", marginBottom: 6 }}>
           <button
-            onClick={(e) => { e.stopPropagation(); onFollow(post); }}
-            aria-label={post.followedByMe ? "Unfollow" : "Follow"}
-            style={{
-              position: "relative", marginTop: -12, marginBottom: 2,
-              width: 16, height: 16, borderRadius: "50%",
-              background: post.followedByMe ? "var(--surface-2)" : "var(--accent)",
-              color: "white", display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: 11, fontWeight: 700, border: "2px solid #000", lineHeight: 1, padding: 0,
-            }}
+            onClick={(e) => { e.stopPropagation(); onOpenProfile(post.author.id); }}
+            aria-label="View profile"
+            style={{ display: "block", background: "none", border: "none", padding: 0 }}
           >
-            {post.followedByMe ? <Check size={9} /> : "+"}
+            <Avatar user={post.author} size={42} />
           </button>
-        )}
+          {!isOwner && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onFollow(post); }}
+              aria-label={post.followedByMe ? "Unfollow" : "Follow"}
+              style={{
+                position: "absolute", left: "50%", bottom: -8, transform: "translateX(-50%)",
+                width: 20, height: 20, borderRadius: "50%",
+                background: post.followedByMe ? "var(--surface-2)" : "var(--accent)",
+                color: "white", display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 13, fontWeight: 700, border: "2px solid #000", lineHeight: 1, padding: 0,
+              }}
+            >
+              {post.followedByMe ? <Check size={11} /> : "+"}
+            </button>
+          )}
+        </div>
 
-        <button onClick={(e) => { e.stopPropagation(); onLike(post); }} aria-label="Like" style={{ background: "none", border: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-          <Heart size={24} color="white" fill={post.likedByMe ? "#ff4d67" : "none"} stroke={post.likedByMe ? "#ff4d67" : "white"} />
-          <span style={{ color: "white", fontSize: 11, fontWeight: 600 }}>{abbreviateCount(post.likeCount)}</span>
+        <button onClick={(e) => { e.stopPropagation(); onLike(post); }} aria-label="Like" style={{ background: "none", border: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+          <Heart size={26} color="white" fill={post.likedByMe ? "#ff4d67" : "none"} stroke={post.likedByMe ? "#ff4d67" : "white"} />
+          <span style={{ color: "white", fontSize: 12, fontWeight: 600 }}>{abbreviateCount(post.likeCount)}</span>
         </button>
-        <button onClick={(e) => { e.stopPropagation(); onOpenComments(post); }} aria-label="Comments" style={{ background: "none", border: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-          <MessageCircle size={24} color="white" />
-          <span style={{ color: "white", fontSize: 11, fontWeight: 600 }}>{abbreviateCount(post.commentCount)}</span>
+        <button onClick={(e) => { e.stopPropagation(); onOpenComments(post); }} aria-label="Comments" style={{ background: "none", border: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+          <MessageCircle size={26} color="white" />
+          <span style={{ color: "white", fontSize: 12, fontWeight: 600 }}>{abbreviateCount(post.commentCount)}</span>
         </button>
-        <button onClick={(e) => { e.stopPropagation(); onSave(post); }} aria-label="Save" style={{ background: "none", border: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-          <Bookmark size={22} color="white" fill={post.savedByMe ? "white" : "none"} />
+        <button onClick={(e) => { e.stopPropagation(); onSave(post); }} aria-label="Save" style={{ background: "none", border: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+          <Bookmark size={24} color="white" fill={post.savedByMe ? "white" : "none"} />
+          <span style={{ color: "white", fontSize: 12, fontWeight: 600 }}>{abbreviateCount(post.saveCount || 0)}</span>
         </button>
-        <button onClick={(e) => { e.stopPropagation(); onShare(post); }} aria-label="Share" style={{ background: "none", border: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-          <Share2 size={22} color="white" />
+        <button onClick={(e) => { e.stopPropagation(); onShare(post); }} aria-label="Share" style={{ background: "none", border: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+          <Share2 size={24} color="white" />
         </button>
 
         {isVideo && (
@@ -1769,7 +1898,7 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
             aria-label="Open sound"
             style={{ background: "none", border: "none", padding: 0, marginTop: 8, width: "100%", textAlign: "left" }}
           >
-            <SoundMarquee text={soundLabel} />
+            <SoundMarquee text={soundLabel} avatarUser={post.soundOwner || post.author} />
           </button>
         )}
       </div>
