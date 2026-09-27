@@ -17,6 +17,14 @@ const MAX_MEDIA_CHARS = 45_000_000;
 
 const SUGGESTED_TAGS = ["#fyp", "#viral", "#trending", "#foryou", "#vreedits", "#school"];
 
+const FEED_TABS = [
+  { id: "trending", label: "Trending" },
+  { id: "explore", label: "Explore" },
+  { id: "school", label: "School" },
+  { id: "following", label: "Following" },
+  { id: "for-you", label: "For You" },
+];
+
 function abbreviateCount(n) {
   if (n < 1000) return `${n}`;
   if (n < 1_000_000) return `${(n / 1000).toFixed(n % 1000 >= 100 ? 1 : 0)}K`;
@@ -1467,7 +1475,7 @@ function HeartBurst({ x, y }) {
   );
 }
 
-function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onOpenComments, onLongPress, onOpenProfile, onOpenSound, registerVideoRef }) {
+function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onOpenComments, onLongPress, onOpenProfile, onOpenSound, registerVideoRef, onRefresh, refreshing, onCreate }) {
   const pressTimer = useRef(null);
   const lastTapRef = useRef(0);
   const singleTapTimerRef = useRef(null);
@@ -1690,7 +1698,7 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
           <button
             onClick={(e) => { e.stopPropagation(); onOpenSound(soundKey); }}
             aria-label="Open sound"
-            style={{ background: "none", border: "none", padding: 0, marginTop: 4 }}
+            style={{ background: "none", border: "none", padding: 0 }}
           >
             <div
               style={{
@@ -1708,6 +1716,33 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
             </div>
           </button>
         )}
+
+        {/* Refresh + create post now live at the bottom of this same icon
+            column, instead of floating separately over the middle of the
+            video where they used to sit and block the view. */}
+        <button
+          onClick={(e) => { e.stopPropagation(); onRefresh(); }}
+          aria-label="Refresh feed"
+          style={{
+            width: 40, height: 40, borderRadius: "50%",
+            background: "rgba(255,255,255,0.15)", border: "none", color: "white",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}
+        >
+          <RotateCw size={17} className={refreshing ? "animate-spin" : ""} />
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); onCreate(); }}
+          aria-label="Create post"
+          style={{
+            width: 40, height: 40, borderRadius: 10,
+            background: "var(--accent)", border: "none", color: "white",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}
+        >
+          <Plus size={19} />
+        </button>
+
         <style>{`@keyframes vreedits-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
       </div>
 
@@ -2105,17 +2140,16 @@ export default function FeedClient({ user }) {
           </div>
         </div>
 
-        <div className="flex items-center justify-center gap-5 pb-2">
-          {[
-            { id: "school", label: "School" },
-            { id: "following", label: "Following" },
-            { id: "for-you", label: "For You" },
-          ].map((t) => (
+        <div
+          className="flex items-center justify-center gap-4 pb-2"
+          style={{ overflowX: "auto", whiteSpace: "nowrap" }}
+        >
+          {FEED_TABS.map((t) => (
             <button
               key={t.id}
               onClick={() => setActiveTab(t.id)}
               style={{
-                background: "none", border: "none", padding: "4px 0",
+                background: "none", border: "none", padding: "4px 0", flexShrink: 0,
                 fontSize: 14, fontWeight: activeTab === t.id ? 700 : 500,
                 color: activeTab === t.id ? "white" : "rgba(255,255,255,0.6)",
                 borderBottom: activeTab === t.id ? "2px solid white" : "2px solid transparent",
@@ -2161,6 +2195,9 @@ export default function FeedClient({ user }) {
               onOpenProfile={handleOpenProfile}
               onOpenSound={openSound}
               registerVideoRef={registerVideoRef}
+              onRefresh={handleRefresh}
+              refreshing={refreshing}
+              onCreate={openCreate}
             />
           ))}
           {loadingMore && (
@@ -2170,28 +2207,6 @@ export default function FeedClient({ user }) {
           )}
         </div>
       )}
-
-      <div
-        className="flex items-center justify-center gap-3"
-        style={{ position: "absolute", bottom: 100, left: 0, right: 0, zIndex: 10 }}
-      >
-        <button
-          onClick={handleRefresh}
-          aria-label="Refresh feed"
-          className="flex items-center justify-center"
-          style={{ width: 36, height: 36, borderRadius: "50%", background: "rgba(255,255,255,0.15)", border: "none", color: "white" }}
-        >
-          <RotateCw size={15} className={refreshing ? "animate-spin" : ""} />
-        </button>
-        <button
-          onClick={openCreate}
-          aria-label="Create post"
-          className="flex items-center justify-center"
-          style={{ width: 36, height: 36, borderRadius: 10, background: "var(--accent)", border: "none", color: "white" }}
-        >
-          <Plus size={17} />
-        </button>
-      </div>
 
       {commentsPost && (
         <CommentsSheet
