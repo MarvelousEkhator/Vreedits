@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
+import { randomUUID } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/requireUser";
 import { extractHashtags } from "@/lib/hashtags";
+import { ensureSound, resolveSound } from "@/lib/sounds";
 
 // Videos are stored inside the database as base64 text, so keep a ceiling
 // (about 45 million characters, roughly 33 MB of video).
@@ -21,39 +23,22 @@ function soundNameFor(author) {
   return `original sound - ${(author?.username || "").toLowerCase()}`;
 }
 
-// Turns any post id into the ORIGINAL post that owns the sound.
-// (A video made with a sound points back to the original, so favorites and
-// counts always belong to one place.)
-async function resolveSound(postId, viewerId) {
-  if (!postId) return null;
-  let src = await prisma.feedPost.findUnique({
-    where: { id: postId },
-    select: { id: true, soundId: true, authorId: true, isPrivate: true, isDraft: true },
-  });
-  if (!src) return null;
-  if (src.soundId) {
-    const root = await prisma.feedPost.findUnique({
-      where: { id: src.soundId },
-      select: { id: true, soundId: true, authorId: true, isPrivate: true, isDraft: true },
-    });
-    if (root) src = root;
-  }
-  if ((src.isPrivate || src.isDraft) && src.authorId !== viewerId) return null;
-  return src;
-}
-
 // Shared shaping used by every feed tab so the object shape FeedClient.js
 // expects (likeCount, likedByMe, soundOwner, followedByMe, etc.) stays
 // identical no matter which tab produced the posts.
 async function shapePosts(posts, user, followedIds) {
   const soundIds = [...new Set(posts.map((p) => p.soundId).filter(Boolean))];
-  const soundSources = soundIds.length
-    ? await prisma.feedPost.findMany({
-        where: { id: { in: soundIds } },
-        select: { id: true, author: { select: SOUND_OWNER_SELECT } },
-      })
+  const sounds = await Promise.all(soundIds.map((id) => ensureSound(id)));
+  const ownerIds = [...new Set(sounds.filter(Boolean).map((s) => s.authorId))];
+  const owners = ownerIds.length
+    ? await prisma.user.findMany({ where: { id: { in: ownerIds } }, select: SOUND_OWNER_SELECT })
     : [];
-  const soundOwnerById = new Map(soundSources.map((s) => [s.id, s.author]));
+  const ownerByUserId = new Map(owners.map((o) => [o.id, o]));
+  const soundOwnerById = new Map();
+  soundIds.forEach((id, i) => {
+    const s = sounds[i];
+    if (s) soundOwnerById.set(id, ownerByUserId.get(s.authorId) || null);
+  });
 
   return posts.map((p) => ({
     id: p.id,
@@ -79,23 +64,26 @@ export async function GET(req) {
 
   const { searchParams } = new URL(req.url);
 
-  // ── Sound details: /api/feed?sound=POST_ID ────────────────────
+  // ── Sound details: /api/feed?sound=SOUND_OR_POST_ID ───────────
   const soundParam = searchParams.get("sound");
   if (soundParam) {
-    const root = await resolveSound(soundParam, user.id);
-    if (!root) return NextResponse.json({ error: "Sound not available." }, { status: 404 });
+    const soundRow = await resolveSound(soundParam, user.id);
+    if (!soundRow) return NextResponse.json({ error: "Sound not available." }, { status: 404 });
 
     const usesWhere = {
       isPrivate: false,
       isDraft: false,
-      OR: [{ id: root.id }, { soundId: root.id }],
+      OR: [
+        { soundId: soundRow.id },
+        ...(soundRow.sourcePostId ? [{ id: soundRow.sourcePostId }] : []),
+      ],
     };
 
-    const [source, count, uses, favorite] = await Promise.all([
-      prisma.feedPost.findUnique({
-        where: { id: root.id },
-        select: { id: true, mediaUrl: true, mediaType: true, author: { select: LITE_AUTHOR_SELECT } },
-      }),
+    const [author, sourcePost, count, uses, favorite] = await Promise.all([
+      prisma.user.findUnique({ where: { id: soundRow.authorId }, select: LITE_AUTHOR_SELECT }),
+      soundRow.sourcePostId && !soundRow.mediaUrl
+        ? prisma.feedPost.findUnique({ where: { id: soundRow.sourcePostId }, select: { mediaUrl: true } })
+        : null,
       prisma.feedPost.count({ where: usesWhere }),
       prisma.feedPost.findMany({
         where: usesWhere,
@@ -107,23 +95,28 @@ export async function GET(req) {
         },
       }),
       prisma.favoriteSound.findUnique({
-        where: { userId_soundId: { userId: user.id, soundId: root.id } },
+        where: { userId_soundId: { userId: user.id, soundId: soundRow.id } },
       }),
     ]);
 
-    if (!source) return NextResponse.json({ error: "Sound not available." }, { status: 404 });
+    const mediaUrl = soundRow.mediaUrl || sourcePost?.mediaUrl || null;
+    if (!author || !mediaUrl) {
+      return NextResponse.json({ error: "Sound not available." }, { status: 404 });
+    }
 
     return NextResponse.json({
       sound: {
-        id: source.id,
-        name: soundNameFor(source.author),
-        author: source.author,
-        mediaUrl: source.mediaUrl,
-        count: Math.max(count, 1),
+        id: soundRow.id,
+        name: soundNameFor(author),
+        author,
+        mediaUrl,
+        count,
         favorited: !!favorite,
       },
       // The original video's media is only sent once (in `sound`), not twice.
-      posts: uses.map((p) => (p.id === source.id ? { ...p, mediaUrl: null, isSource: true } : p)),
+      posts: uses.map((p) =>
+        p.id === soundRow.sourcePostId ? { ...p, mediaUrl: null, isSource: true } : p
+      ),
     });
   }
 
@@ -134,17 +127,27 @@ export async function GET(req) {
       orderBy: { createdAt: "desc" },
       take: 50,
     });
-    const sources = favs.length
-      ? await prisma.feedPost.findMany({
-          where: { id: { in: favs.map((f) => f.soundId) } },
-          select: { id: true, authorId: true, isPrivate: true, author: { select: LITE_AUTHOR_SELECT } },
-        })
+
+    const resolved = await Promise.all(favs.map((f) => resolveSound(f.soundId, user.id)));
+    const seen = new Set();
+    const list = resolved.filter((s) => {
+      if (!s || seen.has(s.id)) return false;
+      seen.add(s.id);
+      return true;
+    });
+
+    const authorIds = [...new Set(list.map((s) => s.authorId))];
+    const authors = authorIds.length
+      ? await prisma.user.findMany({ where: { id: { in: authorIds } }, select: LITE_AUTHOR_SELECT })
       : [];
-    const byId = new Map(sources.map((s) => [s.id, s]));
-    const sounds = favs
-      .map((f) => byId.get(f.soundId))
-      .filter((s) => s && (!s.isPrivate || s.authorId === user.id))
-      .map((s) => ({ id: s.id, name: soundNameFor(s.author), author: s.author }));
+    const authorById = new Map(authors.map((a) => [a.id, a]));
+
+    const sounds = list
+      .filter((s) => authorById.has(s.authorId))
+      .map((s) => {
+        const author = authorById.get(s.authorId);
+        return { id: s.id, name: soundNameFor(author), author };
+      });
     return NextResponse.json({ sounds });
   }
 
@@ -366,15 +369,21 @@ export async function POST(req) {
     soundRoot = await resolveSound(soundId, user.id);
   }
 
+  // Every video belongs to a Sound: either the one it reuses, or a brand
+  // new one that starts with this video (same id as the post).
+  const postId = randomUUID();
+  const finalSoundId = finalType === "video" ? (soundRoot ? soundRoot.id : postId) : null;
+
   const post = await prisma.feedPost.create({
     data: {
+      id: postId,
       authorId: user.id,
       caption: caption?.trim() || null,
       mediaUrl: mediaUrl || null,
       mediaType: finalType,
       isPrivate: !!isPrivate,
       isDraft: !!isDraft,
-      soundId: soundRoot ? soundRoot.id : null,
+      soundId: finalSoundId,
       tags,
     },
     include: {
@@ -382,13 +391,22 @@ export async function POST(req) {
     },
   });
 
+  if (finalType === "video" && !soundRoot) {
+    try {
+      await prisma.sound.create({
+        data: { id: postId, authorId: user.id, sourcePostId: postId },
+      });
+    } catch {
+      // Already created by a lookup a moment ago — that's fine.
+    }
+  }
+
   let soundOwner = null;
   if (soundRoot) {
-    const srcPost = await prisma.feedPost.findUnique({
-      where: { id: soundRoot.id },
-      select: { author: { select: SOUND_OWNER_SELECT } },
+    soundOwner = await prisma.user.findUnique({
+      where: { id: soundRoot.authorId },
+      select: SOUND_OWNER_SELECT,
     });
-    soundOwner = srcPost?.author || null;
   }
 
   return NextResponse.json({
