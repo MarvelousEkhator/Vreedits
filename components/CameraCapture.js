@@ -11,12 +11,6 @@ const MODES = [
 const RING_RADIUS = 40;
 const RING_LENGTH = 2 * Math.PI * RING_RADIUS;
 
-// A recorded clip under this size is effectively empty (no real video data) —
-// this happens when start/stop are tapped almost instantly, before the
-// recorder has produced its first chunk. Treat it as a failed capture rather
-// than handing back a broken, unplayable video.
-const MIN_VALID_RECORDING_BYTES = 2000;
-
 function pickMimeType() {
   if (typeof MediaRecorder === "undefined" || !MediaRecorder.isTypeSupported) return "";
   const types = [
@@ -63,6 +57,36 @@ function thumbFromVideoFile(dataUrl) {
     v.onerror = () => finish(null);
     setTimeout(() => finish(null), 3000);
     v.src = dataUrl;
+  });
+}
+
+// Checks whether a just-recorded blob actually has real video data in it,
+// rather than judging it by duration or file size. A clip that's only a
+// fraction of a second long is still perfectly valid (TikTok allows this
+// too) as long as it has real frame dimensions; the only thing worth
+// rejecting is a recording that produced no usable video track at all,
+// which is what caused the broken 0:00 player before this check existed.
+function blobHasPlayableVideo(blob) {
+  return new Promise((resolve) => {
+    if (!blob || blob.size === 0) {
+      resolve(false);
+      return;
+    }
+    const url = URL.createObjectURL(blob);
+    const v = document.createElement("video");
+    let done = false;
+    const finish = (ok) => {
+      if (done) return;
+      done = true;
+      URL.revokeObjectURL(url);
+      resolve(ok);
+    };
+    v.preload = "metadata";
+    v.muted = true;
+    v.onloadedmetadata = () => finish(v.videoWidth > 0 && v.videoHeight > 0);
+    v.onerror = () => finish(false);
+    setTimeout(() => finish(false), 4000);
+    v.src = url;
   });
 }
 
@@ -268,26 +292,26 @@ export default function CameraCapture({ onCapture, onClose, sound = null, onPick
         teardownSound();
         if (discardRef.current) return;
 
+        const thumb = frameFromVideo(videoRef.current);
         const blob = new Blob(chunksRef.current, { type: recorder.mimeType || mimeType || "video/webm" });
 
-        // A clip this small has no real video data — usually caused by
-        // tapping stop almost immediately after start, before the recorder
-        // produced its first chunk. Handing this back would silently break
-        // the preview/post flow later, so fail loudly here instead and let
-        // the camera stay open for another try.
-        if (blob.size < MIN_VALID_RECORDING_BYTES) {
-          setElapsed(0);
-          showError("That recording was too short. Hold it a little longer and try again.");
-          return;
-        }
-
-        const thumb = frameFromVideo(videoRef.current);
-        const reader = new FileReader();
-        reader.onload = () => {
-          setLastThumb(thumb || null);
-          onCapture({ mediaUrl: reader.result, mediaType: "video", thumbUrl: thumb || null });
-        };
-        reader.readAsDataURL(blob);
+        // Confirm the blob actually decodes into a real video before handing
+        // it off — a clip lasting a fraction of a second is fine and should
+        // go through just like it does on TikTok; only a truly empty/corrupt
+        // recording (no frames at all) gets rejected here.
+        blobHasPlayableVideo(blob).then((ok) => {
+          if (discardRef.current) return;
+          if (!ok) {
+            showError("That recording didn't save properly. Try again.");
+            return;
+          }
+          const reader = new FileReader();
+          reader.onload = () => {
+            setLastThumb(thumb || null);
+            onCapture({ mediaUrl: reader.result, mediaType: "video", thumbUrl: thumb || null });
+          };
+          reader.readAsDataURL(blob);
+        });
       };
 
       recorder.start(250);
