@@ -28,17 +28,17 @@ async function resolveSound(postId, viewerId) {
   if (!postId) return null;
   let src = await prisma.feedPost.findUnique({
     where: { id: postId },
-    select: { id: true, soundId: true, authorId: true, isPrivate: true },
+    select: { id: true, soundId: true, authorId: true, isPrivate: true, isDraft: true },
   });
   if (!src) return null;
   if (src.soundId) {
     const root = await prisma.feedPost.findUnique({
       where: { id: src.soundId },
-      select: { id: true, soundId: true, authorId: true, isPrivate: true },
+      select: { id: true, soundId: true, authorId: true, isPrivate: true, isDraft: true },
     });
     if (root) src = root;
   }
-  if (src.isPrivate && src.authorId !== viewerId) return null;
+  if ((src.isPrivate || src.isDraft) && src.authorId !== viewerId) return null;
   return src;
 }
 
@@ -349,8 +349,8 @@ export async function POST(req) {
     return NextResponse.json({ ok: true, favorited: true });
   }
 
-  // ── Create a post ─────────────────────────────────────────────
-  const { caption, mediaUrl, mediaType, isPrivate, soundId } = body || {};
+  // ── Create a post (or save it as a draft) ─────────────────────
+  const { caption, mediaUrl, mediaType, isPrivate, soundId, isDraft } = body || {};
   if (!caption?.trim() && !mediaUrl) {
     return NextResponse.json({ error: "Add a caption or an image first." }, { status: 400 });
   }
@@ -373,6 +373,7 @@ export async function POST(req) {
       mediaUrl: mediaUrl || null,
       mediaType: finalType,
       isPrivate: !!isPrivate,
+      isDraft: !!isDraft,
       soundId: soundRoot ? soundRoot.id : null,
       tags,
     },
@@ -399,6 +400,7 @@ export async function POST(req) {
       mediaType: post.mediaType,
       tags: post.tags,
       isPrivate: post.isPrivate,
+      isDraft: post.isDraft,
       createdAt: post.createdAt,
       author: post.author,
       soundId: post.soundId || null,
