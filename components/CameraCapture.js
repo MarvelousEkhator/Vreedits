@@ -22,6 +22,16 @@ function pickMimeType() {
   return types.find((t) => MediaRecorder.isTypeSupported(t)) || "";
 }
 
+// Read a File into a data URL.
+function readAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
 // Grab a small JPEG frame from a playing/loaded <video> element.
 function frameFromVideo(video, maxWidth = 480) {
   try {
@@ -111,11 +121,25 @@ function ToolButton({ icon, label, onClick, active }) {
 
 // Props:
 //   onCapture({ mediaUrl, mediaType, thumbUrl })  - called with the photo/video
+//   onCaptureMany([{ mediaUrl, mediaType: "image", thumbUrl }, ...]) (optional)
+//       - when provided, the gallery picker allows selecting several photos
+//         at once (like TikTok) and every gallery photo pick goes here, even
+//         when only one photo is chosen. Videos still go through onCapture,
+//         one at a time, and are never mixed with photos.
+//   maxImages (optional, default 4) - cap for a multi-photo selection
 //   onClose()                                     - user closed the camera
 //   sound (optional)        { id, name, mediaUrl } - a sound to record with
 //   onPickSound (optional)  - shows the "Add sound" pill and calls this when tapped
 //   onRemoveSound (optional) - shows an x on the pill to remove the sound
-export default function CameraCapture({ onCapture, onClose, sound = null, onPickSound, onRemoveSound }) {
+export default function CameraCapture({
+  onCapture,
+  onCaptureMany,
+  maxImages = 4,
+  onClose,
+  sound = null,
+  onPickSound,
+  onRemoveSound,
+}) {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const recorderRef = useRef(null);
@@ -142,6 +166,7 @@ export default function CameraCapture({ onCapture, onClose, sound = null, onPick
   const mode = MODES.find((m) => m.id === modeId) || MODES[0];
   const isPhoto = mode.id === "photo";
   const hasSound = !!sound?.mediaUrl;
+  const multiEnabled = typeof onCaptureMany === "function";
   // With a sound attached the mic is off; the sound is the audio track.
   const wantAudio = !isPhoto && !hasSound;
 
@@ -388,19 +413,45 @@ export default function CameraCapture({ onCapture, onClose, sound = null, onPick
     onClose();
   }
 
-  function handleGalleryPick(e) {
-    const file = e.target.files?.[0];
+  async function handleGalleryPick(e) {
+    const files = Array.from(e.target.files || []);
     e.target.value = "";
-    if (!file) return;
-    const isVideo = file.type.startsWith("video/");
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const dataUrl = reader.result;
-      const thumb = isVideo ? await thumbFromVideoFile(dataUrl) : dataUrl;
-      setLastThumb(thumb);
-      onCapture({ mediaUrl: dataUrl, mediaType: isVideo ? "video" : "image", thumbUrl: thumb });
-    };
-    reader.readAsDataURL(file);
+    if (files.length === 0) return;
+
+    try {
+      // A video always goes through on its own (first video wins), like TikTok:
+      // you can pick many photos, or one video, but not a mix.
+      const videoFile = files.find((f) => f.type.startsWith("video/"));
+      if (videoFile) {
+        const dataUrl = await readAsDataUrl(videoFile);
+        const thumb = await thumbFromVideoFile(dataUrl);
+        setLastThumb(thumb);
+        onCapture({ mediaUrl: dataUrl, mediaType: "video", thumbUrl: thumb });
+        return;
+      }
+
+      const imageFiles = files.filter((f) => f.type.startsWith("image/"));
+      if (imageFiles.length === 0) return;
+
+      if (multiEnabled) {
+        const limit = Math.max(1, maxImages);
+        const chosen = imageFiles.slice(0, limit);
+        // Promise.all keeps the order the user selected them in.
+        const dataUrls = await Promise.all(chosen.map(readAsDataUrl));
+        setLastThumb(dataUrls[0]);
+        onCaptureMany(
+          dataUrls.map((url) => ({ mediaUrl: url, mediaType: "image", thumbUrl: url }))
+        );
+        return;
+      }
+
+      // Single-select behavior (no onCaptureMany provided): use the first image.
+      const dataUrl = await readAsDataUrl(imageFiles[0]);
+      setLastThumb(dataUrl);
+      onCapture({ mediaUrl: dataUrl, mediaType: "image", thumbUrl: dataUrl });
+    } catch {
+      showError("Couldn't load that from your gallery. Try again.");
+    }
   }
 
   const progress = mode.seconds ? Math.min(1, elapsed / mode.seconds) : 0;
@@ -609,7 +660,7 @@ export default function CameraCapture({ onCapture, onClose, sound = null, onPick
               <button
                 type="button"
                 onClick={() => galleryInputRef.current?.click()}
-                aria-label="Upload from gallery"
+                aria-label={multiEnabled ? "Upload photos from gallery" : "Upload from gallery"}
                 style={{
                   position: "absolute", right: 22, background: "none", border: "none", padding: 0,
                   display: "flex", flexDirection: "column", alignItems: "center", gap: 4, color: "white",
@@ -638,6 +689,7 @@ export default function CameraCapture({ onCapture, onClose, sound = null, onPick
           ref={galleryInputRef}
           type="file"
           accept="image/*,video/*"
+          multiple={multiEnabled}
           onChange={handleGalleryPick}
           style={{ display: "none" }}
         />
