@@ -1927,6 +1927,7 @@ export default function FeedClient({ user }) {
   const overlayDepthRef = useRef(0);
   const hasInteractedRef = useRef(false);
   const scrollRef = useRef(null);
+  const tabsRef = useRef(null);
   const videoRefsMap = useRef(new Map());
   const observerRef = useRef(null);
 
@@ -1939,13 +1940,17 @@ export default function FeedClient({ user }) {
     setMuted(false);
   }
 
-  // Feed is a bottom-tab home screen with nothing "above" it to return to
-  // in this app's structure — so this goes to the quieter dashboard hub
-  // rather than using router.back(), which can land on a stale or wrong
-  // screen depending on how the person navigated in.
-  function handleExit() {
-    router.push("/dashboard");
-  }
+  // Keeps the active tab in view in the tab row. This is what makes
+  // "For You" (the default) visible on narrow phone screens instead of
+  // being cut off at the right edge.
+  useEffect(() => {
+    const row = tabsRef.current;
+    if (!row) return;
+    const active = row.querySelector('[data-tab-active="true"]');
+    if (!active) return;
+    const target = active.offsetLeft - (row.clientWidth - active.clientWidth) / 2;
+    row.scrollTo({ left: Math.max(0, target), behavior: "smooth" });
+  }, [activeTab]);
 
   function handleLongPress(post) {
     const video = videoRefsMap.current.get(post.id);
@@ -2233,18 +2238,11 @@ export default function FeedClient({ user }) {
       <div
         style={{
           position: "absolute", top: 0, left: 0, right: 0, zIndex: 10,
-          background: "linear-gradient(to bottom, rgba(0,0,0,0.55), rgba(0,0,0,0))",
+          background: "linear-gradient(to bottom, rgba(0,0,0,0.7), rgba(0,0,0,0.35) 60%, rgba(0,0,0,0))",
         }}
       >
         <div className="flex items-center justify-between px-4" style={{ height: 56 }}>
           <div className="flex items-center gap-3">
-            <button
-              onClick={handleExit}
-              aria-label="Exit feed"
-              style={{ background: "none", border: "none", color: "white" }}
-            >
-              <ArrowLeft size={22} />
-            </button>
             <Link href="/profile" aria-label="My Profile" style={{ background: "none", border: "none", color: "white" }}>
               <UserIcon size={22} />
             </Link>
@@ -2269,24 +2267,34 @@ export default function FeedClient({ user }) {
           </div>
         </div>
 
+        {/* Tab row: centers when everything fits, and starts from the left
+            (scrollable) when it doesn't, so no tab is ever cut off. */}
         <div
-          className="flex items-center justify-center gap-4 pb-2"
-          style={{ overflowX: "auto", whiteSpace: "nowrap" }}
+          ref={tabsRef}
+          className="pb-2"
+          style={{
+            display: "flex", overflowX: "auto", whiteSpace: "nowrap",
+            scrollbarWidth: "none", msOverflowStyle: "none",
+          }}
         >
-          {FEED_TABS.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setActiveTab(t.id)}
-              style={{
-                background: "none", border: "none", padding: "4px 0", flexShrink: 0,
-                fontSize: 14, fontWeight: activeTab === t.id ? 700 : 500,
-                color: activeTab === t.id ? "white" : "rgba(255,255,255,0.6)",
-                borderBottom: activeTab === t.id ? "2px solid white" : "2px solid transparent",
-              }}
-            >
-              {t.label}
-            </button>
-          ))}
+          <div style={{ display: "flex", alignItems: "center", gap: 20, margin: "0 auto", padding: "0 16px", flexShrink: 0 }}>
+            {FEED_TABS.map((t) => (
+              <button
+                key={t.id}
+                data-tab-active={activeTab === t.id ? "true" : "false"}
+                onClick={() => setActiveTab(t.id)}
+                style={{
+                  background: "none", border: "none", padding: "4px 0", flexShrink: 0,
+                  fontSize: 14, fontWeight: activeTab === t.id ? 700 : 500,
+                  color: activeTab === t.id ? "white" : "rgba(255,255,255,0.75)",
+                  borderBottom: activeTab === t.id ? "2px solid white" : "2px solid transparent",
+                  textShadow: "0 1px 4px rgba(0,0,0,0.8)",
+                }}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
