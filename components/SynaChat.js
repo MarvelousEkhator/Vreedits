@@ -6,6 +6,7 @@ import {
   ArrowLeft, Send, Loader2, AlertCircle,
   History, Plus, Trash2, X, MessageSquare, Paperclip, Camera, ImageIcon,
   File as FileIcon, Copy, Check, ThumbsUp, ThumbsDown, Share2, Home, Pin, Pencil,
+  Download,
 } from "lucide-react";
 import MarkdownText from "@/components/MarkdownText";
 import GlossIcon from "@/components/GlossIcon";
@@ -103,17 +104,37 @@ function isImage(att) {
   return att.type?.startsWith("image/") || /^data:image\//i.test(att.dataUrl || "");
 }
 
-function AttachmentGrid({ attachments, bubbleText }) {
+// Saves a data URL straight to the device instead of relying on the
+// browser's long-press "Save image" menu. Works the same way for both
+// user-picked attachments and Syna's generated images since both arrive
+// as data URLs already.
+function downloadDataUrl(dataUrl, name) {
+  const a = document.createElement("a");
+  a.href = dataUrl;
+  a.download = name || "syna-image.jpg";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+function AttachmentGrid({ attachments, bubbleText, onImageClick }) {
   if (attachments.length === 0) return null;
 
   if (attachments.length === 1) {
     const att = attachments[0];
     return isImage(att) ? (
-      <img
-        src={att.dataUrl}
-        alt={att.name}
-        style={{ maxWidth: "100%", borderRadius: 10, marginBottom: bubbleText ? 8 : 0, display: "block" }}
-      />
+      <button
+        type="button"
+        onClick={() => onImageClick && onImageClick(att)}
+        style={{ display: "block", width: "100%", background: "none", border: "none", padding: 0, marginBottom: bubbleText ? 8 : 0 }}
+        aria-label="Open image"
+      >
+        <img
+          src={att.dataUrl}
+          alt={att.name}
+          style={{ maxWidth: "100%", borderRadius: 10, display: "block" }}
+        />
+      </button>
     ) : (
       <div
         className="flex items-center gap-2"
@@ -135,12 +156,19 @@ function AttachmentGrid({ attachments, bubbleText }) {
     >
       {attachments.map((att, idx) =>
         isImage(att) ? (
-          <img
+          <button
             key={idx}
-            src={att.dataUrl}
-            alt={att.name}
-            style={{ width: "100%", aspectRatio: "1 / 1", objectFit: "cover", borderRadius: 8, display: "block" }}
-          />
+            type="button"
+            onClick={() => onImageClick && onImageClick(att)}
+            style={{ background: "none", border: "none", padding: 0, display: "block" }}
+            aria-label="Open image"
+          >
+            <img
+              src={att.dataUrl}
+              alt={att.name}
+              style={{ width: "100%", aspectRatio: "1 / 1", objectFit: "cover", borderRadius: 8, display: "block" }}
+            />
+          </button>
         ) : (
           <div
             key={idx}
@@ -151,6 +179,70 @@ function AttachmentGrid({ attachments, bubbleText }) {
           </div>
         )
       )}
+    </div>
+  );
+}
+
+// Full-screen tap-to-view for an image, with a direct download button so
+// people don't have to fall back on Chrome's long-press "Download image".
+function ImageViewer({ attachment, onClose }) {
+  const { t } = useLanguage();
+  if (!attachment) return null;
+
+  function handleDownload() {
+    downloadDataUrl(attachment.dataUrl, attachment.name || "syna-image.jpg");
+  }
+
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, zIndex: 400, background: "rgba(0,0,0,0.92)",
+        display: "flex", flexDirection: "column",
+      }}
+    >
+      <div
+        className="flex items-center justify-end px-4"
+        style={{ height: 56, flexShrink: 0, paddingTop: "env(safe-area-inset-top, 0px)" }}
+      >
+        <button
+          onClick={onClose}
+          aria-label={t("chat.close")}
+          style={{
+            width: 36, height: 36, borderRadius: "50%", background: "rgba(255,255,255,0.15)",
+            border: "none", color: "white", display: "flex", alignItems: "center", justifyContent: "center",
+          }}
+        >
+          <X size={20} />
+        </button>
+      </div>
+
+      <div
+        onClick={onClose}
+        style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 12px" }}
+      >
+        <img
+          src={attachment.dataUrl}
+          alt={attachment.name || ""}
+          onClick={(e) => e.stopPropagation()}
+          style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", borderRadius: 8 }}
+        />
+      </div>
+
+      <div
+        className="flex justify-center"
+        style={{ padding: "16px 0", paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 16px)", flexShrink: 0 }}
+      >
+        <button
+          onClick={handleDownload}
+          className="flex items-center gap-2"
+          style={{
+            background: "var(--accent)", color: "white", border: "none", borderRadius: 24,
+            padding: "12px 22px", fontSize: 14, fontWeight: 600,
+          }}
+        >
+          <Download size={16} /> {t("chat.download") || "Download"}
+        </button>
+      </div>
     </div>
   );
 }
@@ -232,6 +324,7 @@ function SynaChatInner() {
   const [renamingId, setRenamingId] = useState(null);
   const [renameValue, setRenameValue] = useState("");
   const [fallbackActive, setFallbackActive] = useState(false);
+  const [viewerImage, setViewerImage] = useState(null);
 
   const [timerEndAt, setTimerEndAt] = useState(null);
   const [timerRemaining, setTimerRemaining] = useState(0);
@@ -622,7 +715,7 @@ function SynaChatInner() {
                 wordBreak: "break-word",
               }}
             >
-              <AttachmentGrid attachments={attachmentsOf(m)} bubbleText={m.text} />
+              <AttachmentGrid attachments={attachmentsOf(m)} bubbleText={m.text} onImageClick={setViewerImage} />
               {m.text && (
                 <span style={{ fontSize: 14, lineHeight: 1.5, overflowWrap: "anywhere", wordBreak: "break-word" }}>
                   {m.text}
@@ -641,7 +734,7 @@ function SynaChatInner() {
                 wordBreak: "break-word",
               }}
             >
-              <AttachmentGrid attachments={attachmentsOf(m)} bubbleText={m.text} />
+              <AttachmentGrid attachments={attachmentsOf(m)} bubbleText={m.text} onImageClick={setViewerImage} />
               {m.text && (
                 <>
                   <MarkdownText text={m.text} />
@@ -902,6 +995,8 @@ function SynaChatInner() {
           ))}
         </div>
       </div>
+
+      <ImageViewer attachment={viewerImage} onClose={() => setViewerImage(null)} />
     </div>
   );
 }
