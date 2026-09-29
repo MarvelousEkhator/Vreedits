@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/requireUser";
 import { extractHashtags } from "@/lib/hashtags";
+import { releaseSoundForPost } from "@/lib/sounds";
 
 const LITE_AUTHOR_SELECT = { id: true, username: true, displayName: true, avatarDataUrl: true };
 
@@ -115,10 +116,13 @@ export async function DELETE(req) {
   if (!id) return NextResponse.json({ error: "Missing draft id." }, { status: 400 });
 
   // Only ever deletes drafts, never a published post.
-  const result = await prisma.feedPost.deleteMany({
+  const draft = await prisma.feedPost.findFirst({
     where: { id, authorId: user.id, isDraft: true },
   });
-  if (result.count === 0) return NextResponse.json({ error: "Draft not found." }, { status: 404 });
+  if (!draft) return NextResponse.json({ error: "Draft not found." }, { status: 404 });
+
+  await releaseSoundForPost(draft);
+  await prisma.feedPost.delete({ where: { id: draft.id } });
 
   return NextResponse.json({ ok: true });
 }
