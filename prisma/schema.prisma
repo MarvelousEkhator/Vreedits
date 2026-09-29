@@ -1062,3 +1062,13 @@ model MutedCreator {
 
   @@unique([userId, mutedUserId])
 }
+model Sound {
+  id           String   @id
+  authorId     String
+  sourcePostId String?
+  mediaUrl     String?  @db.Text
+  createdAt    DateTime @default(now())
+
+  @@index([authorId])
+  @@index([sourcePostId])
+}
