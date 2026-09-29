@@ -917,6 +917,128 @@ function SoundPicker({ onSelect, onClose }) {
   );
 }
 
+// Lists the person's saved drafts. Tap one to keep editing it, or use the
+// trash icon to delete it. Videos aren't loaded in the list (they're big);
+// the full draft is fetched when you open it.
+function DraftsPicker({ onOpen, onClose }) {
+  const [drafts, setDrafts] = useState(null);
+  const [busyId, setBusyId] = useState(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    fetch("/api/feed/drafts")
+      .then((r) => r.json())
+      .then((d) => setDrafts(d.drafts || []))
+      .catch(() => setDrafts([]));
+  }, []);
+
+  async function open(d) {
+    if (busyId) return;
+    setBusyId(d.id);
+    setError("");
+    const message = await onOpen(d.id);
+    if (message) {
+      setError(message);
+      setBusyId(null);
+    }
+  }
+
+  async function remove(d) {
+    if (busyId) return;
+    if (!window.confirm("Delete this draft? This can't be undone.")) return;
+    setBusyId(d.id);
+    setError("");
+    try {
+      const res = await fetch(`/api/feed/drafts?id=${encodeURIComponent(d.id)}`, { method: "DELETE" });
+      if (res.ok) setDrafts((prev) => (prev || []).filter((x) => x.id !== d.id));
+      else setError("Couldn't delete that draft.");
+    } catch {
+      setError("Couldn't delete that draft.");
+    }
+    setBusyId(null);
+  }
+
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, zIndex: 540,
+        background: "var(--surface)", color: "var(--text)",
+        display: "flex", flexDirection: "column",
+      }}
+    >
+      <div
+        className="flex items-center gap-3 px-4"
+        style={{ height: 56, borderBottom: "1px solid var(--border)", flexShrink: 0 }}
+      >
+        <button onClick={onClose} aria-label="Back" style={{ background: "none", border: "none", color: "var(--text)" }}>
+          <ArrowLeft size={22} />
+        </button>
+        <h2 className="text-sm font-semibold">Drafts</h2>
+      </div>
+
+      <div className="p-4" style={{ flex: 1, overflowY: "auto" }}>
+        {error && <div className="alert alert-error mb-3">{error}</div>}
+
+        {drafts === null && (
+          <div className="flex justify-center py-10" style={{ color: "var(--text-muted)" }}>
+            <Loader2 size={20} className="animate-spin" />
+          </div>
+        )}
+
+        {drafts && drafts.length === 0 && (
+          <p className="text-sm text-center py-10" style={{ color: "var(--text-muted)" }}>
+            No drafts yet. On the Post screen, tap Save draft.
+          </p>
+        )}
+
+        {drafts && drafts.map((d) => (
+          <div
+            key={d.id}
+            className="flex items-center gap-3"
+            style={{ padding: "8px 0", borderBottom: "1px solid var(--border)" }}
+          >
+            <button
+              onClick={() => open(d)}
+              className="flex items-center gap-3"
+              style={{ flex: 1, minWidth: 0, background: "none", border: "none", padding: 0, textAlign: "left", color: "var(--text)" }}
+            >
+              <div
+                style={{
+                  width: 48, height: 64, borderRadius: 8, overflow: "hidden", flexShrink: 0,
+                  background: "#000", display: "flex", alignItems: "center", justifyContent: "center",
+                }}
+              >
+                {d.mediaUrl && d.mediaType === "image" ? (
+                  <img src={d.mediaUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                ) : d.hasMedia ? (
+                  <Play size={18} color="white" fill="white" />
+                ) : null}
+              </div>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div className="text-sm font-semibold" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {d.caption || "No caption"}
+                </div>
+                <div className="text-xs" style={{ color: "var(--text-muted)" }}>
+                  {d.mediaType === "video" ? "Video" : d.hasMedia ? "Photo" : "Text"} · {new Date(d.createdAt).toLocaleDateString()}
+                  {d.isPrivate ? " · Only me" : ""}
+                </div>
+              </div>
+              {busyId === d.id && <Loader2 size={16} className="animate-spin" />}
+            </button>
+            <button
+              onClick={() => remove(d)}
+              aria-label="Delete draft"
+              style={{ background: "none", border: "none", color: "var(--danger, #e55)", padding: 8 }}
+            >
+              <Trash2 size={18} />
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function SearchOverlay({ onClose, onOpenProfile, onOpenSound }) {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
@@ -1187,8 +1309,11 @@ function CreatePostModal({ open, onClose, onCreated, user, initialSound }) {
   const [visibility, setVisibility] = useState("everyone");
   const [cameraOpen, setCameraOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [draftsOpen, setDraftsOpen] = useState(false);
+  const [draftId, setDraftId] = useState(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [posting, setPosting] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
   const [error, setError] = useState("");
   const captionRef = useRef(null);
 
@@ -1199,8 +1324,11 @@ function CreatePostModal({ open, onClose, onCreated, user, initialSound }) {
     setVisibility("everyone");
     setCameraOpen(false);
     setPickerOpen(false);
+    setDraftsOpen(false);
+    setDraftId(null);
     setPreviewOpen(false);
     setPosting(false);
+    setSavingDraft(false);
     setError("");
   }
 
@@ -1215,18 +1343,42 @@ function CreatePostModal({ open, onClose, onCreated, user, initialSound }) {
 
   function handleCaptured(result) {
     setMedia(result);
+    setDraftId(null);
     setCameraOpen(false);
     if (result.mediaType !== "video") setSound(null);
   }
 
   function handleRetake() {
     setMedia(null);
+    setDraftId(null);
     setCameraOpen(true);
   }
 
   function handleClose() {
     resetAll();
     onClose();
+  }
+
+  // Loads a saved draft into the Post screen so it can be edited or published.
+  // Returns an error message (string) if it fails, or null on success.
+  async function openDraft(id) {
+    try {
+      const res = await fetch(`/api/feed/drafts?id=${encodeURIComponent(id)}`);
+      const json = await res.json();
+      if (!res.ok || !json.draft) return json.error || "Couldn't open that draft.";
+      const d = json.draft;
+      setMedia(d.mediaUrl ? { mediaUrl: d.mediaUrl, mediaType: d.mediaType } : null);
+      setCaption(d.caption || "");
+      setVisibility(d.isPrivate ? "me" : "everyone");
+      setSound(null);
+      setDraftId(d.id);
+      setError("");
+      setDraftsOpen(false);
+      setCameraOpen(false);
+      return null;
+    } catch {
+      return "Couldn't open that draft.";
+    }
   }
 
   function addToCaption(text, focus) {
@@ -1243,17 +1395,54 @@ function CreatePostModal({ open, onClose, onCreated, user, initialSound }) {
   }
 
   async function handlePost() {
-    if (posting) return;
+    if (posting || savingDraft) return;
     if (!caption.trim() && !media) {
       setError("Add a caption or capture something first.");
       return;
     }
-    if (media?.mediaUrl && media.mediaUrl.length > MAX_MEDIA_CHARS) {
-      setError("This file is too big. Try a shorter video.");
-      return;
-    }
     setPosting(true);
     setError("");
+
+    // Publishing a draft that was already saved.
+    if (draftId) {
+      try {
+        const res = await fetch("/api/feed/drafts", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: draftId, caption, isPrivate: visibility === "me", publish: true }),
+        });
+        let data = {};
+        try { data = await res.json(); } catch {}
+        if (!res.ok) {
+          setError(data.error || "Could not post.");
+          setPosting(false);
+          return;
+        }
+        onCreated({
+          ...data.post,
+          mediaUrl: media?.mediaUrl || null,
+          soundId: null,
+          soundOwner: null,
+          likeCount: 0,
+          likedByMe: false,
+          commentCount: 0,
+          savedByMe: false,
+          followedByMe: true,
+        });
+        resetAll();
+        onClose();
+      } catch {
+        setError("Could not post. Check your connection and try again.");
+        setPosting(false);
+      }
+      return;
+    }
+
+    if (media?.mediaUrl && media.mediaUrl.length > MAX_MEDIA_CHARS) {
+      setError("This file is too big. Try a shorter video.");
+      setPosting(false);
+      return;
+    }
     try {
       const res = await fetch("/api/feed", {
         method: "POST",
@@ -1282,6 +1471,60 @@ function CreatePostModal({ open, onClose, onCreated, user, initialSound }) {
     }
   }
 
+  // Saves without publishing. New posts are created as drafts; a draft that
+  // was opened from the Drafts list is updated in place.
+  async function handleSaveDraft() {
+    if (posting || savingDraft) return;
+    if (!caption.trim() && !media) {
+      setError("Add a caption or capture something first.");
+      return;
+    }
+    setSavingDraft(true);
+    setError("");
+
+    try {
+      let res;
+      if (draftId) {
+        res = await fetch("/api/feed/drafts", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: draftId, caption, isPrivate: visibility === "me" }),
+        });
+      } else {
+        if (media?.mediaUrl && media.mediaUrl.length > MAX_MEDIA_CHARS) {
+          setError("This file is too big. Try a shorter video.");
+          setSavingDraft(false);
+          return;
+        }
+        res = await fetch("/api/feed", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            caption,
+            mediaUrl: media?.mediaUrl || null,
+            mediaType: media?.mediaType || "image",
+            isPrivate: visibility === "me",
+            soundId: media?.mediaType === "video" && sound ? sound.id : undefined,
+            isDraft: true,
+          }),
+        });
+      }
+      let data = {};
+      try { data = await res.json(); } catch {}
+      if (!res.ok) {
+        setError(data.error || "Could not save the draft.");
+        setSavingDraft(false);
+        return;
+      }
+      onCreated({ isDraft: true });
+      resetAll();
+      onClose();
+    } catch {
+      setError("Could not save the draft. Check your connection and try again.");
+      setSavingDraft(false);
+    }
+  }
+
   if (!open) return null;
 
   if (cameraOpen) {
@@ -1294,11 +1537,28 @@ function CreatePostModal({ open, onClose, onCreated, user, initialSound }) {
           onPickSound={() => setPickerOpen(true)}
           onRemoveSound={() => setSound(null)}
         />
+        {!pickerOpen && !draftsOpen && (
+          <button
+            onClick={() => setDraftsOpen(true)}
+            aria-label="Open drafts"
+            style={{
+              position: "fixed", top: "calc(env(safe-area-inset-top, 0px) + 12px)", left: "50%",
+              transform: "translateX(-50%)", zIndex: 530,
+              background: "rgba(0,0,0,0.55)", color: "white", border: "none",
+              borderRadius: 16, padding: "6px 14px", fontSize: 13, fontWeight: 600,
+            }}
+          >
+            Drafts
+          </button>
+        )}
         {pickerOpen && (
           <SoundPicker
             onSelect={(s) => { setSound(s); setPickerOpen(false); }}
             onClose={() => setPickerOpen(false)}
           />
+        )}
+        {draftsOpen && (
+          <DraftsPicker onOpen={openDraft} onClose={() => setDraftsOpen(false)} />
         )}
       </>
     );
@@ -1308,6 +1568,7 @@ function CreatePostModal({ open, onClose, onCreated, user, initialSound }) {
   const isVideo = media?.mediaType === "video";
   const handle = (user?.username || "").toLowerCase();
   const soundLabel = sound ? sound.name : `original sound - ${handle}`;
+  const busy = posting || savingDraft;
 
   const chipStyle = {
     background: "var(--surface-2)", border: "none", color: "var(--text)",
@@ -1328,8 +1589,15 @@ function CreatePostModal({ open, onClose, onCreated, user, initialSound }) {
         <button onClick={handleRetake} aria-label="Back to camera" style={{ background: "none", border: "none", color: "var(--text)" }}>
           <ArrowLeft size={22} />
         </button>
-        <h2 className="text-base font-semibold">Post</h2>
-        <div style={{ width: 22 }} />
+        <h2 className="text-base font-semibold">{draftId ? "Edit draft" : "Post"}</h2>
+        <button
+          onClick={() => setDraftsOpen(true)}
+          aria-label="Open drafts"
+          className="text-sm font-semibold"
+          style={{ background: "none", border: "none", color: "var(--accent)" }}
+        >
+          Drafts
+        </button>
       </div>
 
       <div className="p-4" style={{ flex: 1, overflowY: "auto" }}>
@@ -1392,7 +1660,7 @@ function CreatePostModal({ open, onClose, onCreated, user, initialSound }) {
           ))}
         </div>
 
-        {isVideo && (
+        {isVideo && !draftId && (
           <div
             className="flex items-center gap-3"
             style={{ padding: "14px 0", borderTop: "1px solid var(--border)" }}
@@ -1435,10 +1703,18 @@ function CreatePostModal({ open, onClose, onCreated, user, initialSound }) {
       </div>
 
       <div
-        className="p-4"
+        className="p-4 flex gap-3"
         style={{ borderTop: "1px solid var(--border)", flexShrink: 0, paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 16px)" }}
       >
-        <button className="btn-primary" onClick={handlePost} disabled={posting}>
+        <button
+          className="btn-primary"
+          onClick={handleSaveDraft}
+          disabled={busy}
+          style={{ flex: 1, background: "var(--surface-2)", color: "var(--text)", border: "1px solid var(--border)" }}
+        >
+          {savingDraft ? <Loader2 size={16} className="animate-spin" /> : "Save draft"}
+        </button>
+        <button className="btn-primary" onClick={handlePost} disabled={busy} style={{ flex: 1 }}>
           {posting ? <Loader2 size={16} className="animate-spin" /> : "Post"}
         </button>
       </div>
@@ -1474,6 +1750,10 @@ function CreatePostModal({ open, onClose, onCreated, user, initialSound }) {
             )}
           </div>
         </div>
+      )}
+
+      {draftsOpen && (
+        <DraftsPicker onOpen={openDraft} onClose={() => setDraftsOpen(false)} />
       )}
     </div>
   );
@@ -1846,9 +2126,8 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
           </button>
         )}
 
-        {/* Refresh + create post now live at the bottom of this same icon
-            column, instead of floating separately over the middle of the
-            video where they used to sit and block the view. */}
+        {/* Refresh + create post live at the bottom of this same icon
+            column, instead of floating over the middle of the video. */}
         <button
           onClick={(e) => { e.stopPropagation(); onRefresh(); }}
           aria-label="Refresh feed"
@@ -1923,6 +2202,8 @@ export default function FeedClient({ user }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [soundTarget, setSoundTarget] = useState(null);
   const [mutedCreatorIds, setMutedCreatorIds] = useState(new Set());
+  const [notice, setNotice] = useState("");
+  const noticeTimerRef = useRef(null);
   const overlayPausedRef = useRef([]);
   const overlayDepthRef = useRef(0);
   const hasInteractedRef = useRef(false);
@@ -1940,9 +2221,14 @@ export default function FeedClient({ user }) {
     setMuted(false);
   }
 
-  // Keeps the active tab in view in the tab row. This is what makes
-  // "For You" (the default) visible on narrow phone screens instead of
-  // being cut off at the right edge.
+  function showNotice(text) {
+    setNotice(text);
+    if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+    noticeTimerRef.current = setTimeout(() => setNotice(""), 2200);
+  }
+
+  // Keeps the active tab in view in the tab row, so "For You" (the
+  // default) is visible on narrow phone screens.
   useEffect(() => {
     const row = tabsRef.current;
     if (!row) return;
@@ -2194,7 +2480,7 @@ export default function FeedClient({ user }) {
 
   // Muting hides a creator's posts from your own feed without unfollowing
   // them or blocking them — they're never notified either way. The server
-  // now filters muted creators out of every feed fetch, so this client-side
+  // filters muted creators out of every feed fetch, so this client-side
   // removal just makes the current session feel instant.
   async function handleToggleMuteCreator(post) {
     const authorId = post.author.id;
@@ -2220,6 +2506,11 @@ export default function FeedClient({ user }) {
   }
 
   function handlePostCreated(newPost) {
+    // Drafts never appear in the feed.
+    if (newPost.isDraft) {
+      showNotice("Saved to drafts");
+      return;
+    }
     // "Only me" posts live on your profile, not in the public feed.
     if (newPost.isPrivate) return;
     setPosts((prev) => [newPost, ...prev]);
@@ -2233,20 +2524,17 @@ export default function FeedClient({ user }) {
   return (
     <div
       onPointerUpCapture={handleFirstTouch}
-      style={{ position: "relative", width: "100%", height: "100%", background: "#000" }}
+      style={{
+        position: "relative", width: "100%", height: "100%", background: "#000",
+        display: "flex", flexDirection: "column",
+      }}
     >
-      <div
-        style={{
-          position: "absolute", top: 0, left: 0, right: 0, zIndex: 10,
-          background: "linear-gradient(to bottom, rgba(0,0,0,0.7), rgba(0,0,0,0.35) 60%, rgba(0,0,0,0))",
-        }}
-      >
-        <div className="flex items-center justify-between px-4" style={{ height: 56 }}>
-          <div className="flex items-center gap-3">
-            <Link href="/profile" aria-label="My Profile" style={{ background: "none", border: "none", color: "white" }}>
-              <UserIcon size={22} />
-            </Link>
-          </div>
+      {/* Top bar sits ABOVE the video (its own row), so it never covers it. */}
+      <div style={{ flexShrink: 0, background: "#000", position: "relative", zIndex: 10 }}>
+        <div className="flex items-center justify-between px-4" style={{ height: 44 }}>
+          <Link href="/profile" aria-label="My Profile" style={{ background: "none", border: "none", color: "white" }}>
+            <UserIcon size={22} />
+          </Link>
           <div className="flex items-center gap-3">
             <button
               onClick={() => setMuted((m) => !m)}
@@ -2267,7 +2555,7 @@ export default function FeedClient({ user }) {
           </div>
         </div>
 
-        {/* Tab row: centers when everything fits, and starts from the left
+        {/* Tab row: centers when everything fits, starts from the left
             (scrollable) when it doesn't, so no tab is ever cut off. */}
         <div
           ref={tabsRef}
@@ -2286,9 +2574,8 @@ export default function FeedClient({ user }) {
                 style={{
                   background: "none", border: "none", padding: "4px 0", flexShrink: 0,
                   fontSize: 14, fontWeight: activeTab === t.id ? 700 : 500,
-                  color: activeTab === t.id ? "white" : "rgba(255,255,255,0.75)",
+                  color: activeTab === t.id ? "white" : "rgba(255,255,255,0.65)",
                   borderBottom: activeTab === t.id ? "2px solid white" : "2px solid transparent",
-                  textShadow: "0 1px 4px rgba(0,0,0,0.8)",
                 }}
               >
                 {t.label}
@@ -2298,50 +2585,65 @@ export default function FeedClient({ user }) {
         </div>
       </div>
 
-      {loading ? (
-        <div className="flex items-center justify-center" style={{ height: "100%", color: "white" }}>
-          <Loader2 size={26} className="animate-spin" />
-        </div>
-      ) : posts.length === 0 ? (
-        <div className="flex flex-col items-center justify-center px-6 text-center" style={{ height: "100%", color: "white" }}>
-          <p className="text-sm mb-4" style={{ color: "rgba(255,255,255,0.7)" }}>No posts yet — be the first to share something.</p>
-          <button onClick={openCreate} className="btn-primary" style={{ maxWidth: 160 }}>
-            <Plus size={14} /> Create Post
-          </button>
-        </div>
-      ) : (
+      {/* Video area: fills whatever space is left below the top bar. */}
+      <div style={{ position: "relative", flex: 1, minHeight: 0 }}>
+        {loading ? (
+          <div className="flex items-center justify-center" style={{ position: "absolute", inset: 0, color: "white" }}>
+            <Loader2 size={26} className="animate-spin" />
+          </div>
+        ) : posts.length === 0 ? (
+          <div className="flex flex-col items-center justify-center px-6 text-center" style={{ position: "absolute", inset: 0, color: "white" }}>
+            <p className="text-sm mb-4" style={{ color: "rgba(255,255,255,0.7)" }}>No posts yet — be the first to share something.</p>
+            <button onClick={openCreate} className="btn-primary" style={{ maxWidth: 160 }}>
+              <Plus size={14} /> Create Post
+            </button>
+          </div>
+        ) : (
+          <div
+            ref={scrollRef}
+            onScroll={handleScroll}
+            style={{
+              position: "absolute", inset: 0, overflowY: "scroll", scrollSnapType: "y mandatory",
+            }}
+          >
+            {posts.map((post) => (
+              <PostCard
+                key={post.id}
+                post={post}
+                isOwner={user?.id === post.author.id}
+                muted={muted}
+                onLike={handleLike}
+                onSave={handleSave}
+                onShare={handleShare}
+                onFollow={handleFollow}
+                onOpenComments={setCommentsPost}
+                onLongPress={handleLongPress}
+                onOpenProfile={handleOpenProfile}
+                onOpenSound={openSound}
+                registerVideoRef={registerVideoRef}
+                onRefresh={handleRefresh}
+                refreshing={refreshing}
+                onCreate={openCreate}
+              />
+            ))}
+            {loadingMore && (
+              <div className="flex items-center justify-center" style={{ height: 60, color: "white" }}>
+                <Loader2 size={18} className="animate-spin" />
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {notice && (
         <div
-          ref={scrollRef}
-          onScroll={handleScroll}
           style={{
-            height: "100%", overflowY: "scroll", scrollSnapType: "y mandatory",
+            position: "fixed", left: "50%", top: 90, transform: "translateX(-50%)", zIndex: 400,
+            background: "rgba(0,0,0,0.8)", color: "white", fontSize: 13, fontWeight: 600,
+            padding: "8px 16px", borderRadius: 16, pointerEvents: "none",
           }}
         >
-          {posts.map((post) => (
-            <PostCard
-              key={post.id}
-              post={post}
-              isOwner={user?.id === post.author.id}
-              muted={muted}
-              onLike={handleLike}
-              onSave={handleSave}
-              onShare={handleShare}
-              onFollow={handleFollow}
-              onOpenComments={setCommentsPost}
-              onLongPress={handleLongPress}
-              onOpenProfile={handleOpenProfile}
-              onOpenSound={openSound}
-              registerVideoRef={registerVideoRef}
-              onRefresh={handleRefresh}
-              refreshing={refreshing}
-              onCreate={openCreate}
-            />
-          ))}
-          {loadingMore && (
-            <div className="flex items-center justify-center" style={{ height: 60, color: "white" }}>
-              <Loader2 size={18} className="animate-spin" />
-            </div>
-          )}
+          {notice}
         </div>
       )}
 
