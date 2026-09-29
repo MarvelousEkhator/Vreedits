@@ -11,6 +11,12 @@ const MODES = [
 const RING_RADIUS = 40;
 const RING_LENGTH = 2 * Math.PI * RING_RADIUS;
 
+// A recorded clip under this size is effectively empty (no real video data) —
+// this happens when start/stop are tapped almost instantly, before the
+// recorder has produced its first chunk. Treat it as a failed capture rather
+// than handing back a broken, unplayable video.
+const MIN_VALID_RECORDING_BYTES = 2000;
+
 function pickMimeType() {
   if (typeof MediaRecorder === "undefined" || !MediaRecorder.isTypeSupported) return "";
   const types = [
@@ -261,8 +267,21 @@ export default function CameraCapture({ onCapture, onClose, sound = null, onPick
       recorder.onstop = () => {
         teardownSound();
         if (discardRef.current) return;
-        const thumb = frameFromVideo(videoRef.current);
+
         const blob = new Blob(chunksRef.current, { type: recorder.mimeType || mimeType || "video/webm" });
+
+        // A clip this small has no real video data — usually caused by
+        // tapping stop almost immediately after start, before the recorder
+        // produced its first chunk. Handing this back would silently break
+        // the preview/post flow later, so fail loudly here instead and let
+        // the camera stay open for another try.
+        if (blob.size < MIN_VALID_RECORDING_BYTES) {
+          setElapsed(0);
+          showError("That recording was too short. Hold it a little longer and try again.");
+          return;
+        }
+
+        const thumb = frameFromVideo(videoRef.current);
         const reader = new FileReader();
         reader.onload = () => {
           setLastThumb(thumb || null);
@@ -363,7 +382,9 @@ export default function CameraCapture({ onCapture, onClose, sound = null, onPick
   const progress = mode.seconds ? Math.min(1, elapsed / mode.seconds) : 0;
   const busy = recording || countdownLeft > 0;
   const elapsedSecs = Math.floor(elapsed);
-  const elapsedLabel = `${Math.floor(elapsedSecs / 60)}:${String(elapsedSecs % 60).padStart(2, "0")}`;return (
+  const elapsedLabel = `${Math.floor(elapsedSecs / 60)}:${String(elapsedSecs % 60).padStart(2, "0")}`;
+
+  return (
     <div style={{ position: "fixed", inset: 0, background: "#000", zIndex: 500, display: "flex", justifyContent: "center" }}>
       <div style={{ position: "relative", width: "100%", maxWidth: 480, height: "100%", background: "#111", overflow: "hidden" }}>
         <video
