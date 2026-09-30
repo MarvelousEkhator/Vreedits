@@ -869,6 +869,40 @@ function SoundSheet({ soundId, onClose, onOpenProfile, onUseSound }) {
     </div>
   );
 }
+
+// TikTok lets you post up to 35 photos in one post.
+const MAX_PHOTOS = 35;
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("read failed"));
+    reader.readAsDataURL(file);
+  });
+}
+
+// Shrinks a photo so a post with many photos stays a reasonable size.
+function shrinkImage(dataUrl, maxSide = 1080) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(img.width * scale));
+        canvas.height = Math.max(1, Math.round(img.height * scale));
+        canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", 0.82));
+      } catch {
+        resolve(dataUrl);
+      }
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
 // Make a brand new sound: upload an audio or video file, or record your
 // voice. The sound is saved to your account right away (nobody has to
 // favorite it first) and can be used immediately.
@@ -1616,6 +1650,14 @@ function CreatePostModal({ open, onClose, onCreated, user, initialSound }) {
   const [savingDraft, setSavingDraft] = useState(false);
   const [error, setError] = useState("");
   const captionRef = useRef(null);
+  const addPhotosRef = useRef(null);
+
+  // Every photo in this post (one photo, or a whole carousel).
+  const photos = media?.mediaUrls?.length > 1
+    ? media.mediaUrls
+    : media?.mediaType === "image" && media?.mediaUrl
+      ? [media.mediaUrl]
+      : [];
 
   function resetAll() {
     setCaption("");
@@ -1648,6 +1690,46 @@ function CreatePostModal({ open, onClose, onCreated, user, initialSound }) {
     if (result.mediaType !== "video") setSound(null);
   }
 
+  // Several photos picked from the gallery at once (like TikTok).
+  async function handleCapturedMany(items) {
+    const urls = await Promise.all(items.map((i) => shrinkImage(i.mediaUrl)));
+    if (urls.length === 0) return;
+    setMedia({ mediaType: "image", mediaUrl: urls[0], mediaUrls: urls, thumbUrl: urls[0] });
+    setDraftId(null);
+    setSound(null);
+    setCameraOpen(false);
+  }
+
+  async function addMorePhotos(e) {
+    const files = Array.from(e.target.files || []).filter((f) => f.type.startsWith("image/"));
+    e.target.value = "";
+    if (files.length === 0) return;
+    const room = MAX_PHOTOS - photos.length;
+    if (room <= 0) {
+      setError(`You can add up to ${MAX_PHOTOS} photos.`);
+      return;
+    }
+    try {
+      const raw = await Promise.all(files.slice(0, room).map(fileToDataUrl));
+      const added = await Promise.all(raw.map((u) => shrinkImage(u)));
+      const all = [...photos, ...added];
+      setMedia({ mediaType: "image", mediaUrl: all[0], mediaUrls: all, thumbUrl: all[0] });
+      setError(files.length > room ? `Only ${MAX_PHOTOS} photos fit in one post.` : "");
+    } catch {
+      setError("Couldn't add those photos.");
+    }
+  }
+
+  function removePhoto(index) {
+    const next = photos.filter((_, i) => i !== index);
+    if (next.length === 0) {
+      setMedia(null);
+      setCameraOpen(true);
+      return;
+    }
+    setMedia({ mediaType: "image", mediaUrl: next[0], mediaUrls: next, thumbUrl: next[0] });
+  }
+
   function handleRetake() {
     setMedia(null);
     setDraftId(null);
@@ -1667,7 +1749,7 @@ function CreatePostModal({ open, onClose, onCreated, user, initialSound }) {
       const json = await res.json();
       if (!res.ok || !json.draft) return json.error || "Couldn't open that draft.";
       const d = json.draft;
-      setMedia(d.mediaUrl ? { mediaUrl: d.mediaUrl, mediaType: d.mediaType } : null);
+      setMedia(d.mediaUrl ? { mediaUrl: d.mediaUrl, mediaType: d.mediaType, mediaUrls: d.mediaUrls || null } : null);
       setCaption(d.caption || "");
       setVisibility(d.isPrivate ? "me" : "everyone");
       setSound(null);
@@ -1721,6 +1803,7 @@ function CreatePostModal({ open, onClose, onCreated, user, initialSound }) {
         onCreated({
           ...data.post,
           mediaUrl: media?.mediaUrl || null,
+          mediaUrls: photos.length > 1 ? photos : undefined,
           soundId: null,
           soundOwner: null,
           likeCount: 0,
@@ -1738,8 +1821,9 @@ function CreatePostModal({ open, onClose, onCreated, user, initialSound }) {
       return;
     }
 
-    if (media?.mediaUrl && media.mediaUrl.length > MAX_MEDIA_CHARS) {
-      setError("This file is too big. Try a shorter video.");
+    const totalChars = photos.length > 1 ? photos.reduce((n, u) => n + u.length, 0) : (media?.mediaUrl?.length || 0);
+    if (totalChars > MAX_MEDIA_CHARS) {
+      setError("This is too big. Try fewer photos or a shorter video.");
       setPosting(false);
       return;
     }
@@ -1751,6 +1835,7 @@ function CreatePostModal({ open, onClose, onCreated, user, initialSound }) {
           caption,
           mediaUrl: media?.mediaUrl || null,
           mediaType: media?.mediaType || "image",
+          mediaUrls: photos.length > 1 ? photos : undefined,
           isPrivate: visibility === "me",
           soundId: media?.mediaType === "video" && sound ? sound.id : undefined,
         }),
@@ -1791,8 +1876,9 @@ function CreatePostModal({ open, onClose, onCreated, user, initialSound }) {
           body: JSON.stringify({ id: draftId, caption, isPrivate: visibility === "me" }),
         });
       } else {
-        if (media?.mediaUrl && media.mediaUrl.length > MAX_MEDIA_CHARS) {
-          setError("This file is too big. Try a shorter video.");
+        const totalChars = photos.length > 1 ? photos.reduce((n, u) => n + u.length, 0) : (media?.mediaUrl?.length || 0);
+        if (totalChars > MAX_MEDIA_CHARS) {
+          setError("This is too big. Try fewer photos or a shorter video.");
           setSavingDraft(false);
           return;
         }
@@ -1803,6 +1889,7 @@ function CreatePostModal({ open, onClose, onCreated, user, initialSound }) {
             caption,
             mediaUrl: media?.mediaUrl || null,
             mediaType: media?.mediaType || "image",
+            mediaUrls: photos.length > 1 ? photos : undefined,
             isPrivate: visibility === "me",
             soundId: media?.mediaType === "video" && sound ? sound.id : undefined,
             isDraft: true,
@@ -1832,6 +1919,8 @@ function CreatePostModal({ open, onClose, onCreated, user, initialSound }) {
       <>
         <CameraCapture
           onCapture={handleCaptured}
+          onCaptureMany={handleCapturedMany}
+          maxImages={MAX_PHOTOS}
           onClose={handleClose}
           sound={sound}
           onPickSound={() => setPickerOpen(true)}
@@ -1960,6 +2049,58 @@ function CreatePostModal({ open, onClose, onCreated, user, initialSound }) {
           ))}
         </div>
 
+        {!isVideo && photos.length > 0 && (
+          <div style={{ padding: "14px 0", borderTop: "1px solid var(--border)" }}>
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-sm font-semibold">
+                {photos.length} {photos.length === 1 ? "photo" : "photos"}
+                <span className="text-xs" style={{ color: "var(--text-muted)", fontWeight: 400 }}> · up to {MAX_PHOTOS}</span>
+              </div>
+              {!draftId && photos.length < MAX_PHOTOS && (
+                <button
+                  onClick={() => addPhotosRef.current?.click()}
+                  className="text-sm font-semibold"
+                  style={{ background: "none", border: "none", color: "var(--accent)" }}
+                >
+                  + Add photos
+                </button>
+              )}
+            </div>
+            <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4 }}>
+              {photos.map((src, i) => (
+                <div
+                  key={i}
+                  style={{ position: "relative", width: 64, height: 86, flexShrink: 0, borderRadius: 8, overflow: "hidden", background: "#000" }}
+                >
+                  <img src={src} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  {!draftId && (
+                    <button
+                      onClick={() => removePhoto(i)}
+                      aria-label="Remove photo"
+                      style={{
+                        position: "absolute", top: 3, right: 3, width: 20, height: 20, borderRadius: "50%",
+                        background: "rgba(0,0,0,0.65)", border: "none", color: "white",
+                        display: "flex", alignItems: "center", justifyContent: "center", padding: 0,
+                      }}
+                    >
+                      <X size={12} />
+                    </button>
+                  )}
+                  <span
+                    style={{
+                      position: "absolute", left: 3, bottom: 3, fontSize: 10, fontWeight: 700, color: "white",
+                      background: "rgba(0,0,0,0.6)", borderRadius: 8, padding: "0 5px",
+                    }}
+                  >
+                    {i + 1}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <input ref={addPhotosRef} type="file" accept="image/*" multiple onChange={addMorePhotos} style={{ display: "none" }} />
+          </div>
+        )}
+
         {isVideo && !draftId && (
           <div
             className="flex items-center gap-3"
@@ -2046,7 +2187,17 @@ function CreatePostModal({ open, onClose, onCreated, user, initialSound }) {
                 style={{ width: "100%", height: "100%", objectFit: "contain" }}
               />
             ) : (
-              <img src={media.mediaUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+              photos.length > 1 ? (
+                <div style={{ display: "flex", width: "100%", height: "100%", overflowX: "auto", scrollSnapType: "x mandatory" }}>
+                  {photos.map((src, i) => (
+                    <div key={i} style={{ flex: "0 0 100%", height: "100%", scrollSnapAlign: "start" }}>
+                      <img src={src} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <img src={media.mediaUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+              )
             )}
           </div>
         </div>
@@ -2090,6 +2241,9 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
   const [isPaused, setIsPaused] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [slide, setSlide] = useState(0);
+  // A post with several photos swipes sideways like a TikTok photo post.
+  const isCarousel = Array.isArray(post.mediaUrls) && post.mediaUrls.length > 1;
 
   function startPress() {
     pressTimer.current = setTimeout(() => onLongPress(post), 500);
@@ -2125,7 +2279,7 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
     if (!t) return;
     const dx = t.clientX - start.x;
     const dy = t.clientY - start.y;
-    if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+    if (!isCarousel && Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.5) {
       clearTimeout(singleTapTimerRef.current);
       onOpenProfile(post.author.id);
     }
@@ -2213,10 +2367,42 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
       style={{
         position: "relative", height: "100%", width: "100%", flexShrink: 0,
         scrollSnapAlign: "start", overflow: "hidden", background: "#000",
-        touchAction: "pan-y",
+        touchAction: isCarousel ? "pan-x pan-y" : "pan-y",
       }}
     >
-      {post.mediaType === "video" && post.mediaUrl ? (
+      {isCarousel ? (
+        <div
+          onScroll={(e) => {
+            const el = e.currentTarget;
+            setSlide(Math.round(el.scrollLeft / (el.clientWidth || 1)));
+          }}
+          style={{
+            position: "absolute", inset: 0, display: "flex", overflowX: "auto",
+            scrollSnapType: "x mandatory", scrollbarWidth: "none", msOverflowStyle: "none",
+            touchAction: "pan-x pan-y",
+          }}
+        >
+          {post.mediaUrls.map((src, i) => (
+            <div key={i} style={{ position: "relative", flex: "0 0 100%", height: "100%", scrollSnapAlign: "start" }}>
+              <img
+                src={src}
+                alt=""
+                aria-hidden="true"
+                style={{
+                  position: "absolute", inset: 0, width: "100%", height: "100%",
+                  objectFit: "cover", filter: "blur(30px) brightness(0.6)",
+                  transform: "scale(1.15)", display: "block",
+                }}
+              />
+              <img
+                src={src}
+                alt=""
+                style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", display: "block" }}
+              />
+            </div>
+          ))}
+        </div>
+      ) : post.mediaType === "video" && post.mediaUrl ? (
         <video
           ref={combinedVideoRef}
           src={post.mediaUrl}
@@ -2255,12 +2441,42 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
       )}
       <div
         style={{
-          position: "absolute", inset: 0,
+          position: "absolute", inset: 0, pointerEvents: "none",
           background: "linear-gradient(to top, rgba(0,0,0,0.7), rgba(0,0,0,0) 40%)",
         }}
       />
 
       {burst && <HeartBurst x={burst.x} y={burst.y} />}
+
+      {isCarousel && (
+        <>
+          <div
+            style={{
+              position: "absolute", top: 10, right: 12, zIndex: 2, pointerEvents: "none",
+              background: "rgba(0,0,0,0.5)", color: "white", fontSize: 12, fontWeight: 700,
+              padding: "2px 9px", borderRadius: 10,
+            }}
+          >
+            {slide + 1}/{post.mediaUrls.length}
+          </div>
+          <div
+            style={{
+              position: "absolute", left: 0, right: 0, bottom: 14, zIndex: 2, pointerEvents: "none",
+              display: "flex", justifyContent: "center", gap: 5,
+            }}
+          >
+            {post.mediaUrls.slice(0, 12).map((_, i) => (
+              <span
+                key={i}
+                style={{
+                  width: 6, height: 6, borderRadius: "50%",
+                  background: i === Math.min(slide, 11) ? "white" : "rgba(255,255,255,0.4)",
+                }}
+              />
+            ))}
+          </div>
+        </>
+      )}
 
       {post.mediaType === "video" && isPaused && (
         <>
