@@ -9,6 +9,10 @@ import { ensureSound, resolveSound } from "@/lib/sounds";
 // (about 45 million characters, roughly 33 MB of video).
 const MAX_MEDIA_CHARS = 45_000_000;
 
+// Sounds you upload or record yourself are smaller (about 11 MB of audio).
+const MAX_SOUND_CHARS = 15_000_000;
+const MAX_UPLOADED_SOUNDS = 30;
+
 // Trending looks at engagement within this rolling window rather than
 // all-time, so a post from months ago can't outrank what's hot today.
 const TRENDING_WINDOW_HOURS = 48;
@@ -19,7 +23,10 @@ const FEED_AUTHOR_SELECT = {
 const LITE_AUTHOR_SELECT = { id: true, username: true, displayName: true, avatarDataUrl: true };
 const SOUND_OWNER_SELECT = { id: true, username: true, displayName: true };
 
-function soundNameFor(author) {
+// A sound's name is whatever its creator named it, or the classic
+// "original sound - username" if they never renamed it.
+function soundNameFor(author, sound) {
+  if (sound?.name) return sound.name;
   return `original sound - ${(author?.username || "").toLowerCase()}`;
 }
 
@@ -35,9 +42,13 @@ async function shapePosts(posts, user, followedIds) {
     : [];
   const ownerByUserId = new Map(owners.map((o) => [o.id, o]));
   const soundOwnerById = new Map();
+  const soundNameById = new Map();
   soundIds.forEach((id, i) => {
     const s = sounds[i];
-    if (s) soundOwnerById.set(id, ownerByUserId.get(s.authorId) || null);
+    if (s) {
+      soundOwnerById.set(id, ownerByUserId.get(s.authorId) || null);
+      if (s.name) soundNameById.set(id, s.name);
+    }
   });
 
   return posts.map((p) => ({
@@ -50,6 +61,7 @@ async function shapePosts(posts, user, followedIds) {
     author: p.author,
     soundId: p.soundId || null,
     soundOwner: p.soundId ? soundOwnerById.get(p.soundId) || null : null,
+    soundName: p.soundId ? soundNameById.get(p.soundId) || null : null,
     likeCount: p.likedBy.length,
     likedByMe: p.likedBy.includes(user.id),
     commentCount: p._count.comments,
@@ -107,17 +119,50 @@ export async function GET(req) {
     return NextResponse.json({
       sound: {
         id: soundRow.id,
-        name: soundNameFor(author),
+        name: soundNameFor(author, soundRow),
         author,
         mediaUrl,
         count,
         favorited: !!favorite,
+        isMine: soundRow.authorId === user.id,
       },
       // The original video's media is only sent once (in `sound`), not twice.
       posts: uses.map((p) =>
         p.id === soundRow.sourcePostId ? { ...p, mediaUrl: null, isSource: true } : p
       ),
     });
+  }
+
+  // ── Sounds I made: /api/feed?mySounds=1 ───────────────────────
+  // Every original sound from my videos, plus sounds I uploaded or recorded.
+  // No need to favorite anything first.
+  if (searchParams.get("mySounds")) {
+    // Older videos from before sounds were their own records get one now.
+    const legacy = await prisma.feedPost.findMany({
+      where: { authorId: user.id, mediaType: "video", soundId: null },
+      select: { id: true },
+      orderBy: { createdAt: "desc" },
+      take: 30,
+    });
+    await Promise.all(legacy.map((p) => ensureSound(p.id)));
+
+    const [rows, me] = await Promise.all([
+      prisma.sound.findMany({
+        where: { authorId: user.id },
+        orderBy: { createdAt: "desc" },
+        take: 50,
+        select: { id: true, name: true, authorId: true, sourcePostId: true, createdAt: true },
+      }),
+      prisma.user.findUnique({ where: { id: user.id }, select: LITE_AUTHOR_SELECT }),
+    ]);
+
+    const sounds = rows.map((s) => ({
+      id: s.id,
+      name: soundNameFor(me, s),
+      author: me,
+      uploaded: !s.sourcePostId,
+    }));
+    return NextResponse.json({ sounds });
   }
 
   // ── My favorite sounds: /api/feed?favoriteSounds=1 ────────────
@@ -146,7 +191,7 @@ export async function GET(req) {
       .filter((s) => authorById.has(s.authorId))
       .map((s) => {
         const author = authorById.get(s.authorId);
-        return { id: s.id, name: soundNameFor(author), author };
+        return { id: s.id, name: soundNameFor(author, s), author };
       });
     return NextResponse.json({ sounds });
   }
@@ -352,6 +397,43 @@ export async function POST(req) {
     return NextResponse.json({ ok: true, favorited: true });
   }
 
+  // ── Create your own sound (uploaded or recorded audio) ────────
+  if (body?.action === "createSound") {
+    const name = String(body.name || "").trim().slice(0, 60);
+    const audio = body.mediaUrl;
+    if (!name) return NextResponse.json({ error: "Give your sound a name." }, { status: 400 });
+    if (typeof audio !== "string" || !/^data:(audio|video)\//.test(audio)) {
+      return NextResponse.json({ error: "Add an audio or video file first." }, { status: 400 });
+    }
+    if (audio.length > MAX_SOUND_CHARS) {
+      return NextResponse.json({ error: "That sound is too big. Try a shorter one." }, { status: 413 });
+    }
+    const made = await prisma.sound.count({ where: { authorId: user.id, sourcePostId: null } });
+    if (made >= MAX_UPLOADED_SOUNDS) {
+      return NextResponse.json({ error: "You've reached the limit of uploaded sounds." }, { status: 400 });
+    }
+
+    const sound = await prisma.sound.create({
+      data: { id: randomUUID(), authorId: user.id, name, mediaUrl: audio },
+    });
+    return NextResponse.json({
+      ok: true,
+      sound: { id: sound.id, name: sound.name, mediaUrl: sound.mediaUrl },
+    });
+  }
+
+  // ── Rename a sound you made ───────────────────────────────────
+  if (body?.action === "renameSound") {
+    const name = String(body.name || "").trim().slice(0, 60);
+    if (!name) return NextResponse.json({ error: "Give your sound a name." }, { status: 400 });
+    const sound = await ensureSound(body.soundId);
+    if (!sound || sound.authorId !== user.id) {
+      return NextResponse.json({ error: "You can only rename your own sounds." }, { status: 403 });
+    }
+    await prisma.sound.update({ where: { id: sound.id }, data: { name } });
+    return NextResponse.json({ ok: true, name });
+  }
+
   // ── Create a post (or save it as a draft) ─────────────────────
   const { caption, mediaUrl, mediaType, isPrivate, soundId, isDraft } = body || {};
   if (!caption?.trim() && !mediaUrl) {
@@ -423,6 +505,7 @@ export async function POST(req) {
       author: post.author,
       soundId: post.soundId || null,
       soundOwner,
+      soundName: soundRoot?.name || null,
       likeCount: 0,
       likedByMe: false,
       commentCount: 0,
