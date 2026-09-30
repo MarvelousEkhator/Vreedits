@@ -9,6 +9,9 @@ import { ensureSound, resolveSound } from "@/lib/sounds";
 // (about 45 million characters, roughly 33 MB of video).
 const MAX_MEDIA_CHARS = 45_000_000;
 
+// Same as TikTok: up to 35 photos in one post.
+const MAX_PHOTOS = 35;
+
 // Sounds you upload or record yourself are smaller (about 11 MB of audio).
 const MAX_SOUND_CHARS = 15_000_000;
 const MAX_UPLOADED_SOUNDS = 30;
@@ -55,6 +58,8 @@ async function shapePosts(posts, user, followedIds) {
     id: p.id,
     caption: p.caption,
     mediaUrl: p.mediaUrl,
+    // Only posts with several photos send the full list (a carousel).
+    mediaUrls: p.mediaUrls && p.mediaUrls.length > 1 ? p.mediaUrls : undefined,
     mediaType: p.mediaType,
     tags: p.tags,
     createdAt: p.createdAt,
@@ -435,15 +440,30 @@ export async function POST(req) {
   }
 
   // ── Create a post (or save it as a draft) ─────────────────────
-  const { caption, mediaUrl, mediaType, isPrivate, soundId, isDraft } = body || {};
+  const { caption, mediaUrl: rawMediaUrl, mediaUrls: rawMediaUrls, mediaType, isPrivate, soundId, isDraft } = body || {};
+
+  // A photo post can carry up to 35 photos (a carousel). The first photo
+  // is also stored as the main mediaUrl so covers/grids keep working.
+  let photoList = [];
+  if (Array.isArray(rawMediaUrls)) {
+    photoList = rawMediaUrls
+      .filter((u) => typeof u === "string" && u.startsWith("data:image/"))
+      .slice(0, MAX_PHOTOS);
+  }
+  const isCarousel = photoList.length > 1;
+  const mediaUrl = isCarousel ? photoList[0] : rawMediaUrl;
+  const totalChars = isCarousel
+    ? photoList.reduce((n, u) => n + u.length, 0)
+    : (mediaUrl ? mediaUrl.length : 0);
+
   if (!caption?.trim() && !mediaUrl) {
     return NextResponse.json({ error: "Add a caption or an image first." }, { status: 400 });
   }
-  if (mediaUrl && mediaUrl.length > MAX_MEDIA_CHARS) {
-    return NextResponse.json({ error: "That file is too big. Try a shorter video." }, { status: 413 });
+  if (totalChars > MAX_MEDIA_CHARS) {
+    return NextResponse.json({ error: "That's too big. Try fewer photos or a shorter video." }, { status: 413 });
   }
 
-  const finalType = mediaType === "video" ? "video" : "image";
+  const finalType = isCarousel ? "image" : mediaType === "video" ? "video" : "image";
   const tags = extractHashtags(caption || "");
 
   let soundRoot = null;
@@ -462,6 +482,7 @@ export async function POST(req) {
       authorId: user.id,
       caption: caption?.trim() || null,
       mediaUrl: mediaUrl || null,
+      mediaUrls: isCarousel ? photoList : [],
       mediaType: finalType,
       isPrivate: !!isPrivate,
       isDraft: !!isDraft,
@@ -497,6 +518,7 @@ export async function POST(req) {
       id: post.id,
       caption: post.caption,
       mediaUrl: post.mediaUrl,
+      mediaUrls: isCarousel ? post.mediaUrls : undefined,
       mediaType: post.mediaType,
       tags: post.tags,
       isPrivate: post.isPrivate,
