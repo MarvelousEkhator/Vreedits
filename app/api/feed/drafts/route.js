@@ -7,12 +7,16 @@ import { releaseSoundForPost } from "@/lib/sounds";
 const LITE_AUTHOR_SELECT = { id: true, username: true, displayName: true, avatarDataUrl: true };
 
 function shapeDraft(p, includeMedia) {
+  const multi = p.mediaUrls && p.mediaUrls.length > 1;
   return {
     id: p.id,
     caption: p.caption,
     // Videos are base64 inside the database, so the list never sends
     // them. Load one draft with ?id= to get its full media.
     mediaUrl: includeMedia || p.mediaType === "image" ? p.mediaUrl : null,
+    // Only a full single-draft load sends every photo of a multi-photo draft.
+    mediaUrls: includeMedia && multi ? p.mediaUrls : undefined,
+    photoCount: multi ? p.mediaUrls.length : p.mediaUrl && p.mediaType === "image" ? 1 : 0,
     mediaType: p.mediaType,
     hasMedia: !!p.mediaUrl,
     tags: p.tags,
@@ -42,6 +46,11 @@ export async function GET(req) {
     where: { authorId: user.id, isDraft: true },
     orderBy: { createdAt: "desc" },
     take: 50,
+    // The list only needs the first photo, never the whole carousel.
+    select: {
+      id: true, caption: true, mediaUrl: true, mediaType: true, tags: true,
+      isPrivate: true, soundId: true, createdAt: true,
+    },
   });
 
   return NextResponse.json({ drafts: drafts.map((d) => shapeDraft(d, false)) });
