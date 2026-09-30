@@ -1,11 +1,25 @@
 "use client";
 import { useState, useRef, useEffect, useCallback } from "react";
-import { X, RefreshCw, Zap, ZapOff, Clock, Image as ImageIcon, Music2 } from "lucide-react";
+import { X, RefreshCw, Zap, ZapOff, Clock, Image as ImageIcon, Music2, Sparkles } from "lucide-react";
 
 const MODES = [
   { id: "15", label: "15s", seconds: 15 },
   { id: "60", label: "60s", seconds: 60 },
   { id: "photo", label: "PHOTO", seconds: 0 },
+];
+
+// Camera filters. The `css` string is used for the live preview AND is
+// baked into the photo / recorded video, so what you see is what you post.
+const FILTERS = [
+  { id: "none", label: "Normal", css: "none", dot: "#d9d9d9" },
+  { id: "vivid", label: "Vivid", css: "saturate(1.45) contrast(1.1)", dot: "#ff3d81" },
+  { id: "warm", label: "Warm", css: "sepia(0.28) saturate(1.3) hue-rotate(-12deg) brightness(1.05)", dot: "#ffa94d" },
+  { id: "cool", label: "Cool", css: "saturate(1.1) hue-rotate(18deg) brightness(1.03)", dot: "#4dabf7" },
+  { id: "smooth", label: "Smooth", css: "blur(0.6px) brightness(1.08) contrast(0.95) saturate(1.1)", dot: "#ffc9d6" },
+  { id: "bw", label: "B&W", css: "grayscale(1) contrast(1.12)", dot: "#555555" },
+  { id: "vintage", label: "Vintage", css: "sepia(0.5) contrast(1.05) brightness(0.96) saturate(0.9)", dot: "#b8894d" },
+  { id: "fade", label: "Fade", css: "contrast(0.85) brightness(1.1) saturate(0.85)", dot: "#c7d3e0" },
+  { id: "drama", label: "Drama", css: "contrast(1.35) saturate(1.2) brightness(0.92)", dot: "#7048e8" },
 ];
 
 const RING_RADIUS = 40;
@@ -20,6 +34,16 @@ function pickMimeType() {
     "video/mp4",
   ];
   return types.find((t) => MediaRecorder.isTypeSupported(t)) || "";
+}
+
+// Canvas filters (ctx.filter) are what let a filter be baked into a photo
+// or recording. Most Android/desktop browsers support it; some iPhones don't.
+function canvasFilterSupported() {
+  try {
+    return typeof CanvasRenderingContext2D !== "undefined" && "filter" in CanvasRenderingContext2D.prototype;
+  } catch {
+    return false;
+  }
 }
 
 // Read a File into a data URL.
@@ -126,7 +150,7 @@ function ToolButton({ icon, label, onClick, active }) {
 //         at once (like TikTok) and every gallery photo pick goes here, even
 //         when only one photo is chosen. Videos still go through onCapture,
 //         one at a time, and are never mixed with photos.
-//   maxImages (optional, default 4) - cap for a multi-photo selection
+//   maxImages (optional, default 35) - cap for a multi-photo selection
 //   onClose()                                     - user closed the camera
 //   sound (optional)        { id, name, mediaUrl } - a sound to record with
 //   onPickSound (optional)  - shows the "Add sound" pill and calls this when tapped
@@ -134,7 +158,7 @@ function ToolButton({ icon, label, onClick, active }) {
 export default function CameraCapture({
   onCapture,
   onCaptureMany,
-  maxImages = 4,
+  maxImages = 35,
   onClose,
   sound = null,
   onPickSound,
@@ -151,6 +175,7 @@ export default function CameraCapture({
   const errorTimerRef = useRef(null);
   const discardRef = useRef(false);
   const startedAtRef = useRef(0);
+  const filterRafRef = useRef(null);
 
   const [facingMode, setFacingMode] = useState("user");
   const [flashOn, setFlashOn] = useState(false);
@@ -162,8 +187,11 @@ export default function CameraCapture({
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState("");
   const [lastThumb, setLastThumb] = useState(null);
+  const [filterId, setFilterId] = useState("none");
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const mode = MODES.find((m) => m.id === modeId) || MODES[0];
+  const activeFilter = FILTERS.find((f) => f.id === filterId) || FILTERS[0];
   const isPhoto = mode.id === "photo";
   const hasSound = !!sound?.mediaUrl;
   const multiEnabled = typeof onCaptureMany === "function";
@@ -214,6 +242,7 @@ export default function CameraCapture({
       clearTimeout(errorTimerRef.current);
       try { soundElRef.current?.pause(); } catch {}
       try { audioCtxRef.current?.close(); } catch {}
+      if (filterRafRef.current) cancelAnimationFrame(filterRafRef.current);
     };
   }, []);
 
@@ -228,6 +257,32 @@ export default function CameraCapture({
     soundElRef.current = null;
     try { audioCtxRef.current?.close(); } catch {}
     audioCtxRef.current = null;
+  }
+
+  function teardownFilter() {
+    if (filterRafRef.current) cancelAnimationFrame(filterRafRef.current);
+    filterRafRef.current = null;
+  }
+
+  // Draws the camera through the chosen filter onto a hidden canvas and
+  // returns that canvas as a live video stream, so the filter is part of
+  // the recording itself (not just the preview).
+  function startFilterCanvas(css) {
+    const video = videoRef.current;
+    if (!video || !video.videoWidth || typeof HTMLCanvasElement.prototype.captureStream !== "function") {
+      return null;
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d");
+    const draw = () => {
+      ctx.filter = css;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      filterRafRef.current = requestAnimationFrame(draw);
+    };
+    draw();
+    return canvas.captureStream(30);
   }
 
   function flipCamera() {
@@ -261,7 +316,9 @@ export default function CameraCapture({
       const canvas = document.createElement("canvas");
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
-      canvas.getContext("2d").drawImage(video, 0, 0);
+      const ctx = canvas.getContext("2d");
+      if (activeFilter.css !== "none" && canvasFilterSupported()) ctx.filter = activeFilter.css;
+      ctx.drawImage(video, 0, 0);
       const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
       setLastThumb(dataUrl);
       onCapture({ mediaUrl: dataUrl, mediaType: "image", thumbUrl: dataUrl });
@@ -285,7 +342,9 @@ export default function CameraCapture({
     try {
       discardRef.current = false;
       chunksRef.current = [];
-      let recordStream = stream;
+
+      let videoTracks = stream.getVideoTracks();
+      let audioTracks = stream.getAudioTracks();
 
       if (hasSound) {
         // Mix the sound straight into the recording's audio track.
@@ -302,8 +361,21 @@ export default function CameraCapture({
         audioCtxRef.current = ctx;
         soundElRef.current = el;
         el.onended = () => stopRecording();
-        recordStream = new MediaStream([...stream.getVideoTracks(), ...dest.stream.getAudioTracks()]);
+        audioTracks = dest.stream.getAudioTracks();
       }
+
+      // A filter is baked into the recording by recording a filtered canvas
+      // instead of the raw camera.
+      if (activeFilter.css !== "none") {
+        if (canvasFilterSupported()) {
+          const filtered = startFilterCanvas(activeFilter.css);
+          if (filtered) videoTracks = filtered.getVideoTracks();
+        } else {
+          showError("This browser can't save filters in videos, so this one records without it.");
+        }
+      }
+
+      const recordStream = new MediaStream([...videoTracks, ...audioTracks]);
 
       const mimeType = pickMimeType();
       const options = { videoBitsPerSecond: 1200000 };
@@ -315,6 +387,7 @@ export default function CameraCapture({
       };
       recorder.onstop = () => {
         teardownSound();
+        teardownFilter();
         if (discardRef.current) return;
 
         const thumb = frameFromVideo(videoRef.current);
@@ -344,6 +417,7 @@ export default function CameraCapture({
       startedAtRef.current = Date.now();
       setElapsed(0);
       setRecording(true);
+      setFiltersOpen(false);
 
       if (hasSound && soundElRef.current) {
         await soundElRef.current.play().catch(() => {});
@@ -357,6 +431,7 @@ export default function CameraCapture({
       }, 100);
     } catch {
       teardownSound();
+      teardownFilter();
       recorderRef.current = null;
       setRecording(false);
       showError("Couldn't start recording. Try again.");
@@ -410,6 +485,7 @@ export default function CameraCapture({
     setCountdownLeft(0);
     stopRecording();
     teardownSound();
+    teardownFilter();
     onClose();
   }
 
@@ -470,6 +546,7 @@ export default function CameraCapture({
           style={{
             position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover",
             transform: facingMode === "user" ? "scaleX(-1)" : "none",
+            filter: activeFilter.css,
           }}
         />
 
@@ -561,6 +638,12 @@ export default function CameraCapture({
           >
             <ToolButton icon={<RefreshCw size={22} />} label="Flip" onClick={flipCamera} />
             <ToolButton
+              icon={<Sparkles size={22} />}
+              label={filterId === "none" ? "Filters" : activeFilter.label}
+              active={filtersOpen || filterId !== "none"}
+              onClick={() => setFiltersOpen((o) => !o)}
+            />
+            <ToolButton
               icon={<Clock size={22} />}
               label={timerSeconds ? `${timerSeconds}s` : "Timer"}
               active={timerSeconds > 0}
@@ -605,6 +688,40 @@ export default function CameraCapture({
             display: "flex", flexDirection: "column", alignItems: "center", gap: 16,
           }}
         >
+          {filtersOpen && !busy && (
+            <div
+              style={{
+                display: "flex", gap: 8, overflowX: "auto", width: "100%", padding: "0 14px",
+                scrollbarWidth: "none", msOverflowStyle: "none",
+              }}
+            >
+              {FILTERS.map((f) => {
+                const selected = f.id === filterId;
+                return (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => setFilterId(f.id)}
+                    style={{
+                      flexShrink: 0, display: "flex", alignItems: "center", gap: 6,
+                      border: "none", borderRadius: 18, padding: "7px 13px",
+                      background: selected ? "white" : "rgba(0,0,0,0.5)",
+                      color: selected ? "#111" : "white", fontSize: 13, fontWeight: 700,
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 12, height: 12, borderRadius: "50%", background: f.dot,
+                        border: "1.5px solid rgba(255,255,255,0.7)",
+                      }}
+                    />
+                    {f.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
           {!busy && (
             <div style={{ display: "flex", gap: 22 }}>
               {MODES.map((m) => (
