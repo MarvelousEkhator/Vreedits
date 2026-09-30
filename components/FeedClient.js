@@ -6,7 +6,7 @@ import {
   Heart, MessageCircle, Share2, Bookmark, RotateCw, Plus, X, Send,
   Loader2, Search, User as UserIcon, Download, Trash2, Music2,
   Volume2, VolumeX, Check, Play, Pause, Pin, Languages, Copy, ArrowLeft,
-  Star, Globe, Lock, Flag, BellOff, Bell,
+  Star, Globe, Lock, Flag, BellOff, Bell, Mic, Upload, Pencil,
 } from "lucide-react";
 import CameraCapture from "@/components/CameraCapture";
 import GlossIcon from "@/components/GlossIcon";
@@ -14,6 +14,10 @@ import GlossIcon from "@/components/GlossIcon";
 // Videos are stored inside the database, so keep uploads under this size
 // (about 45 million characters of base64, roughly 33 MB of video).
 const MAX_MEDIA_CHARS = 45_000_000;
+
+// Sounds you upload are smaller: about 10 MB of audio.
+const MAX_SOUND_BYTES = 10 * 1024 * 1024;
+const MAX_RECORD_SECONDS = 60;
 
 const SUGGESTED_TAGS = ["#fyp", "#viral", "#trending", "#foryou", "#vreedits", "#school"];
 
@@ -676,6 +680,26 @@ function SoundSheet({ soundId, onClose, onOpenProfile, onUseSound }) {
     setFavBusy(false);
   }
 
+  // Only the person who made a sound can rename it.
+  async function handleRename() {
+    if (!data?.sound?.isMine) return;
+    const next = window.prompt("Rename this sound", data.sound.name);
+    if (next === null) return;
+    const trimmed = next.trim();
+    if (!trimmed || trimmed === data.sound.name) return;
+    try {
+      const res = await fetch("/api/feed", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "renameSound", soundId: data.sound.id, name: trimmed }),
+      });
+      const json = await res.json();
+      if (res.ok) {
+        setData((prev) => (prev ? { ...prev, sound: { ...prev.sound, name: json.name } } : prev));
+      }
+    } catch {}
+  }
+
   function handleClose() {
     try { audioElRef.current?.pause(); } catch {}
     onClose();
@@ -752,7 +776,18 @@ function SoundSheet({ soundId, onClose, onOpenProfile, onUseSound }) {
             </button>
 
             <div style={{ minWidth: 0 }}>
-              <div className="text-base font-bold" style={{ overflowWrap: "anywhere" }}>{sound.name}</div>
+              <div className="flex items-center gap-2">
+                <div className="text-base font-bold" style={{ overflowWrap: "anywhere" }}>{sound.name}</div>
+                {sound.isMine && (
+                  <button
+                    onClick={handleRename}
+                    aria-label="Rename sound"
+                    style={{ background: "none", border: "none", color: "var(--text-muted)", padding: 4, flexShrink: 0 }}
+                  >
+                    <Pencil size={15} />
+                  </button>
+                )}
+              </div>
               <button
                 onClick={() => onOpenProfile(sound.author.id)}
                 className="text-sm"
@@ -790,6 +825,11 @@ function SoundSheet({ soundId, onClose, onOpenProfile, onUseSound }) {
             <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--text-muted)" }}>
               Videos with this sound
             </h3>
+            {posts.length === 0 && (
+              <p className="text-sm py-4" style={{ color: "var(--text-muted)" }}>
+                No videos use this sound yet.
+              </p>
+            )}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 4 }}>
               {posts.map((p) => {
                 const src = p.isSource ? sound.mediaUrl : p.mediaUrl;
@@ -829,17 +869,244 @@ function SoundSheet({ soundId, onClose, onOpenProfile, onUseSound }) {
     </div>
   );
 }
-
-function SoundPicker({ onSelect, onClose }) {
-  const [sounds, setSounds] = useState(null);
-  const [busyId, setBusyId] = useState(null);
+// Make a brand new sound: upload an audio or video file, or record your
+// voice. The sound is saved to your account right away (nobody has to
+// favorite it first) and can be used immediately.
+function CreateSoundSheet({ onCreated, onClose }) {
+  const [name, setName] = useState("");
+  const [audio, setAudio] = useState(null);
+  const [sourceLabel, setSourceLabel] = useState("");
+  const [recording, setRecording] = useState(false);
+  const [seconds, setSeconds] = useState(0);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const fileRef = useRef(null);
+  const recorderRef = useRef(null);
+  const streamRef = useRef(null);
+  const chunksRef = useRef([]);
+  const timerRef = useRef(null);
 
   useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      try { recorderRef.current?.stop(); } catch {}
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
+
+  function blobToDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error("read failed"));
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  async function handleFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setError("");
+    if (!/^(audio|video)\//.test(file.type)) {
+      setError("Choose an audio or video file.");
+      return;
+    }
+    if (file.size > MAX_SOUND_BYTES) {
+      setError("That file is too big. Sounds can be up to 10 MB.");
+      return;
+    }
+    try {
+      const url = await blobToDataUrl(file);
+      setAudio(url);
+      setSourceLabel(file.name);
+      setName((prev) => prev || file.name.replace(/\.[^.]+$/, "").slice(0, 60));
+    } catch {
+      setError("Couldn't read that file.");
+    }
+  }
+
+  async function startRecording() {
+    setError("");
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setError("Recording isn't supported on this browser.");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      const mime = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find((m) => MediaRecorder.isTypeSupported?.(m));
+      const recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+      chunksRef.current = [];
+      recorder.ondataavailable = (ev) => {
+        if (ev.data && ev.data.size > 0) chunksRef.current.push(ev.data);
+      };
+      recorder.onstop = async () => {
+        streamRef.current?.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || mime || "audio/webm" });
+        if (blob.size > 0) {
+          try {
+            const url = await blobToDataUrl(blob);
+            setAudio(url);
+            setSourceLabel("Voice recording");
+          } catch {
+            setError("Couldn't save that recording.");
+          }
+        }
+      };
+      recorderRef.current = recorder;
+      recorder.start();
+      setRecording(true);
+      setSeconds(0);
+      timerRef.current = setInterval(() => {
+        setSeconds((s) => {
+          if (s + 1 >= MAX_RECORD_SECONDS) stopRecording();
+          return s + 1;
+        });
+      }, 1000);
+    } catch {
+      setError("Couldn't access the microphone. Check your browser permissions.");
+    }
+  }
+
+  function stopRecording() {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    setRecording(false);
+    try { recorderRef.current?.stop(); } catch {}
+  }
+
+  async function handleSave() {
+    if (saving || recording) return;
+    if (!audio) {
+      setError("Upload a file or record something first.");
+      return;
+    }
+    if (!name.trim()) {
+      setError("Give your sound a name.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      const res = await fetch("/api/feed", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "createSound", name: name.trim(), mediaUrl: audio }),
+      });
+      let json = {};
+      try { json = await res.json(); } catch {}
+      if (!res.ok || !json.sound) {
+        setError(json.error || "Couldn't save your sound.");
+        setSaving(false);
+        return;
+      }
+      onCreated(json.sound);
+    } catch {
+      setError("Couldn't save your sound. Check your connection and try again.");
+      setSaving(false);
+    }
+  }
+
+  const bigButton = {
+    flex: 1, height: 88, borderRadius: 16, background: "var(--surface-2)",
+    border: "1px solid var(--border)", color: "var(--text)",
+    display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6,
+    fontSize: 13, fontWeight: 600,
+  };
+
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, zIndex: 560,
+        background: "var(--surface)", color: "var(--text)",
+        display: "flex", flexDirection: "column",
+      }}
+    >
+      <div
+        className="flex items-center gap-3 px-4"
+        style={{ height: 56, borderBottom: "1px solid var(--border)", flexShrink: 0 }}
+      >
+        <button onClick={onClose} aria-label="Back" style={{ background: "none", border: "none", color: "var(--text)" }}>
+          <ArrowLeft size={22} />
+        </button>
+        <h2 className="text-sm font-semibold">Create sound</h2>
+      </div>
+
+      <div className="p-4" style={{ flex: 1, overflowY: "auto" }}>
+        <div className="text-sm font-semibold mb-2">Sound name</div>
+        <input
+          className="input pl-3 mb-5"
+          placeholder="Name your sound"
+          maxLength={60}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+
+        <div className="flex gap-3 mb-4">
+          <button onClick={() => fileRef.current?.click()} disabled={recording} style={bigButton}>
+            <Upload size={22} />
+            Upload audio or video
+          </button>
+          <button
+            onClick={recording ? stopRecording : startRecording}
+            style={{
+              ...bigButton,
+              ...(recording ? { background: "var(--accent-soft)", border: "2px solid var(--accent)", color: "var(--accent)" } : {}),
+            }}
+          >
+            <Mic size={22} />
+            {recording ? `Stop · ${formatTime(seconds)}` : "Record your voice"}
+          </button>
+        </div>
+        <input ref={fileRef} type="file" accept="audio/*,video/*" onChange={handleFile} style={{ display: "none" }} />
+
+        {audio && !recording && (
+          <div className="mb-4">
+            <div className="text-xs mb-2" style={{ color: "var(--text-muted)" }}>{sourceLabel}</div>
+            <audio src={audio} controls style={{ width: "100%" }} />
+          </div>
+        )}
+
+        <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+          Sounds can be up to 10 MB, or 60 seconds when recording. Once saved, your sound shows up in Your sounds and anyone can use it.
+        </p>
+
+        {error && <div className="alert alert-error mt-3">{error}</div>}
+      </div>
+
+      <div
+        className="p-4"
+        style={{ borderTop: "1px solid var(--border)", flexShrink: 0, paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 16px)" }}
+      >
+        <button className="btn-primary" onClick={handleSave} disabled={saving || recording}>
+          {saving ? <Loader2 size={16} className="animate-spin" /> : "Save and use sound"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Pick a sound to record with: Your sounds (everything you made, no
+// favoriting needed) or Favorites, plus a button to create a new one.
+function SoundPicker({ onSelect, onClose }) {
+  const [tab, setTab] = useState("mine");
+  const [lists, setLists] = useState({ mine: null, favorites: null });
+  const [busyId, setBusyId] = useState(null);
+  const [error, setError] = useState("");
+  const [createOpen, setCreateOpen] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/feed?mySounds=1")
+      .then((r) => r.json())
+      .then((d) => setLists((p) => ({ ...p, mine: d.sounds || [] })))
+      .catch(() => setLists((p) => ({ ...p, mine: [] })));
     fetch("/api/feed?favoriteSounds=1")
       .then((r) => r.json())
-      .then((d) => setSounds(d.sounds || []))
-      .catch(() => setSounds([]));
+      .then((d) => setLists((p) => ({ ...p, favorites: d.sounds || [] })))
+      .catch(() => setLists((p) => ({ ...p, favorites: [] })));
   }, []);
 
   async function choose(s) {
@@ -860,6 +1127,14 @@ function SoundPicker({ onSelect, onClose }) {
     setBusyId(null);
   }
 
+  const sounds = lists[tab];
+  const tabStyle = (id) => ({
+    flex: 1, padding: "10px 0", background: "none", border: "none",
+    fontSize: 14, fontWeight: tab === id ? 700 : 500,
+    color: tab === id ? "var(--text)" : "var(--text-muted)",
+    borderBottom: tab === id ? "2px solid var(--accent)" : "2px solid transparent",
+  });
+
   return (
     <div
       style={{
@@ -875,7 +1150,19 @@ function SoundPicker({ onSelect, onClose }) {
         <button onClick={onClose} aria-label="Back" style={{ background: "none", border: "none", color: "var(--text)" }}>
           <ArrowLeft size={22} />
         </button>
-        <h2 className="text-sm font-semibold">Favorite sounds</h2>
+        <h2 className="text-sm font-semibold" style={{ flex: 1 }}>Sounds</h2>
+        <button
+          onClick={() => setCreateOpen(true)}
+          className="flex items-center gap-1 text-sm font-semibold"
+          style={{ background: "none", border: "none", color: "var(--accent)" }}
+        >
+          <Plus size={16} /> Create
+        </button>
+      </div>
+
+      <div className="flex" style={{ borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+        <button onClick={() => setTab("mine")} style={tabStyle("mine")}>Your sounds</button>
+        <button onClick={() => setTab("favorites")} style={tabStyle("favorites")}>Favorites</button>
       </div>
 
       <div className="p-4" style={{ flex: 1, overflowY: "auto" }}>
@@ -889,7 +1176,9 @@ function SoundPicker({ onSelect, onClose }) {
 
         {sounds && sounds.length === 0 && (
           <p className="text-sm text-center py-10" style={{ color: "var(--text-muted)" }}>
-            No favorite sounds yet. Tap the sound disc on any video and choose Favorite.
+            {tab === "mine"
+              ? "No sounds yet. Tap Create to upload or record one, or post a video and its audio becomes your sound."
+              : "No favorite sounds yet. Tap the sound disc on any video and choose Favorite."}
           </p>
         )}
 
@@ -907,12 +1196,23 @@ function SoundPicker({ onSelect, onClose }) {
               </div>
               <div className="text-xs" style={{ color: "var(--text-muted)" }}>
                 @{(s.author?.username || "").toLowerCase()}
+                {s.uploaded ? " · Uploaded" : ""}
               </div>
             </div>
             {busyId === s.id && <Loader2 size={16} className="animate-spin" />}
           </button>
         ))}
       </div>
+
+      {createOpen && (
+        <CreateSoundSheet
+          onCreated={(sound) => {
+            setCreateOpen(false);
+            onSelect({ id: sound.id, name: sound.name, mediaUrl: sound.mediaUrl });
+          }}
+          onClose={() => setCreateOpen(false)}
+        />
+      )}
     </div>
   );
 }
@@ -1892,9 +2192,10 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
   }
 
   const isVideo = post.mediaType === "video" && !!post.mediaUrl;
-  // A video made with someone's sound points back to the original post.
+  // A video made with someone's sound points back to that sound.
   const soundKey = post.soundId || post.id;
-  const soundLabel = soundNameFor(post.soundOwner || post.author);
+  // Sounds can have a custom name; otherwise it's "original sound - username".
+  const soundLabel = post.soundName || soundNameFor(post.soundOwner || post.author);
   const progressPct = duration ? (currentTime / duration) * 100 : 0;
 
   return (
