@@ -52,6 +52,9 @@ export default function FeedbackPrompt() {
   const pathRef = useRef(pathname);
   const [stage, setStage] = useState(null); // null | "ask" | "done" | "thanks"
   const stageRef = useRef(null);
+  // ONE shared copy of the timer/snooze settings. The timer and the
+  // "Not now" button both use this, so a snooze can never be missed.
+  const stateRef = useRef({ seconds: 0, dismissals: 0, snoozedUntil: 0 });
   const [eligible, setEligible] = useState(false);
   const [thanks, setThanks] = useState(null);
   const [picked, setPicked] = useState([]);
@@ -63,9 +66,11 @@ export default function FeedbackPrompt() {
     pathRef.current = pathname;
   }, [pathname]);
 
-  useEffect(() => {
-    stageRef.current = stage;
-  }, [stage]);
+  // Changes the visible stage and the ref the timer checks, together.
+  function showStage(next) {
+    stageRef.current = next;
+    setStage(next);
+  }
 
   // Ask the server who this is: a guest who should be asked, and/or someone
   // with a thank-you waiting.
@@ -88,7 +93,7 @@ export default function FeedbackPrompt() {
   useEffect(() => {
     if (!thanks) return;
     const t = setTimeout(() => {
-      if (!stageRef.current) setStage("thanks");
+      if (!stageRef.current) showStage("thanks");
     }, 2000);
     return () => clearTimeout(t);
   }, [thanks]);
@@ -96,30 +101,32 @@ export default function FeedbackPrompt() {
   // Counts the time spent actively using the app, then asks.
   useEffect(() => {
     if (!eligible) return;
-    const state = readState();
-    if (state.dismissals >= MAX_DISMISSALS) return;
+    stateRef.current = readState();
 
     let ticks = 0;
     const timer = setInterval(() => {
+      const state = stateRef.current;
+      if (state.dismissals >= MAX_DISMISSALS) return;
       if (document.visibilityState !== "visible") return;
+      if (stageRef.current) return;
+
       state.seconds += 1;
       ticks += 1;
       if (ticks % 10 === 0) writeState(state);
 
       if (state.seconds < SHOW_AFTER_SECONDS) return;
-      if (stageRef.current) return;
       if (Date.now() < state.snoozedUntil) return;
       if (QUIET_PATHS.some((p) => pathRef.current?.startsWith(p))) return;
       // Never interrupt someone who is recording or taking a photo.
       if (document.querySelector('[aria-label="Take photo"],[aria-label="Start recording"],[aria-label="Stop recording"]')) return;
 
       writeState(state);
-      setStage("ask");
+      showStage("ask");
     }, 1000);
 
     return () => {
       clearInterval(timer);
-      writeState(state);
+      writeState(stateRef.current);
     };
   }, [eligible]);
 
@@ -128,12 +135,12 @@ export default function FeedbackPrompt() {
   }
 
   function notNow() {
-    const state = readState();
+    const state = stateRef.current;
     state.dismissals += 1;
     state.snoozedUntil = Date.now() + SNOOZE_MS;
     state.seconds = 0;
     writeState(state);
-    setStage(null);
+    showStage(null);
   }
 
   async function send() {
@@ -158,11 +165,14 @@ export default function FeedbackPrompt() {
         return;
       }
       // Done for good: never ask this device again.
-      writeState({ seconds: 0, dismissals: MAX_DISMISSALS, snoozedUntil: Date.now() + 365 * SNOOZE_MS });
+      stateRef.current = { seconds: 0, dismissals: MAX_DISMISSALS, snoozedUntil: Date.now() + 365 * SNOOZE_MS };
+      writeState(stateRef.current);
       setEligible(false);
       setSending(false);
-      setStage("done");
-      setTimeout(() => setStage((s) => (s === "done" ? null : s)), 3000);
+      showStage("done");
+      setTimeout(() => {
+        if (stageRef.current === "done") showStage(null);
+      }, 3000);
     } catch {
       setError("Couldn't send. Check your connection and try again.");
       setSending(false);
@@ -171,7 +181,7 @@ export default function FeedbackPrompt() {
 
   async function closeThanks() {
     const id = thanks?.id;
-    setStage(null);
+    showStage(null);
     setThanks(null);
     if (id) {
       fetch("/api/feedback", {
@@ -187,7 +197,7 @@ export default function FeedbackPrompt() {
   return (
     <>
       <div
-        onClick={stage === "ask" ? notNow : stage === "thanks" ? closeThanks : () => setStage(null)}
+        onClick={stage === "ask" ? notNow : stage === "thanks" ? closeThanks : () => showStage(null)}
         style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 900 }}
       />
       <div
