@@ -1,10 +1,11 @@
 "use client";
 import { useState, useRef, useEffect, useCallback } from "react";
-import { X, RefreshCw, Zap, ZapOff, Clock, Image as ImageIcon, Music2, Sparkles } from "lucide-react";
+import { X, RefreshCw, Zap, ZapOff, Clock, Image as ImageIcon, Music2, Sparkles, Gauge, LayoutGrid } from "lucide-react";
 
 const MODES = [
   { id: "15", label: "15s", seconds: 15 },
   { id: "60", label: "60s", seconds: 60 },
+  { id: "180", label: "3m", seconds: 180 },
   { id: "photo", label: "PHOTO", seconds: 0 },
 ];
 
@@ -20,6 +21,16 @@ const FILTERS = [
   { id: "vintage", label: "Vintage", css: "sepia(0.5) contrast(1.05) brightness(0.96) saturate(0.9)", dot: "#b8894d" },
   { id: "fade", label: "Fade", css: "contrast(0.85) brightness(1.1) saturate(0.85)", dot: "#c7d3e0" },
   { id: "drama", label: "Drama", css: "contrast(1.35) saturate(1.2) brightness(0.92)", dot: "#7048e8" },
+];
+
+// Recording speeds, same options as TikTok. Slow values give slow motion,
+// fast values give a sped-up video. The speed is baked into the finished clip.
+const SPEEDS = [
+  { value: 0.3, label: "0.3x" },
+  { value: 0.5, label: "0.5x" },
+  { value: 1, label: "1x" },
+  { value: 2, label: "2x" },
+  { value: 3, label: "3x" },
 ];
 
 const RING_RADIUS = 40;
@@ -124,6 +135,88 @@ function blobHasPlayableVideo(blob) {
   });
 }
 
+// Re-records a finished clip at a different speed (0.3x slow motion up to
+// 3x fast). It plays the clip back at the new rate and records that, so the
+// speed becomes part of the video itself. Takes about as long as the new
+// clip. Returns null if this browser can't do it.
+function retimeBlob(blob, speed, clipSeconds, mimeType) {
+  return new Promise((resolve) => {
+    let finished = false;
+    let rec = null;
+    let ctx = null;
+    const url = URL.createObjectURL(blob);
+    const chunks = [];
+    const v = document.createElement("video");
+
+    const finish = (result) => {
+      if (finished) return;
+      finished = true;
+      try { v.pause(); } catch {}
+      try { if (rec && rec.state !== "inactive") rec.stop(); } catch {}
+      try { ctx?.close(); } catch {}
+      URL.revokeObjectURL(url);
+      resolve(result);
+    };
+
+    try {
+      if (typeof v.captureStream !== "function" && typeof v.mozCaptureStream !== "function") {
+        finish(null);
+        return;
+      }
+      v.playsInline = true;
+      v.preload = "auto";
+      v.src = url;
+      v.defaultPlaybackRate = speed;
+      v.playbackRate = speed;
+
+      v.onloadeddata = async () => {
+        try {
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          ctx = new AudioCtx();
+          const dest = ctx.createMediaStreamDestination();
+          // Routed only into the recorder, so nothing plays out loud.
+          ctx.createMediaElementSource(v).connect(dest);
+          const cap = (v.captureStream || v.mozCaptureStream).call(v);
+          if (cap.getVideoTracks().length === 0) {
+            finish(null);
+            return;
+          }
+          const out = new MediaStream([...cap.getVideoTracks(), ...dest.stream.getAudioTracks()]);
+          const options = { videoBitsPerSecond: 1000000 };
+          if (mimeType) options.mimeType = mimeType;
+          rec = new MediaRecorder(out, options);
+          rec.ondataavailable = (e) => {
+            if (e.data && e.data.size > 0) chunks.push(e.data);
+          };
+          rec.onstop = () => {
+            const result = new Blob(chunks, { type: rec.mimeType || mimeType || "video/webm" });
+            finish(result.size > 0 ? result : null);
+          };
+          const stopRec = () => {
+            try {
+              if (rec.state !== "inactive") rec.stop();
+              else finish(null);
+            } catch {
+              finish(null);
+            }
+          };
+          v.onended = stopRec;
+          setTimeout(stopRec, (clipSeconds / speed + 6) * 1000);
+          await ctx.resume();
+          rec.start(250);
+          v.playbackRate = speed;
+          await v.play();
+        } catch {
+          finish(null);
+        }
+      };
+      v.onerror = () => finish(null);
+    } catch {
+      finish(null);
+    }
+  });
+}
+
 function ToolButton({ icon, label, onClick, active }) {
   return (
     <button
@@ -176,6 +269,8 @@ export default function CameraCapture({
   const discardRef = useRef(false);
   const startedAtRef = useRef(0);
   const filterRafRef = useRef(null);
+  const pinchRef = useRef(null);
+  const zoomBusyRef = useRef(false);
 
   const [facingMode, setFacingMode] = useState("user");
   const [flashOn, setFlashOn] = useState(false);
@@ -189,6 +284,12 @@ export default function CameraCapture({
   const [lastThumb, setLastThumb] = useState(null);
   const [filterId, setFilterId] = useState("none");
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [speed, setSpeed] = useState(1);
+  const [speedOpen, setSpeedOpen] = useState(false);
+  const [gridOn, setGridOn] = useState(false);
+  const [processing, setProcessing] = useState("");
+  const [zoomCaps, setZoomCaps] = useState(null);
+  const [zoom, setZoom] = useState(1);
 
   const mode = MODES.find((m) => m.id === modeId) || MODES[0];
   const activeFilter = FILTERS.find((f) => f.id === filterId) || FILTERS[0];
@@ -223,8 +324,16 @@ export default function CameraCapture({
       const track = stream.getVideoTracks()[0];
       const caps = track && track.getCapabilities ? track.getCapabilities() : {};
       setTorchSupported(!!caps.torch);
+      if (caps.zoom && caps.zoom.max > caps.zoom.min) {
+        setZoomCaps({ min: caps.zoom.min, max: caps.zoom.max });
+        setZoom(caps.zoom.min);
+      } else {
+        setZoomCaps(null);
+        setZoom(1);
+      }
     } catch {
       setTorchSupported(false);
+      setZoomCaps(null);
     }
     setError("");
   }, [facingMode, wantAudio]);
@@ -285,6 +394,40 @@ export default function CameraCapture({
     return canvas.captureStream(30);
   }
 
+  // Pinch the preview to zoom, when the camera supports it.
+  async function applyZoom(value) {
+    if (!zoomCaps) return;
+    const next = Math.min(zoomCaps.max, Math.max(zoomCaps.min, value));
+    setZoom(next);
+    if (zoomBusyRef.current) return;
+    const track = streamRef.current?.getVideoTracks()[0];
+    if (!track) return;
+    zoomBusyRef.current = true;
+    try {
+      await track.applyConstraints({ advanced: [{ zoom: next }] });
+    } catch {}
+    zoomBusyRef.current = false;
+  }
+
+  function touchDistance(touches) {
+    return Math.hypot(touches[0].clientX - touches[1].clientX, touches[0].clientY - touches[1].clientY);
+  }
+
+  function handlePinchStart(e) {
+    if (e.touches.length === 2 && zoomCaps) {
+      pinchRef.current = { dist: touchDistance(e.touches), zoom };
+    }
+  }
+
+  function handlePinchMove(e) {
+    if (!pinchRef.current || e.touches.length !== 2) return;
+    applyZoom(pinchRef.current.zoom * (touchDistance(e.touches) / pinchRef.current.dist));
+  }
+
+  function handlePinchEnd() {
+    pinchRef.current = null;
+  }
+
   function flipCamera() {
     if (recording) return;
     setFacingMode((f) => (f === "user" ? "environment" : "user"));
@@ -342,6 +485,7 @@ export default function CameraCapture({
     try {
       discardRef.current = false;
       chunksRef.current = [];
+      const chosenSpeed = speed;
 
       let videoTracks = stream.getVideoTracks();
       let audioTracks = stream.getAudioTracks();
@@ -378,7 +522,7 @@ export default function CameraCapture({
       const recordStream = new MediaStream([...videoTracks, ...audioTracks]);
 
       const mimeType = pickMimeType();
-      const options = { videoBitsPerSecond: 1200000 };
+      const options = { videoBitsPerSecond: mode.seconds > 60 ? 800000 : 1200000 };
       if (mimeType) options.mimeType = mimeType;
       const recorder = new MediaRecorder(recordStream, options);
 
@@ -397,18 +541,35 @@ export default function CameraCapture({
         // it off — a clip lasting a fraction of a second is fine and should
         // go through just like it does on TikTok; only a truly empty/corrupt
         // recording (no frames at all) gets rejected here.
-        blobHasPlayableVideo(blob).then((ok) => {
+        const clipSeconds = (Date.now() - startedAtRef.current) / 1000;
+
+        blobHasPlayableVideo(blob).then(async (ok) => {
           if (discardRef.current) return;
           if (!ok) {
             showError("That recording didn't save properly. Try again.");
             return;
           }
+
+          let finalBlob = blob;
+          if (chosenSpeed !== 1) {
+            const secs = Math.max(1, Math.round(clipSeconds / chosenSpeed));
+            setProcessing(`Applying ${chosenSpeed}x speed… about ${secs}s`);
+            const retimed = await retimeBlob(blob, chosenSpeed, clipSeconds, mimeType);
+            setProcessing("");
+            if (discardRef.current) return;
+            if (retimed) {
+              finalBlob = retimed;
+            } else {
+              showError("This browser can't change speed, so this clip kept normal speed.");
+            }
+          }
+
           const reader = new FileReader();
           reader.onload = () => {
             setLastThumb(thumb || null);
             onCapture({ mediaUrl: reader.result, mediaType: "video", thumbUrl: thumb || null });
           };
-          reader.readAsDataURL(blob);
+          reader.readAsDataURL(finalBlob);
         });
       };
 
@@ -454,6 +615,7 @@ export default function CameraCapture({
   }
 
   function handleCapturePress() {
+    if (processing) return;
     if (recording) {
       stopRecording();
       return;
@@ -531,7 +693,7 @@ export default function CameraCapture({
   }
 
   const progress = mode.seconds ? Math.min(1, elapsed / mode.seconds) : 0;
-  const busy = recording || countdownLeft > 0;
+  const busy = recording || countdownLeft > 0 || !!processing;
   const elapsedSecs = Math.floor(elapsed);
   const elapsedLabel = `${Math.floor(elapsedSecs / 60)}:${String(elapsedSecs % 60).padStart(2, "0")}`;
 
@@ -549,6 +711,39 @@ export default function CameraCapture({
             filter: activeFilter.css,
           }}
         />
+
+        {/* Invisible layer that catches pinch-to-zoom on the preview. */}
+        <div
+          onTouchStart={handlePinchStart}
+          onTouchMove={handlePinchMove}
+          onTouchEnd={handlePinchEnd}
+          onTouchCancel={handlePinchEnd}
+          style={{ position: "absolute", inset: 0, zIndex: 1, touchAction: "none" }}
+        />
+
+        {/* Rule-of-thirds grid */}
+        {gridOn && (
+          <div style={{ position: "absolute", inset: 0, zIndex: 1, pointerEvents: "none" }}>
+            {[33.33, 66.66].map((pos) => (
+              <div key={`v${pos}`} style={{ position: "absolute", top: 0, bottom: 0, left: `${pos}%`, width: 1, background: "rgba(255,255,255,0.45)" }} />
+            ))}
+            {[33.33, 66.66].map((pos) => (
+              <div key={`h${pos}`} style={{ position: "absolute", left: 0, right: 0, top: `${pos}%`, height: 1, background: "rgba(255,255,255,0.45)" }} />
+            ))}
+          </div>
+        )}
+
+        {zoomCaps && zoom > zoomCaps.min + 0.05 && (
+          <div
+            style={{
+              position: "absolute", left: "50%", bottom: 250, transform: "translateX(-50%)", zIndex: 3,
+              background: "rgba(0,0,0,0.55)", color: "white", fontSize: 13, fontWeight: 700,
+              padding: "3px 12px", borderRadius: 14, pointerEvents: "none",
+            }}
+          >
+            {(zoom / zoomCaps.min).toFixed(1)}x
+          </div>
+        )}
 
         <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 140, background: "linear-gradient(to bottom, rgba(0,0,0,0.5), rgba(0,0,0,0))", pointerEvents: "none" }} />
         <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 220, background: "linear-gradient(to top, rgba(0,0,0,0.6), rgba(0,0,0,0))", pointerEvents: "none" }} />
@@ -643,11 +838,25 @@ export default function CameraCapture({
               active={filtersOpen || filterId !== "none"}
               onClick={() => setFiltersOpen((o) => !o)}
             />
+            {!isPhoto && (
+              <ToolButton
+                icon={<Gauge size={22} />}
+                label={speed === 1 ? "Speed" : `${speed}x`}
+                active={speedOpen || speed !== 1}
+                onClick={() => setSpeedOpen((o) => !o)}
+              />
+            )}
             <ToolButton
               icon={<Clock size={22} />}
               label={timerSeconds ? `${timerSeconds}s` : "Timer"}
               active={timerSeconds > 0}
               onClick={cycleTimer}
+            />
+            <ToolButton
+              icon={<LayoutGrid size={22} />}
+              label="Grid"
+              active={gridOn}
+              onClick={() => setGridOn((g) => !g)}
             />
             {torchSupported && (
               <ToolButton
@@ -666,6 +875,19 @@ export default function CameraCapture({
             <span style={{ color: "white", fontSize: 120, fontWeight: 800, textShadow: "0 2px 12px rgba(0,0,0,0.6)" }}>
               {countdownLeft}
             </span>
+          </div>
+        )}
+
+        {processing && (
+          <div
+            style={{
+              position: "absolute", inset: 0, zIndex: 6, background: "rgba(0,0,0,0.65)",
+              display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 10,
+              color: "white", fontSize: 15, fontWeight: 600, textAlign: "center", padding: 24,
+            }}
+          >
+            <span>{processing}</span>
+            <span style={{ fontSize: 12, fontWeight: 400, opacity: 0.75 }}>Keep this screen open</span>
           </div>
         )}
 
@@ -688,6 +910,30 @@ export default function CameraCapture({
             display: "flex", flexDirection: "column", alignItems: "center", gap: 16,
           }}
         >
+          {speedOpen && !busy && !isPhoto && (
+            <div
+              style={{
+                display: "flex", gap: 4, alignSelf: "center", background: "rgba(0,0,0,0.5)",
+                borderRadius: 20, padding: 3,
+              }}
+            >
+              {SPEEDS.map((sp) => (
+                <button
+                  key={sp.value}
+                  type="button"
+                  onClick={() => setSpeed(sp.value)}
+                  style={{
+                    border: "none", borderRadius: 17, padding: "6px 13px", fontSize: 13, fontWeight: 700,
+                    background: speed === sp.value ? "white" : "transparent",
+                    color: speed === sp.value ? "#111" : "white",
+                  }}
+                >
+                  {sp.label}
+                </button>
+              ))}
+            </div>
+          )}
+
           {filtersOpen && !busy && (
             <div
               style={{
