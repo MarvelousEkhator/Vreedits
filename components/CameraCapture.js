@@ -217,6 +217,130 @@ function retimeBlob(blob, speed, clipSeconds, mimeType) {
   });
 }
 
+// True when an image is basically all black (used to skip a black first frame).
+function canvasIsMostlyBlack(canvas) {
+  try {
+    const { width, height } = canvas;
+    const data = canvas.getContext("2d").getImageData(0, 0, width, height).data;
+    let bright = 0;
+    let samples = 0;
+    for (let i = 0; i < data.length; i += 4 * 37) {
+      samples += 1;
+      if (data[i] + data[i + 1] + data[i + 2] > 45) bright += 1;
+    }
+    return samples > 0 && bright / samples < 0.02;
+  } catch {
+    return false;
+  }
+}
+
+// Really plays a video (recorded, sped up, or picked from the gallery) to
+// make sure this browser can decode it, and picks a cover frame that isn't
+// black. Works for clips of any length, even a single second.
+// Resolves { ok, thumb }. ok is false if no frame could be decoded.
+function inspectVideo(src) {
+  return new Promise((resolve) => {
+    const v = document.createElement("video");
+    let finished = false;
+    let thumb = null;
+    let decoded = false;
+
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      try { v.pause(); } catch {}
+      v.removeAttribute("src");
+      try { v.load(); } catch {}
+      resolve({ ok: decoded, thumb });
+    };
+
+    const grab = () => {
+      if (!v.videoWidth || v.readyState < 2) return false;
+      decoded = true;
+      const scale = Math.min(1, 480 / v.videoWidth);
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(v.videoWidth * scale));
+      canvas.height = Math.max(1, Math.round(v.videoHeight * scale));
+      try {
+        canvas.getContext("2d").drawImage(v, 0, 0, canvas.width, canvas.height);
+        const black = canvasIsMostlyBlack(canvas);
+        // Keep the first frame, but replace it if a later one is brighter.
+        if (!thumb || !black) thumb = canvas.toDataURL("image/jpeg", 0.8);
+        return !black;
+      } catch {
+        return true;
+      }
+    };
+
+    const seekTo = (t) =>
+      new Promise((res) => {
+        if (v.readyState >= 2 && Math.abs(v.currentTime - t) < 0.001) {
+          res();
+          return;
+        }
+        const timer = setTimeout(res, 1500);
+        v.onseeked = () => {
+          clearTimeout(timer);
+          res();
+        };
+        try { v.currentTime = t; } catch { clearTimeout(timer); res(); }
+      });
+
+    const sample = async () => {
+      const dur = isFinite(v.duration) && v.duration > 0 ? v.duration : 1;
+      // Try the very start, then a little in, until a frame isn't black.
+      const times = [0, Math.min(0.3, dur / 2), Math.min(0.8, dur * 0.9)];
+      for (const t of times) {
+        await seekTo(t);
+        if (grab()) break;
+      }
+      finish();
+    };
+
+    v.muted = true;
+    v.playsInline = true;
+    v.preload = "auto";
+    v.onerror = () => finish();
+    v.onloadedmetadata = () => {
+      // Recorded clips often report an unknown length; seeking to the end once
+      // makes the browser work it out (this is what fixes the stuck 0:00).
+      if (v.duration === Infinity || isNaN(v.duration)) {
+        let started = false;
+        const go = () => {
+          if (started) return;
+          started = true;
+          v.onseeked = null;
+          v.ontimeupdate = null;
+          sample();
+        };
+        v.onseeked = go;
+        v.ontimeupdate = go;
+        setTimeout(go, 1500);
+        try { v.currentTime = 1e101; } catch { go(); }
+      } else {
+        sample();
+      }
+    };
+    setTimeout(finish, 8000);
+    v.src = src;
+  });
+}
+
+// Turns a recording into a data URL that actually plays. The browser labels
+// recordings like "video/webm;codecs=vp9,opus", and the comma inside that
+// label breaks a data URL (the video looks fine as a file but shows a broken
+// 0:00 player once posted). Dropping the codec part fixes it.
+function blobToCleanDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const baseType = ((blob.type || "video/webm").split(";")[0] || "video/webm").trim();
+    const clean = new Blob([blob], { type: baseType });
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(clean);
+  });
+}
+
 function ToolButton({ icon, label, onClick, active }) {
   return (
     <button
@@ -271,6 +395,8 @@ export default function CameraCapture({
   const filterRafRef = useRef(null);
   const pinchRef = useRef(null);
   const zoomBusyRef = useRef(false);
+  const minStopTimerRef = useRef(null);
+  const filterBrokenRef = useRef(false);
 
   const [facingMode, setFacingMode] = useState("user");
   const [flashOn, setFlashOn] = useState(false);
@@ -352,6 +478,7 @@ export default function CameraCapture({
       try { soundElRef.current?.pause(); } catch {}
       try { audioCtxRef.current?.close(); } catch {}
       if (filterRafRef.current) cancelAnimationFrame(filterRafRef.current);
+      clearTimeout(minStopTimerRef.current);
     };
   }, []);
 
@@ -510,7 +637,10 @@ export default function CameraCapture({
 
       // A filter is baked into the recording by recording a filtered canvas
       // instead of the raw camera.
-      if (activeFilter.css !== "none") {
+      const bakeFilter = activeFilter.css !== "none" && !filterBrokenRef.current;
+      if (activeFilter.css !== "none" && filterBrokenRef.current) {
+        showError("This phone can't save filters in videos, so this one records without it.");
+      } else if (bakeFilter) {
         if (canvasFilterSupported()) {
           const filtered = startFilterCanvas(activeFilter.css);
           if (filtered) videoTracks = filtered.getVideoTracks();
@@ -550,26 +680,54 @@ export default function CameraCapture({
             return;
           }
 
+          setProcessing("Saving your video…");
+
           let finalBlob = blob;
+          let sped = false;
           if (chosenSpeed !== 1) {
             const secs = Math.max(1, Math.round(clipSeconds / chosenSpeed));
             setProcessing(`Applying ${chosenSpeed}x speed… about ${secs}s`);
             const retimed = await retimeBlob(blob, chosenSpeed, clipSeconds, mimeType);
-            setProcessing("");
-            if (discardRef.current) return;
             if (retimed) {
               finalBlob = retimed;
+              sped = true;
             } else {
               showError("This browser can't change speed, so this clip kept normal speed.");
             }
+            setProcessing("Saving your video…");
           }
 
-          const reader = new FileReader();
-          reader.onload = () => {
-            setLastThumb(thumb || null);
-            onCapture({ mediaUrl: reader.result, mediaType: "video", thumbUrl: thumb || null });
-          };
-          reader.readAsDataURL(finalBlob);
+          // Build the exact file that will be posted, then play THAT back once
+          // to be sure it works before anything is sent.
+          let dataUrl = null;
+          let info = { ok: false, thumb: null };
+          try {
+            dataUrl = await blobToCleanDataUrl(finalBlob);
+            info = await inspectVideo(dataUrl);
+            if (!info.ok && sped) {
+              showError("Speed didn't work on this phone, so this clip kept normal speed.");
+              dataUrl = await blobToCleanDataUrl(blob);
+              info = await inspectVideo(dataUrl);
+            }
+          } catch {
+            info = { ok: false, thumb: null };
+          }
+          if (discardRef.current) return;
+          setProcessing("");
+
+          if (!info.ok) {
+            if (bakeFilter) filterBrokenRef.current = true;
+            showError(
+              bakeFilter
+                ? "Filters couldn't be saved in this video. Try again and it will record without the filter."
+                : "That recording didn't save properly. Try again."
+            );
+            return;
+          }
+
+          const cover = info.thumb || thumb || null;
+          setLastThumb(cover);
+          onCapture({ mediaUrl: dataUrl, mediaType: "video", thumbUrl: cover });
         });
       };
 
@@ -599,7 +757,26 @@ export default function CameraCapture({
     }
   }
 
+  // A clip needs a moment of real footage to be playable. If someone taps
+  // stop right away, keep going until it has one second (TikTok's minimum).
   function stopRecording() {
+    if (!recorderRef.current) return;
+    const sinceStart = Date.now() - startedAtRef.current;
+    if (sinceStart < 1000) {
+      if (!minStopTimerRef.current) {
+        minStopTimerRef.current = setTimeout(() => {
+          minStopTimerRef.current = null;
+          stopRecordingNow();
+        }, 1000 - sinceStart);
+      }
+      return;
+    }
+    stopRecordingNow();
+  }
+
+  function stopRecordingNow() {
+    clearTimeout(minStopTimerRef.current);
+    minStopTimerRef.current = null;
     clearInterval(recordTimerRef.current);
     const rec = recorderRef.current;
     recorderRef.current = null;
@@ -645,7 +822,7 @@ export default function CameraCapture({
   function handleClose() {
     discardRef.current = true;
     setCountdownLeft(0);
-    stopRecording();
+    stopRecordingNow();
     teardownSound();
     teardownFilter();
     onClose();
@@ -661,10 +838,16 @@ export default function CameraCapture({
       // you can pick many photos, or one video, but not a mix.
       const videoFile = files.find((f) => f.type.startsWith("video/"));
       if (videoFile) {
+        setProcessing("Loading your video…");
         const dataUrl = await readAsDataUrl(videoFile);
-        const thumb = await thumbFromVideoFile(dataUrl);
-        setLastThumb(thumb);
-        onCapture({ mediaUrl: dataUrl, mediaType: "video", thumbUrl: thumb });
+        const info = await inspectVideo(dataUrl);
+        setProcessing("");
+        if (!info.ok) {
+          showError("This browser can't play that video, so it can't be posted. Try a different video, or record it here.");
+          return;
+        }
+        setLastThumb(info.thumb);
+        onCapture({ mediaUrl: dataUrl, mediaType: "video", thumbUrl: info.thumb });
         return;
       }
 
