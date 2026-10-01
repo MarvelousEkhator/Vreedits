@@ -3,6 +3,7 @@ import { useState, useRef, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import PresenceHeartbeat from "@/components/PresenceHeartbeat";
+import FeedbackPrompt from "@/components/FeedbackPrompt";
 import GlossIcon from "@/components/GlossIcon";
 import ThemeToggle from "@/components/ThemeToggle";
 import { LanguageProvider, useLanguage } from "@/components/LanguageProvider";
@@ -129,6 +130,7 @@ function NavShellInner({ children, user }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100dvh" }}>
       <PresenceHeartbeat />
+      <FeedbackPrompt />
       <style>{`
         .vreedits-topbar {
           display: flex; align-items: center; justify-content: space-between;
