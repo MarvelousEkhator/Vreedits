@@ -1073,3 +1073,20 @@ model Sound {
   @@index([authorId])
   @@index([sourcePostId])
 }
+model Feedback {
+  id            String    @id @default(uuid())
+  userId        String
+  username      String?
+  isGuest       Boolean   @default(false)
+  categories    String[]  @default([])
+  message       String    @db.Text
+  page          String?
+  status        String    @default("new") // "new" | "read"
+  thanksMessage String?   @db.Text
+  thanksSentAt  DateTime?
+  thanksSeenAt  DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([userId, createdAt])
+  @@index([createdAt])
+}
