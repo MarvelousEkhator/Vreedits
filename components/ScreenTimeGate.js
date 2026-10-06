@@ -1,10 +1,26 @@
 // components/ScreenTimeGate.js
 "use client";
 import { useEffect, useRef, useState, useCallback } from "react";
-import Link from "next/link";
-import { Lock, Moon, Coffee, Loader2 } from "lucide-react";
+import { Lock, Moon, Coffee, LogOut } from "lucide-react";
 
-const HEARTBEAT_SECONDS = 30;
+const TICK_SECONDS = 15;
+const MAX_ELAPSED_SECONDS = 60;
+const GAP_RESET_MS = 90 * 1000; // a longer gap means the app was closed
+
+function readNum(key) {
+  try {
+    const v = Number(sessionStorage.getItem(key));
+    return Number.isFinite(v) ? v : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function writeNum(key, value) {
+  try {
+    sessionStorage.setItem(key, String(value));
+  } catch {}
+}
 
 function formatClock(minutes) {
   if (!Number.isInteger(minutes)) return "";
@@ -22,52 +38,82 @@ const overlayStyle = {
   textAlign: "center", padding: 24, overflowY: "auto",
 };
 
+async function logout() {
+  try {
+    await fetch("/api/auth/logout", { method: "POST" });
+  } catch {}
+  window.location.href = "/login";
+}
+
 export default function ScreenTimeGate({ children }) {
   const [status, setStatus] = useState(null);
-  const [loaded, setLoaded] = useState(false);
   const [breakDue, setBreakDue] = useState(false);
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const statusRef = useRef(null);
-  const continuousRef = useRef(0);
+  const lastTickRef = useRef(0);
   statusRef.current = status;
 
   const fetchStatus = useCallback(async () => {
     try {
+      // The server reads this cookie to work out the person's local day.
+      document.cookie = `tz=${new Date().getTimezoneOffset()}; path=/; max-age=31536000; SameSite=Lax`;
       const res = await fetch(`/api/screen-time?tz=${new Date().getTimezoneOffset()}`, { cache: "no-store" });
       if (res.ok) setStatus(await res.json());
     } catch {
-      // If the check can't run, let the app open normally.
+      // If the check can't run, the app opens normally.
     }
-    setLoaded(true);
   }, []);
 
   useEffect(() => {
     fetchStatus();
   }, [fetchStatus]);
 
-  // Count time while the app is open and visible.
+  // Counts time while the app is open and visible. The clock is kept in
+  // sessionStorage so moving between pages doesn't reset it.
   useEffect(() => {
+    const start = Date.now();
+    const saved = readNum("st_last");
+    const continuing = saved > 0 && start - saved < GAP_RESET_MS;
+    lastTickRef.current = continuing ? saved : start;
+    if (!continuing) writeNum("st_cont", 0);
+
     const id = setInterval(async () => {
+      const now = Date.now();
+      if (document.visibilityState !== "visible") {
+        lastTickRef.current = now;
+        writeNum("st_last", now);
+        return;
+      }
+      const elapsed = Math.min(
+        MAX_ELAPSED_SECONDS,
+        Math.max(0, Math.round((now - lastTickRef.current) / 1000))
+      );
+      lastTickRef.current = now;
+      writeNum("st_last", now);
+
       const s = statusRef.current;
-      if (!s || s.blocked || document.visibilityState !== "visible") return;
+      if (s?.blocked || elapsed <= 0) return;
+
       try {
         const res = await fetch("/api/screen-time", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ tz: new Date().getTimezoneOffset(), seconds: HEARTBEAT_SECONDS }),
+          body: JSON.stringify({ tz: new Date().getTimezoneOffset(), seconds: elapsed }),
         });
         if (!res.ok) return;
         const next = await res.json();
         setStatus(next);
-        continuousRef.current += HEARTBEAT_SECONDS;
-        if (next.breakEveryMinutes && continuousRef.current >= next.breakEveryMinutes * 60) {
-          continuousRef.current = 0;
+
+        const cont = readNum("st_cont") + elapsed;
+        writeNum("st_cont", cont);
+        if (next.breakEveryMinutes && cont >= next.breakEveryMinutes * 60) {
+          writeNum("st_cont", 0);
           setBreakDue(true);
         }
       } catch {}
-    }, HEARTBEAT_SECONDS * 1000);
+    }, TICK_SECONDS * 1000);
     return () => clearInterval(id);
   }, []);
 
@@ -75,7 +121,6 @@ export default function ScreenTimeGate({ children }) {
   useEffect(() => {
     function onVisibility() {
       if (document.visibilityState === "visible") fetchStatus();
-      else continuousRef.current = 0;
     }
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
@@ -108,14 +153,6 @@ export default function ScreenTimeGate({ children }) {
     setBusy(false);
   }
 
-  if (!loaded) {
-    return (
-      <div style={{ height: "100%", width: "100%", background: "#000", color: "white", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <Loader2 size={24} className="animate-spin" />
-      </div>
-    );
-  }
-
   if (status?.blocked === "quiet") {
     return (
       <div style={overlayStyle}>
@@ -124,7 +161,13 @@ export default function ScreenTimeGate({ children }) {
         <p className="text-sm mb-6" style={{ color: "var(--text-muted)", maxWidth: 300 }}>
           This app is resting for now. It opens again at {formatClock(status.quietEnd)}.
         </p>
-        <Link href="/dashboard" className="btn-primary" style={{ maxWidth: 200 }}>Back to home</Link>
+        <button
+          onClick={logout}
+          className="flex items-center gap-2 text-sm font-semibold"
+          style={{ background: "none", border: "none", color: "var(--accent)" }}
+        >
+          <LogOut size={15} /> Log out
+        </button>
       </div>
     );
   }
@@ -164,9 +207,13 @@ export default function ScreenTimeGate({ children }) {
           </div>
         )}
 
-        <Link href="/dashboard" className="text-sm font-semibold" style={{ color: "var(--accent)" }}>
-          Back to home
-        </Link>
+        <button
+          onClick={logout}
+          className="flex items-center gap-2 text-sm font-semibold"
+          style={{ background: "none", border: "none", color: "var(--accent)" }}
+        >
+          <LogOut size={15} /> Log out
+        </button>
       </div>
     );
   }
@@ -182,12 +229,14 @@ export default function ScreenTimeGate({ children }) {
             You've been on for a while. Stretch, drink some water, rest your eyes.
           </p>
           <div className="flex gap-3" style={{ width: "100%", maxWidth: 300 }}>
-            <Link href="/dashboard" className="btn-primary" style={{ flex: 1 }}>Take a break</Link>
             <button
               className="btn-primary"
-              onClick={() => setBreakDue(false)}
+              onClick={logout}
               style={{ flex: 1, background: "var(--surface-2)", color: "var(--text)" }}
             >
+              Log out
+            </button>
+            <button className="btn-primary" onClick={() => setBreakDue(false)} style={{ flex: 1 }}>
               Keep going
             </button>
           </div>
