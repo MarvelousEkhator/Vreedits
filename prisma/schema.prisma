@@ -1090,3 +1090,34 @@ model Feedback {
   @@index([userId, createdAt])
   @@index([createdAt])
 }
+model UserSettings {
+  id                String    @id @default(uuid())
+  userId            String    @unique
+  whoCanMessage     String    @default("everyone")
+  showOnlineStatus  Boolean   @default(true)
+  showReadReceipts  Boolean   @default(true)
+  discoverable      Boolean   @default(true)
+  notifPrefs        Json?
+  dailyLimitMinutes Int?
+  quietEnabled      Boolean   @default(false)
+  quietStart        Int       @default(1320)
+  quietEnd          Int       @default(420)
+  breakEveryMinutes Int?
+  guardianPinHash   String?
+  failedPinAttempts Int       @default(0)
+  pinLockedUntil    DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
+
+model ScreenTimeDay {
+  id           String   @id @default(uuid())
+  userId       String
+  day          String
+  secondsUsed  Int      @default(0)
+  bonusMinutes Int      @default(0)
+  updatedAt    DateTime @updatedAt
+
+  @@unique([userId, day])
+  @@index([userId])
+}
