@@ -149,6 +149,11 @@ function RegisterInner() {
         setLoading(false);
         return;
       }
+      // Email verification paused: the account is ready, so go straight to login.
+      if (data.verified) {
+        router.push("/login");
+        return;
+      }
       router.push(`/verify?email=${encodeURIComponent(data.email)}`);
     } catch {
       setError("Network error. Please try again.");
