@@ -1,6 +1,8 @@
+// app/api/profile/route.js  (the first file you pasted)
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/requireUser";
+import { checkProfileGuard } from "@/lib/profileGuard";
 
 const LANGUAGES = ["English", "French", "Spanish", "Arabic"];
 const MAX_BIO_LENGTH = 150;
@@ -34,7 +36,17 @@ export async function PATCH(req) {
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
 
-  const body = await req.json();
+  const body = await req.json().catch(() => null);
+  if (!body || typeof body !== "object") {
+    return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
+  }
+
+  // Age rules and guardian PIN lock for isPublic / allowDownloads.
+  const guard = await checkProfileGuard(user, body);
+  if (!guard.ok) {
+    return NextResponse.json({ error: guard.error }, { status: guard.status });
+  }
+
   const data = {};
 
   if (typeof body.username === "string") {
@@ -120,6 +132,7 @@ export async function PATCH(req) {
       data.lastSeenAt = new Date();
     }
   }
+
   const updated = await prisma.user.update({ where: { id: user.id }, data });
 
   return NextResponse.json({
