@@ -6,6 +6,7 @@ import PresenceHeartbeat from "@/components/PresenceHeartbeat";
 import FeedbackPrompt from "@/components/FeedbackPrompt";
 import GlossIcon from "@/components/GlossIcon";
 import ThemeToggle from "@/components/ThemeToggle";
+import ScreenTimeGate from "@/components/ScreenTimeGate";
 import { LanguageProvider, useLanguage } from "@/components/LanguageProvider";
 import { isTabRoot, getBackFallback } from "@/lib/backRoutes";
 import {
@@ -329,7 +330,9 @@ function NavShellInner({ children, user }) {
         </div>
       </nav>
 
-      <div className="vreedits-content">{children}</div>
+      <div className="vreedits-content">
+        <ScreenTimeGate>{children}</ScreenTimeGate>
+      </div>
 
       {!hideTabBar && (
         <nav className="vreedits-tabbar" aria-label="Main">
