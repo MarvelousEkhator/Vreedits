@@ -4,11 +4,60 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/requireUser";
 import {
   ageFromDob, tierForAge, getSettings, sanitizePatch, checkPin, hashPin,
-  isValidPin, GUARDED,
+  isValidPin, publicSettings, protectionFixes, GUARDED,
 } from "@/lib/userSettings";
+import { localTime } from "@/lib/screenTime";
+
+export const dynamic = "force-dynamic";
 
 function fail(error, status = 400) {
   return NextResponse.json({ error }, { status });
+}
+
+// Everything the parental controls page needs. Never returns the PIN hash.
+export async function GET(req) {
+  const user = await requireUser();
+  if (!user) return fail("Not authenticated.", 401);
+
+  const [settings, u] = await Promise.all([
+    getSettings(user.id),
+    prisma.user.findUnique({
+      where: { id: user.id },
+      select: {
+        dateOfBirth: true, isPublic: true, allowDownloads: true,
+        allowComments: true, allowMentions: true,
+      },
+    }),
+  ]);
+
+  const tier = tierForAge(ageFromDob(u?.dateOfBirth));
+
+  // Under-16 accounts that somehow have looser settings get corrected here.
+  const fixes = protectionFixes(tier, u, settings);
+  const ops = [];
+  if (Object.keys(fixes.userData).length) {
+    ops.push(prisma.user.update({ where: { id: user.id }, data: fixes.userData }));
+  }
+  if (Object.keys(fixes.settingsData).length) {
+    ops.push(prisma.userSettings.update({ where: { userId: user.id }, data: fixes.settingsData }));
+  }
+  if (ops.length) await prisma.$transaction(ops);
+
+  const s = { ...settings, ...fixes.settingsData };
+  const us = { ...u, ...fixes.userData };
+  const local = localTime(new URL(req.url).searchParams.get("tz"));
+
+  return NextResponse.json({
+    hasPin: !!settings.guardianPinHash,
+    tier,
+    day: local.day,
+    settings: {
+      ...publicSettings(s),
+      isPublic: us.isPublic,
+      allowComments: us.allowComments,
+      allowMentions: us.allowMentions,
+    },
+  });
 }
 
 export async function POST(req) {
