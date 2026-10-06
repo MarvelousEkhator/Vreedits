@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/requireUser";
 import { extractHashtags } from "@/lib/hashtags";
 import { ensureSound, resolveSound } from "@/lib/sounds";
+import { getSettings } from "@/lib/userSettings";
+import { localTime, buildStatus } from "@/lib/screenTime";
 
 // Videos are stored inside the database as base64 text, so keep a ceiling
 // (about 45 million characters, roughly 33 MB of video).
@@ -25,6 +27,33 @@ const FEED_AUTHOR_SELECT = {
 };
 const LITE_AUTHOR_SELECT = { id: true, username: true, displayName: true, avatarDataUrl: true };
 const SOUND_OWNER_SELECT = { id: true, username: true, displayName: true };
+
+// Returns "quiet", "limit" or null. If anything goes wrong checking, the
+// feed stays open (fails open) rather than breaking for everyone.
+async function screenTimeBlock(user, req) {
+  try {
+    const local = localTime(req.cookies?.get("tz")?.value);
+    const [settings, row] = await Promise.all([
+      getSettings(user.id),
+      prisma.screenTimeDay.findUnique({
+        where: { userId_day: { userId: user.id, day: local.day } },
+      }),
+    ]);
+    return buildStatus(settings, row, local).blocked;
+  } catch {
+    return null;
+  }
+}
+
+function blockedResponse(blocked) {
+  return NextResponse.json(
+    {
+      error: blocked === "quiet" ? "Quiet hours are on right now." : "Your daily screen time limit is reached.",
+      blocked,
+    },
+    { status: 403 }
+  );
+}
 
 // A sound's name is whatever its creator named it, or the classic
 // "original sound - username" if they never renamed it.
@@ -78,6 +107,9 @@ async function shapePosts(posts, user, followedIds) {
 export async function GET(req) {
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
+
+  const blocked = await screenTimeBlock(user, req);
+  if (blocked) return blockedResponse(blocked);
 
   const { searchParams } = new URL(req.url);
 
@@ -374,6 +406,9 @@ export async function GET(req) {
 export async function POST(req) {
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
+
+  const blocked = await screenTimeBlock(user, req);
+  if (blocked) return blockedResponse(blocked);
 
   let body;
   try {
