@@ -14,6 +14,10 @@ const MIN_USERNAME_LENGTH = 3;
 const MAX_USERNAME_LENGTH = 30;
 const USERNAME_PATTERN = /^[a-z0-9_.]+$/;
 
+// Set SKIP_EMAIL_VERIFICATION=true on Render to let people sign up without
+// the email code. Remove it (or set it to false) to turn verification back on.
+const SKIP_EMAIL_VERIFICATION = process.env.SKIP_EMAIL_VERIFICATION === "true";
+
 // Accepts "YYYY-MM-DD" only, and rejects impossible dates like Feb 30.
 function parseDob(value) {
   if (typeof value !== "string") return null;
@@ -115,9 +119,13 @@ export async function POST(req) {
           passwordHash,
           dateOfBirth: dob,
           termsAcceptedAt: new Date(),
-          verificationCode: code,
-          verificationExpires: new Date(Date.now() + CODE_TTL_MS),
-          lastCodeSentAt: new Date(),
+          ...(SKIP_EMAIL_VERIFICATION
+            ? { verified: true }
+            : {
+                verificationCode: code,
+                verificationExpires: new Date(Date.now() + CODE_TTL_MS),
+                lastCodeSentAt: new Date(),
+              }),
           ...(isStrict
             ? {
                 isPublic: false,
@@ -145,6 +153,11 @@ export async function POST(req) {
     }
     console.error("Register failed:", e);
     return err("Something went wrong. Please try again.", 500);
+  }
+
+  // Email verification is paused: the account is ready to use right away.
+  if (SKIP_EMAIL_VERIFICATION) {
+    return NextResponse.json({ ok: true, email: user.email, verified: true }, { status: 201 });
   }
 
   try {
