@@ -1,8 +1,10 @@
+// app/feed/page.js
 import { redirect } from "next/navigation";
 import { getSessionUserId } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import NavShell from "@/components/NavShell";
 import FeedClient from "@/components/FeedClient";
+import ScreenTimeGate from "@/components/ScreenTimeGate";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -15,7 +17,9 @@ export default async function FeedPage() {
 
   return (
     <NavShell user={user}>
-      <FeedClient user={user} />
+      <ScreenTimeGate>
+        <FeedClient user={user} />
+      </ScreenTimeGate>
     </NavShell>
   );
 }
