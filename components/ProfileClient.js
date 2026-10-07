@@ -1,8 +1,16 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import BackButton from "@/components/BackButton";
-import { Settings as SettingsIcon, Share2, ChevronDown, Loader2, X, ImageOff } from "lucide-react";
+import { Settings as SettingsIcon, Share2, ChevronDown, Loader2, X, ImageOff, Eye } from "lucide-react";
 import Link from "next/link";
+
+// 1,200 -> 1.2K, 3,400,000 -> 3.4M (same style as the feed counters).
+function abbreviateCount(n) {
+  const num = Number(n) || 0;
+  if (num < 1000) return `${num}`;
+  if (num < 1_000_000) return `${(num / 1000).toFixed(num % 1000 >= 100 ? 1 : 0)}K`;
+  return `${(num / 1_000_000).toFixed(1)}M`;
+}
 
 function Avatar({ user, size = 96 }) {
   const [failed, setFailed] = useState(false);
@@ -353,6 +361,23 @@ export default function ProfileClient({ profileId }) {
               }}
             >
               <PostThumb post={p} />
+
+              {/* View count, bottom-left, over a soft shadow so it's readable
+                  on any picture. */}
+              <div
+                style={{
+                  position: "absolute", left: 0, right: 0, bottom: 0,
+                  padding: "14px 6px 5px",
+                  background: "linear-gradient(to top, rgba(0,0,0,0.65), rgba(0,0,0,0))",
+                  display: "flex", alignItems: "center", gap: 4,
+                  pointerEvents: "none",
+                }}
+              >
+                <Eye size={13} color="white" />
+                <span style={{ color: "white", fontSize: 12, fontWeight: 600 }}>
+                  {abbreviateCount(p.viewCount)}
+                </span>
+              </div>
             </div>
           ))}
         </div>
