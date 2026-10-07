@@ -289,19 +289,13 @@ export async function GET(req) {
   const rawTab = searchParams.get("tab");
   const tab = ["school", "following", "trending", "explore"].includes(rawTab) ? rawTab : "for-you";
 
-  const friendships = await prisma.friendship.findMany({
-    where: { OR: [{ userAId: user.id }, { userBId: user.id }] },
-  });
-  const friendIds = friendships.map((f) => (f.userAId === user.id ? f.userBId : f.userAId));
-
+  // "Following" is only people the viewer actually follows (Follow rows).
+  // Friends are not the same thing and don't count here.
   const follows = await prisma.follow.findMany({
     where: { followerId: user.id },
     select: { followingId: true },
   });
   const followingIds = follows.map((f) => f.followingId);
-
-  const knownIds = [...new Set([user.id, ...friendIds, ...followingIds])];
-  const excludeIds = knownIds.filter((id) => id !== user.id);
 
   // Creators this user has muted never show up in any tab. Muting hides
   // a creator's posts without unfollowing or blocking them, and neither
@@ -311,6 +305,15 @@ export async function GET(req) {
     select: { mutedUserId: true },
   });
   const mutedIds = mutedRows.map((m) => m.mutedUserId);
+
+  // People blocked in either direction are hidden from every tab too.
+  const blockRows = await prisma.block.findMany({
+    where: { OR: [{ blockerId: user.id }, { blockedId: user.id }] },
+    select: { blockerId: true, blockedId: true },
+  });
+  const blockedIds = blockRows.map((b) => (b.blockerId === user.id ? b.blockedId : b.blockerId));
+
+  const hiddenIds = [...new Set([...mutedIds, ...blockedIds])];
 
   // ── Trending: engagement-ranked posts from the last 48 hours ───
   // This is a bounded, single-page list (score isn't something the
@@ -322,7 +325,7 @@ export async function GET(req) {
       isPrivate: false,
       isDraft: false,
       createdAt: { gte: cutoff },
-      ...(mutedIds.length ? { authorId: { notIn: mutedIds } } : {}),
+      ...(hiddenIds.length ? { authorId: { notIn: hiddenIds } } : {}),
     };
 
     const rawPosts = await prisma.feedPost.findMany({
@@ -356,23 +359,22 @@ export async function GET(req) {
 
   let authorFilter;
   if (tab === "following") {
-    authorFilter = { authorId: { in: knownIds } };
+    // Only creators the viewer follows. Nobody followed means an empty list.
+    authorFilter = { authorId: { in: followingIds } };
   } else if (tab === "school") {
     // Only meaningful if the viewer has set a school; otherwise nobody
     // matches and the tab just shows empty rather than erroring.
     authorFilter = user.school
       ? { author: { school: user.school } }
       : { authorId: { in: [] } };
-  } else if (tab === "explore") {
-    // Explore is the true global feed — everyone's public posts, not
-    // filtered down to people you already follow or don't yet know.
-    authorFilter = {};
   } else {
-    authorFilter = { OR: [{ authorId: user.id }, { authorId: { notIn: excludeIds } }] };
+    // "For You" and "Explore": everyone's public posts, including people
+    // the viewer follows and friends.
+    authorFilter = {};
   }
 
-  const where = mutedIds.length
-    ? { isPrivate: false, isDraft: false, AND: [authorFilter, { authorId: { notIn: mutedIds } }] }
+  const where = hiddenIds.length
+    ? { isPrivate: false, isDraft: false, AND: [authorFilter, { authorId: { notIn: hiddenIds } }] }
     : { isPrivate: false, isDraft: false, ...authorFilter };
 
   const posts = await prisma.feedPost.findMany({
