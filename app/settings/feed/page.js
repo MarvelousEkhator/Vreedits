@@ -237,12 +237,13 @@ function FeedSettingsInner({
 
   const likedValue = privacy.hideLikedVideos ? t("feedSettings.onlyYou") : t("feedSettings.everyone");
 
-  // Time and well-being and Family Pairing now live on the Parental
-  // controls page, so they're real links above instead of locked rows.
+  // Time and well-being and Family Pairing live on the Parental controls
+  // page, and Activity centre is now the real insights page, so those are
+  // links above instead of locked rows.
   const stillLockedSections = [
     { header: t("feedSettings.activity"), items: [t("feedSettings.contentPreferences")] },
     { header: t("feedSettings.account"), items: [t("feedSettings.securityPermissions")] },
-    { header: t("feedSettings.contentDisplay"), items: [t("feedSettings.activityCentre"), t("feedSettings.ads")] },
+    { header: t("feedSettings.contentDisplay"), items: [t("feedSettings.ads")] },
   ];
 
   return (
@@ -261,6 +262,10 @@ function FeedSettingsInner({
         <div className="card mb-6" style={{ padding: 6 }}>
           <Link href="/profile" className="flex items-center justify-between p-3 rounded-xl" style={{ borderBottom: "1px solid var(--border)" }}>
             <span className="text-sm font-medium">{t("feedSettings.managePosts")}</span>
+            <ChevronRight size={16} style={{ color: "var(--text-muted)" }} />
+          </Link>
+          <Link href="/settings/feed/activity" className="flex items-center justify-between p-3 rounded-xl" style={{ borderBottom: "1px solid var(--border)" }}>
+            <span className="text-sm font-medium">{t("feedSettings.activityCentre")}</span>
             <ChevronRight size={16} style={{ color: "var(--text-muted)" }} />
           </Link>
           <Link href="/notifications" className="flex items-center justify-between p-3 rounded-xl" style={{ borderBottom: "1px solid var(--border)" }}>
