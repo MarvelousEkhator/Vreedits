@@ -5,7 +5,7 @@ import Link from "next/link";
 import {
   Loader2, User, HelpCircle, Phone, ChevronRight,
   Mail, ShieldCheck, Calendar, Globe, Languages, Lock, Unlock, Circle, ShieldQuestion,
-  LogOut,
+  LogOut, Users, Trash2,
 } from "lucide-react";
 import NavShell from "@/components/NavShell";
 import { useLanguage } from "@/components/LanguageProvider";
@@ -130,6 +130,13 @@ function SettingsInner({ user, profile, loading, savingLanguage, loggingOut, onL
             <ChevronRight size={16} style={{ color: "var(--text-muted)" }} />
           </Link>
 
+          <Link href="/settings/parental" className="flex items-center justify-between py-3" style={{ borderBottom: "1px solid var(--border)" }}>
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <Users size={16} /> Parental controls
+            </div>
+            <ChevronRight size={16} style={{ color: "var(--text-muted)" }} />
+          </Link>
+
           <Link href="/help" className="flex items-center justify-between py-3" style={{ borderBottom: "1px solid var(--border)" }}>
             <div className="flex items-center gap-2 text-sm font-medium">
               <HelpCircle size={16} /> {t("settings.helpCenter")}
@@ -155,6 +162,14 @@ function SettingsInner({ user, profile, loading, savingLanguage, loggingOut, onL
             {loggingOut ? <Loader2 size={16} className="animate-spin" /> : <LogOut size={16} />}
             {loggingOut ? "…" : t("nav.logout")}
           </button>
+
+          <Link
+            href="/settings/account"
+            className="flex items-center gap-2 text-sm font-medium w-full py-1"
+            style={{ color: "var(--danger)", marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border)" }}
+          >
+            <Trash2 size={16} /> Delete account
+          </Link>
         </div>
       </div>
     </div>
