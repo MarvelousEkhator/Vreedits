@@ -1,12 +1,15 @@
+// app/api/communities/[id]/membership/route.js
 import { NextResponse } from "next/server";
-import { getSessionUserId } from "@/lib/auth";
+import { requireUser, guestBlockedResponse } from "@/lib/requireUser";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(request, { params }) {
-  const userId = getSessionUserId();
-  if (!userId) {
+  const user = await requireUser();
+  if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  if (user.isGuest) return guestBlockedResponse();
+  const userId = user.id;
 
   try {
     const community = await prisma.community.findUnique({ where: { id: params.id } });
@@ -38,10 +41,12 @@ export async function POST(request, { params }) {
 }
 
 export async function DELETE(request, { params }) {
-  const userId = getSessionUserId();
-  if (!userId) {
+  const user = await requireUser();
+  if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  if (user.isGuest) return guestBlockedResponse();
+  const userId = user.id;
 
   try {
     const community = await prisma.community.findUnique({ where: { id: params.id } });
