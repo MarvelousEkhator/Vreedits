@@ -4,6 +4,7 @@ import { getSessionUserId } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import NavShell from "@/components/NavShell";
 import FeedClient from "@/components/FeedClient";
+import FeedViewRecorder from "@/components/FeedViewRecorder";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -16,6 +17,7 @@ export default async function FeedPage() {
 
   return (
     <NavShell user={user}>
+      <FeedViewRecorder />
       <FeedClient user={user} />
     </NavShell>
   );
