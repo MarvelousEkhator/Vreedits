@@ -228,7 +228,7 @@ function UserListSheet({ title, open, onClose, users, loading, error, onUnblock 
 }
 
 function FeedSettingsInner({
-  user, profile, privacy, saving,
+  user, profile, privacy, saving, notice,
   sheet, sheetLoading, sheetError, sheetUsers,
   patchField, patchPrivacy, handleShareProfile, openSheet, handleUnblock, setSheet,
 }) {
@@ -237,8 +237,10 @@ function FeedSettingsInner({
 
   const likedValue = privacy.hideLikedVideos ? t("feedSettings.onlyYou") : t("feedSettings.everyone");
 
+  // Time and well-being and Family Pairing now live on the Parental
+  // controls page, so they're real links above instead of locked rows.
   const stillLockedSections = [
-    { header: t("feedSettings.activity"), items: [t("feedSettings.contentPreferences"), t("feedSettings.timeWellbeing"), t("feedSettings.familyPairing")] },
+    { header: t("feedSettings.activity"), items: [t("feedSettings.contentPreferences")] },
     { header: t("feedSettings.account"), items: [t("feedSettings.securityPermissions")] },
     { header: t("feedSettings.contentDisplay"), items: [t("feedSettings.activityCentre"), t("feedSettings.ads")] },
   ];
@@ -253,14 +255,24 @@ function FeedSettingsInner({
           <h1 className="text-lg font-semibold">{t("feedSettings.title")}</h1>
         </div>
 
+        {notice && <div className="alert alert-error mb-4">{notice}</div>}
+
         <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--text-muted)" }}>{t("feedSettings.activity")}</div>
         <div className="card mb-6" style={{ padding: 6 }}>
           <Link href="/profile" className="flex items-center justify-between p-3 rounded-xl" style={{ borderBottom: "1px solid var(--border)" }}>
             <span className="text-sm font-medium">{t("feedSettings.managePosts")}</span>
             <ChevronRight size={16} style={{ color: "var(--text-muted)" }} />
           </Link>
-          <Link href="/notifications" className="flex items-center justify-between p-3 rounded-xl">
+          <Link href="/notifications" className="flex items-center justify-between p-3 rounded-xl" style={{ borderBottom: "1px solid var(--border)" }}>
             <span className="text-sm font-medium">{t("feedSettings.notifications")}</span>
+            <ChevronRight size={16} style={{ color: "var(--text-muted)" }} />
+          </Link>
+          <Link href="/settings/parental" className="flex items-center justify-between p-3 rounded-xl" style={{ borderBottom: "1px solid var(--border)" }}>
+            <span className="text-sm font-medium">{t("feedSettings.timeWellbeing")}</span>
+            <ChevronRight size={16} style={{ color: "var(--text-muted)" }} />
+          </Link>
+          <Link href="/settings/parental" className="flex items-center justify-between p-3 rounded-xl">
+            <span className="text-sm font-medium">{t("feedSettings.familyPairing")}</span>
             <ChevronRight size={16} style={{ color: "var(--text-muted)" }} />
           </Link>
         </div>
@@ -406,6 +418,7 @@ export default function FeedSettingsPage() {
   const [privacy, setPrivacy] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState("");
 
   const [sheet, setSheet] = useState(null); // "blocked" | "following" | null
   const [sheetLoading, setSheetLoading] = useState(false);
@@ -428,27 +441,50 @@ export default function FeedSettingsPage() {
 
   async function patchField(field, value) {
     setSaving(true);
-    const res = await fetch("/api/profile", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ [field]: value }),
-    });
-    const data = await res.json();
+    setNotice("");
+    try {
+      const res = await fetch("/api/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [field]: value }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setProfile(data.profile);
+      } else {
+        // Refused (under-16 rule or a guardian PIN lock): the switch stays
+        // where it was, and the reason is shown at the top of the page.
+        setNotice(data.error || "Couldn't save that change.");
+      }
+    } catch {
+      setNotice("Network error. Please try again.");
+    }
     setSaving(false);
-    if (res.ok) setProfile(data.profile);
   }
 
   async function patchPrivacy(field, value) {
+    const previous = privacy?.[field];
     setSaving(true);
+    setNotice("");
     setPrivacy((prev) => ({ ...prev, [field]: value })); // optimistic
-    const res = await fetch("/api/settings/privacy", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ [field]: value }),
-    });
-    const data = await res.json();
+    try {
+      const res = await fetch("/api/settings/privacy", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [field]: value }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setPrivacy(data.settings);
+      } else {
+        setPrivacy((prev) => ({ ...prev, [field]: previous })); // put it back
+        setNotice(data.error || "Couldn't save that change.");
+      }
+    } catch {
+      setPrivacy((prev) => ({ ...prev, [field]: previous }));
+      setNotice("Network error. Please try again.");
+    }
     setSaving(false);
-    if (res.ok) setPrivacy(data.settings);
   }
 
   async function handleShareProfile() {
@@ -509,6 +545,7 @@ export default function FeedSettingsPage() {
         profile={profile}
         privacy={privacy}
         saving={saving}
+        notice={notice}
         sheet={sheet}
         sheetLoading={sheetLoading}
         sheetError={sheetError}
