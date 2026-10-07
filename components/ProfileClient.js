@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import BackButton from "@/components/BackButton";
 import { Settings as SettingsIcon, Share2, ChevronDown, Loader2, X, ImageOff, Eye } from "lucide-react";
 import Link from "next/link";
@@ -74,6 +74,65 @@ function PostThumb({ post }) {
   );
 }
 
+// Full-screen view of a post opened from the grid.
+function PostViewer({ post, onClose }) {
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, zIndex: 300, background: "#000",
+        display: "flex", flexDirection: "column",
+      }}
+    >
+      <div
+        className="flex items-center justify-between px-4"
+        style={{ height: 56, flexShrink: 0, paddingTop: "env(safe-area-inset-top, 0px)" }}
+      >
+        <div className="flex items-center gap-1.5" style={{ color: "white" }}>
+          <Eye size={16} />
+          <span style={{ fontSize: 13, fontWeight: 600 }}>{abbreviateCount(post.viewCount)}</span>
+        </div>
+        <button
+          onClick={onClose}
+          aria-label="Close"
+          style={{
+            width: 36, height: 36, borderRadius: "50%", background: "rgba(255,255,255,0.15)",
+            border: "none", color: "white", display: "flex", alignItems: "center", justifyContent: "center",
+          }}
+        >
+          <X size={20} />
+        </button>
+      </div>
+
+      <div style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        {post.mediaUrl ? (
+          post.mediaType === "video" ? (
+            <video
+              src={post.mediaUrl}
+              controls
+              autoPlay
+              loop
+              playsInline
+              style={{ width: "100%", height: "100%", objectFit: "contain" }}
+            />
+          ) : (
+            <img src={post.mediaUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+          )
+        ) : (
+          <p className="text-sm" style={{ color: "rgba(255,255,255,0.7)" }}>This post isn't available.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function UserListSheet({ title, open, onClose, users, loading, error }) {
   return (
     <>
@@ -132,6 +191,9 @@ export default function ProfileClient({ profileId }) {
   const [loading, setLoading] = useState(true);
   const [followLoading, setFollowLoading] = useState(false);
   const [likedHintDismissed, setLikedHintDismissed] = useState(false);
+  const [viewerPost, setViewerPost] = useState(null);
+  const [notice, setNotice] = useState("");
+  const noticeTimerRef = useRef(null);
 
   const [sheet, setSheet] = useState(null); // "following" | "followers" | null
   const [sheetLoading, setSheetLoading] = useState(false);
@@ -148,6 +210,18 @@ export default function ProfileClient({ profileId }) {
 
   useEffect(() => { load(); }, [load]);
 
+  useEffect(() => {
+    return () => {
+      if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+    };
+  }, []);
+
+  function showNotice(text) {
+    setNotice(text);
+    if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+    noticeTimerRef.current = setTimeout(() => setNotice(""), 2200);
+  }
+
   async function handleFollow() {
     if (!data) return;
     setFollowLoading(true);
@@ -160,6 +234,27 @@ export default function ProfileClient({ profileId }) {
         isFollowedByMe: json.following,
         followerCount: d.followerCount + (json.following ? 1 : -1),
       }));
+    }
+  }
+
+  // Opens the phone's share sheet; on browsers without one, copies the link.
+  async function handleShareProfile() {
+    if (!data) return;
+    const url = `${window.location.origin}/profile/${profileId}`;
+    const name = data.profile.displayName || data.profile.username;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: `${name} on Vreedits`, url });
+      } catch {
+        // The person closed the share sheet — nothing to do.
+      }
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      showNotice("Link copied");
+    } catch {
+      showNotice("Couldn't copy the link");
     }
   }
 
@@ -227,7 +322,11 @@ export default function ProfileClient({ profileId }) {
         <BackButton fallbackHref="/feed" label="Exit profile" />
         <span className="text-xs" style={{ color: "var(--text-muted)" }} />
         <div className="flex items-center gap-3">
-          <button aria-label="Share profile" style={{ background: "none", border: "none", color: "var(--text)" }}>
+          <button
+            onClick={handleShareProfile}
+            aria-label="Share profile"
+            style={{ background: "none", border: "none", color: "var(--text)" }}
+          >
             <Share2 size={22} />
           </button>
           {isOwner && (
@@ -353,11 +452,15 @@ export default function ProfileClient({ profileId }) {
       ) : (
         <div className="grid grid-cols-3 gap-1.5 px-1.5 pt-1.5">
           {posts.map((p) => (
-            <div
+            <button
               key={p.id}
+              type="button"
+              onClick={() => setViewerPost(p)}
+              aria-label="Open post"
               style={{
                 aspectRatio: "9/16", position: "relative", overflow: "hidden",
                 borderRadius: 10, border: "1px solid var(--border)",
+                padding: 0, background: "none", display: "block", width: "100%",
               }}
             >
               <PostThumb post={p} />
@@ -378,7 +481,7 @@ export default function ProfileClient({ profileId }) {
                   {abbreviateCount(p.viewCount)}
                 </span>
               </div>
-            </div>
+            </button>
           ))}
         </div>
       )}
@@ -391,6 +494,20 @@ export default function ProfileClient({ profileId }) {
         loading={sheetLoading}
         error={sheetError}
       />
+
+      {viewerPost && <PostViewer post={viewerPost} onClose={() => setViewerPost(null)} />}
+
+      {notice && (
+        <div
+          style={{
+            position: "fixed", left: "50%", top: 90, transform: "translateX(-50%)", zIndex: 400,
+            background: "rgba(0,0,0,0.8)", color: "white", fontSize: 13, fontWeight: 600,
+            padding: "8px 16px", borderRadius: 16, pointerEvents: "none",
+          }}
+        >
+          {notice}
+        </div>
+      )}
     </div>
   );
 }
