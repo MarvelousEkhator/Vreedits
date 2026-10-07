@@ -132,7 +132,7 @@ function SettingsInner({ user, profile, loading, savingLanguage, loggingOut, onL
 
           <Link href="/settings/parental" className="flex items-center justify-between py-3" style={{ borderBottom: "1px solid var(--border)" }}>
             <div className="flex items-center gap-2 text-sm font-medium">
-              <Users size={16} /> Parental controls
+              <Users size={16} /> {t("settings.parentalControls")}
             </div>
             <ChevronRight size={16} style={{ color: "var(--text-muted)" }} />
           </Link>
@@ -168,7 +168,7 @@ function SettingsInner({ user, profile, loading, savingLanguage, loggingOut, onL
             className="flex items-center gap-2 text-sm font-medium w-full py-1"
             style={{ color: "var(--danger)", marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border)" }}
           >
-            <Trash2 size={16} /> Delete account
+            <Trash2 size={16} /> {t("settings.deleteAccount")}
           </Link>
         </div>
       </div>
