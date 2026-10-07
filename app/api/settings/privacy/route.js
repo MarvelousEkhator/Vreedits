@@ -1,11 +1,17 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/requireUser";
+import {
+  getSettings, ageFromDob, tierForAge, sanitizePatch, touchesGuarded,
+} from "@/lib/userSettings";
 
 const ALLOWED_VALUES = {
   allowComments: ["everyone", "friends", "none"],
   allowMentions: ["everyone", "friends", "none"],
 };
+
+// The settings a parent can lock, and that under-16 accounts can't loosen.
+const GUARDED_KEYS = ["isPublic", "allowComments", "allowMentions"];
 
 export async function GET() {
   const user = await requireUser();
@@ -50,6 +56,32 @@ export async function PATCH(req) {
 
   if (Object.keys(data).length === 0) {
     return NextResponse.json({ error: "No valid fields to update." }, { status: 400 });
+  }
+
+  // Age rules and guardian PIN lock, only for values that actually change.
+  const wanted = {};
+  for (const key of GUARDED_KEYS) {
+    if (key in data && data[key] !== user[key]) wanted[key] = data[key];
+  }
+
+  if (Object.keys(wanted).length > 0) {
+    const [settings, full] = await Promise.all([
+      getSettings(user.id),
+      prisma.user.findUnique({ where: { id: user.id }, select: { dateOfBirth: true } }),
+    ]);
+    const tier = tierForAge(ageFromDob(full?.dateOfBirth));
+
+    const { userData, settingsData, error } = sanitizePatch(wanted, tier);
+    if (error) {
+      return NextResponse.json({ error }, { status: 403 });
+    }
+
+    if (settings.guardianPinHash && touchesGuarded(userData, settingsData)) {
+      return NextResponse.json(
+        { error: "This setting is locked by a guardian PIN. Use Parental controls to change it." },
+        { status: 403 }
+      );
+    }
   }
 
   const updated = await prisma.user.update({
