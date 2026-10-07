@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/requireUser";
+import { requireUser, guestBlockedResponse } from "@/lib/requireUser";
 
 const MAX_MENTIONS_PER_COMMENT = 10;
+const MAX_COMMENT_LENGTH = 500;
 
 function shapeComment(c, userId) {
   return {
@@ -108,6 +109,7 @@ async function notifyMentions({ content, commenter, postId }) {
 export async function GET(req, { params }) {
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
+  if (user.isGuest) return guestBlockedResponse();
 
   // Only fetch top-level comments (parentId: null) here; each one carries
   // its replies nested inside it, one level deep — matching how the
@@ -135,10 +137,17 @@ export async function GET(req, { params }) {
 export async function POST(req, { params }) {
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
+  if (user.isGuest) return guestBlockedResponse();
 
   const { content, parentId } = await req.json().catch(() => ({}));
-  if (!content?.trim()) {
+  if (typeof content !== "string" || !content.trim()) {
     return NextResponse.json({ error: "Comment can't be empty." }, { status: 400 });
+  }
+  if (content.trim().length > MAX_COMMENT_LENGTH) {
+    return NextResponse.json(
+      { error: `Comments can be up to ${MAX_COMMENT_LENGTH} characters.` },
+      { status: 400 }
+    );
   }
 
   const post = await prisma.feedPost.findUnique({ where: { id: params.id } });
