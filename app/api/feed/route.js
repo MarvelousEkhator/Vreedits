@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/requireUser";
+import { requireUser, guestBlockedResponse } from "@/lib/requireUser";
 import { extractHashtags } from "@/lib/hashtags";
 import { ensureSound, resolveSound } from "@/lib/sounds";
 import { getSettings } from "@/lib/userSettings";
@@ -107,6 +107,7 @@ async function shapePosts(posts, user, followedIds) {
 export async function GET(req) {
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
+  if (user.isGuest) return guestBlockedResponse();
 
   const blocked = await screenTimeBlock(user, req);
   if (blocked) return blockedResponse(blocked);
@@ -406,6 +407,7 @@ export async function GET(req) {
 export async function POST(req) {
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
+  if (user.isGuest) return guestBlockedResponse();
 
   const blocked = await screenTimeBlock(user, req);
   if (blocked) return blockedResponse(blocked);
