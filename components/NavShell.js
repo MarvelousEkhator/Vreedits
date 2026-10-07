@@ -7,6 +7,7 @@ import FeedbackPrompt from "@/components/FeedbackPrompt";
 import GlossIcon from "@/components/GlossIcon";
 import ThemeToggle from "@/components/ThemeToggle";
 import ScreenTimeGate from "@/components/ScreenTimeGate";
+import GuestGate from "@/components/GuestGate";
 import { LanguageProvider, useLanguage } from "@/components/LanguageProvider";
 import { isTabRoot, getBackFallback } from "@/lib/backRoutes";
 import {
@@ -126,6 +127,13 @@ function NavShellInner({ children, user }) {
   function toggleProfileMenu() {
     setProfileMenuOpen((v) => !v);
     router.refresh();
+  }
+
+  // Guests open the sign-up form from here (GuestGate listens for this).
+  function openGuestSignup() {
+    setProfileMenuOpen(false);
+    setMenuOpen(false);
+    window.dispatchEvent(new Event("vreedits:open-signup"));
   }
 
   return (
@@ -296,6 +304,11 @@ function NavShellInner({ children, user }) {
               <Link href={popoverSettingsHref} className="vreedits-popover-item" onClick={() => setProfileMenuOpen(false)}>
                 <Settings size={15} /> {t("nav.settings")}
               </Link>
+              {user?.isGuest && (
+                <button className="vreedits-popover-item" onClick={openGuestSignup}>
+                  <User size={15} /> Create account
+                </button>
+              )}
               <button className="vreedits-popover-item danger" onClick={handleLogout}>
                 <LogOut size={15} /> {t("nav.logout")}
               </button>
@@ -331,7 +344,9 @@ function NavShellInner({ children, user }) {
       </nav>
 
       <div className="vreedits-content">
-        <ScreenTimeGate>{children}</ScreenTimeGate>
+        <ScreenTimeGate>
+          <GuestGate user={user}>{children}</GuestGate>
+        </ScreenTimeGate>
       </div>
 
       {!hideTabBar && (
