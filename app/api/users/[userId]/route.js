@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/requireUser";
+import { requireUser, guestBlockedResponse } from "@/lib/requireUser";
+import { checkProfileGuard } from "@/lib/profileGuard";
 
 export const dynamic = "force-dynamic";
 
@@ -11,9 +12,21 @@ const ALLOW_GUEST_PROFILE_EDIT = true;
 // ~2MB base64 (roughly ~1.5MB actual image data).
 const MAX_AVATAR_DATA_URL_LENGTH = 2 * 1024 * 1024;
 
+// Shape of one grid tile on a profile. viewCount is the number of unique
+// people who watched the post.
+function tile(p) {
+  return {
+    id: p.id,
+    mediaUrl: p.mediaUrl,
+    mediaType: p.mediaType,
+    viewCount: p.viewedBy ? p.viewedBy.length : 0,
+  };
+}
+
 export async function GET(req, { params }) {
   const viewer = await requireUser();
   if (!viewer) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
+  if (viewer.isGuest) return guestBlockedResponse();
 
   const target = await prisma.user.findUnique({
     where: { id: params.userId },
@@ -52,18 +65,16 @@ export async function GET(req, { params }) {
     const allPosts = await prisma.feedPost.findMany({
       where: { authorId: target.id },
       orderBy: { createdAt: "desc" },
-      select: { id: true, mediaUrl: true, mediaType: true, isPrivate: true, likedBy: true },
+      select: {
+        id: true, mediaUrl: true, mediaType: true, isPrivate: true, likedBy: true, viewedBy: true,
+      },
     });
 
     const visible = isOwner ? allPosts : allPosts.filter((p) => !p.isPrivate);
     likeCount = visible.reduce((sum, p) => sum + p.likedBy.length, 0);
 
-    publicPosts = allPosts
-      .filter((p) => !p.isPrivate)
-      .map(({ id, mediaUrl, mediaType }) => ({ id, mediaUrl, mediaType }));
-    privatePosts = isOwner
-      ? allPosts.filter((p) => p.isPrivate).map(({ id, mediaUrl, mediaType }) => ({ id, mediaUrl, mediaType }))
-      : [];
+    publicPosts = allPosts.filter((p) => !p.isPrivate).map(tile);
+    privatePosts = isOwner ? allPosts.filter((p) => p.isPrivate).map(tile) : [];
   }
 
   // Saved/Favorites: always private to the owner, like a bookmarks folder —
@@ -73,9 +84,9 @@ export async function GET(req, { params }) {
     const saves = await prisma.feedSave.findMany({
       where: { userId: target.id },
       orderBy: { createdAt: "desc" },
-      include: { post: { select: { id: true, mediaUrl: true, mediaType: true } } },
+      include: { post: { select: { id: true, mediaUrl: true, mediaType: true, viewedBy: true } } },
     });
-    savedPosts = saves.map((s) => s.post);
+    savedPosts = saves.map((s) => tile(s.post));
   }
 
   // Liked videos: visible to the owner always; visible to anyone else only
@@ -92,9 +103,9 @@ export async function GET(req, { params }) {
         OR: [{ isPrivate: false }, { authorId: viewer.id }],
       },
       orderBy: { createdAt: "desc" },
-      select: { id: true, mediaUrl: true, mediaType: true },
+      select: { id: true, mediaUrl: true, mediaType: true, viewedBy: true },
     });
-    likedPosts = liked;
+    likedPosts = liked.map(tile);
   }
 
   return NextResponse.json({
@@ -142,6 +153,15 @@ export async function PATCH(req, { params }) {
   }
 
   const { displayName, bio, avatarDataUrl, isPublic } = body;
+
+  // Age rules and guardian PIN lock for isPublic.
+  const guard = await checkProfileGuard(viewer, {
+    isPublic: isPublic === undefined ? undefined : !!isPublic,
+  });
+  if (!guard.ok) {
+    return NextResponse.json({ error: guard.error }, { status: guard.status });
+  }
+
   const data = {};
 
   if (displayName !== undefined) {
