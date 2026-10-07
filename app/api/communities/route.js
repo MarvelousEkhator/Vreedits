@@ -1,12 +1,15 @@
+// app/api/communities/route.js
 import { NextResponse } from "next/server";
-import { getSessionUserId } from "@/lib/auth";
+import { requireUser, guestBlockedResponse } from "@/lib/requireUser";
 import { prisma } from "@/lib/prisma";
 
 export async function GET(request) {
-  const userId = getSessionUserId();
-  if (!userId) {
+  const user = await requireUser();
+  if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  if (user.isGuest) return guestBlockedResponse();
+  const userId = user.id;
 
   const { searchParams } = new URL(request.url);
   const q = (searchParams.get("q") || "").trim();
@@ -40,10 +43,12 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
-  const userId = getSessionUserId();
-  if (!userId) {
+  const user = await requireUser();
+  if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  if (user.isGuest) return guestBlockedResponse();
+  const userId = user.id;
 
   try {
     const body = await request.json();
