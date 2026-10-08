@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
 import BackButton from "@/components/BackButton";
-import { Settings as SettingsIcon, Share2, ChevronDown, Loader2, X, ImageOff, Eye } from "lucide-react";
+import { Settings as SettingsIcon, Share2, ChevronDown, Loader2, X, ImageOff, Eye, Heart, MessageCircle } from "lucide-react";
 import Link from "next/link";
 
 // 1,200 -> 1.2K, 3,400,000 -> 3.4M (same style as the feed counters).
@@ -74,8 +74,26 @@ function PostThumb({ post }) {
   );
 }
 
-// Full-screen view of a post opened from the grid.
+// Full-screen view of a post opened from the grid. The picture or video is
+// already on screen from the grid; the caption, counts, and the rest of a
+// photo carousel are loaded from the server when it opens.
 function PostViewer({ post, onClose }) {
+  const [details, setDetails] = useState(null);
+  const [slide, setSlide] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/feed/${post.id}/details`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json) => {
+        if (!cancelled && json?.post) setDetails(json.post);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [post.id]);
+
   useEffect(() => {
     function onKey(e) {
       if (e.key === "Escape") onClose();
@@ -83,6 +101,9 @@ function PostViewer({ post, onClose }) {
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
+
+  const photos = details?.mediaUrls && details.mediaUrls.length > 1 ? details.mediaUrls : null;
+  const views = details ? details.viewCount : post.viewCount;
 
   return (
     <div
@@ -95,9 +116,16 @@ function PostViewer({ post, onClose }) {
         className="flex items-center justify-between px-4"
         style={{ height: 56, flexShrink: 0, paddingTop: "env(safe-area-inset-top, 0px)" }}
       >
-        <div className="flex items-center gap-1.5" style={{ color: "white" }}>
-          <Eye size={16} />
-          <span style={{ fontSize: 13, fontWeight: 600 }}>{abbreviateCount(post.viewCount)}</span>
+        <div className="flex items-center gap-3" style={{ color: "white" }}>
+          <div className="flex items-center gap-1.5">
+            <Eye size={16} />
+            <span style={{ fontSize: 13, fontWeight: 600 }}>{abbreviateCount(views)}</span>
+          </div>
+          {photos && (
+            <span style={{ fontSize: 13, fontWeight: 600, opacity: 0.8 }}>
+              {slide + 1}/{photos.length}
+            </span>
+          )}
         </div>
         <button
           onClick={onClose}
@@ -112,7 +140,24 @@ function PostViewer({ post, onClose }) {
       </div>
 
       <div style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        {post.mediaUrl ? (
+        {photos ? (
+          <div
+            onScroll={(e) => {
+              const el = e.currentTarget;
+              setSlide(Math.round(el.scrollLeft / (el.clientWidth || 1)));
+            }}
+            style={{
+              display: "flex", width: "100%", height: "100%", overflowX: "auto",
+              scrollSnapType: "x mandatory", scrollbarWidth: "none",
+            }}
+          >
+            {photos.map((src, i) => (
+              <div key={i} style={{ flex: "0 0 100%", height: "100%", scrollSnapAlign: "start" }}>
+                <img src={src} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+              </div>
+            ))}
+          </div>
+        ) : post.mediaUrl ? (
           post.mediaType === "video" ? (
             <video
               src={post.mediaUrl}
@@ -129,6 +174,29 @@ function PostViewer({ post, onClose }) {
           <p className="text-sm" style={{ color: "rgba(255,255,255,0.7)" }}>This post isn't available.</p>
         )}
       </div>
+
+      {details && (
+        <div
+          style={{
+            flexShrink: 0, padding: "12px 16px", color: "white",
+            paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 12px)",
+          }}
+        >
+          {details.caption && (
+            <p className="text-sm mb-2" style={{ overflowWrap: "anywhere", lineHeight: 1.4 }}>
+              {details.caption}
+            </p>
+          )}
+          <div className="flex items-center gap-4" style={{ fontSize: 13, fontWeight: 600 }}>
+            <span className="flex items-center gap-1.5">
+              <Heart size={15} /> {abbreviateCount(details.likeCount)}
+            </span>
+            <span className="flex items-center gap-1.5">
+              <MessageCircle size={15} /> {abbreviateCount(details.commentCount)}
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
