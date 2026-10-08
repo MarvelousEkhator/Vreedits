@@ -112,6 +112,9 @@ export async function GET(req) {
   const blocked = await screenTimeBlock(user, req);
   if (blocked) return blockedResponse(blocked);
 
+  // Posts from private accounts are only ever shown to their own owner.
+  const visibleAuthor = { OR: [{ isPublic: true }, { id: user.id }] };
+
   const { searchParams } = new URL(req.url);
 
   // ── Sound details: /api/feed?sound=SOUND_OR_POST_ID ───────────
@@ -123,6 +126,7 @@ export async function GET(req) {
     const usesWhere = {
       isPrivate: false,
       isDraft: false,
+      author: visibleAuthor,
       OR: [
         { soundId: soundRow.id },
         ...(soundRow.sourcePostId ? [{ id: soundRow.sourcePostId }] : []),
@@ -264,6 +268,7 @@ export async function GET(req) {
           where: {
             isPrivate: false,
             isDraft: false,
+            author: visibleAuthor,
             OR: [
               { caption: { contains: term, mode: "insensitive" } },
               { tags: { hasSome: [lower, "#" + lower] } },
@@ -324,6 +329,7 @@ export async function GET(req) {
     const where = {
       isPrivate: false,
       isDraft: false,
+      author: visibleAuthor,
       createdAt: { gte: cutoff },
       ...(hiddenIds.length ? { authorId: { notIn: hiddenIds } } : {}),
     };
@@ -373,9 +379,16 @@ export async function GET(req) {
     authorFilter = {};
   }
 
-  const where = hiddenIds.length
-    ? { isPrivate: false, isDraft: false, AND: [authorFilter, { authorId: { notIn: hiddenIds } }] }
-    : { isPrivate: false, isDraft: false, ...authorFilter };
+  // Every condition is its own entry in AND, so none can overwrite another.
+  const where = {
+    isPrivate: false,
+    isDraft: false,
+    AND: [
+      authorFilter,
+      { author: visibleAuthor },
+      ...(hiddenIds.length ? [{ authorId: { notIn: hiddenIds } }] : []),
+    ],
+  };
 
   const posts = await prisma.feedPost.findMany({
     take: 10,
