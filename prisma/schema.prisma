@@ -38,6 +38,8 @@ model User {
   lockedUntil         DateTime?
   dateOfBirth     DateTime?
   termsAcceptedAt DateTime?
+  birthdayEmailEnabled  Boolean @default(true) // NEW
+  lastBirthdayEmailYear Int?                   // NEW
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   conversations Conversation[]
