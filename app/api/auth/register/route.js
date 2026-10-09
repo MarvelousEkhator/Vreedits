@@ -1,10 +1,11 @@
-// app/api/auth/register/route.js  (adjust the path if yours differs)
+// app/api/auth/register/route.js
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { sendVerificationEmail } from "@/lib/email";
 import { generateCode, CODE_TTL_MS } from "@/lib/security";
 import { ageFromDob, tierForAge } from "@/lib/userSettings";
+import { signSession, setSessionCookie } from "@/lib/auth";
 
 const MIN_AGE = 13;
 const MAX_AGE = 120;
@@ -155,9 +156,23 @@ export async function POST(req) {
     return err("Something went wrong. Please try again.", 500);
   }
 
-  // Email verification is paused: the account is ready to use right away.
+  // Email verification is paused: the account is ready to use right away,
+  // so sign the new user in immediately instead of sending them to login.
   if (SKIP_EMAIL_VERIFICATION) {
-    return NextResponse.json({ ok: true, email: user.email, verified: true }, { status: 201 });
+    try {
+      setSessionCookie(signSession(user.id));
+    } catch (e) {
+      console.error("Auto sign-in after register failed:", e);
+      // Account exists; the client falls back to the login page.
+      return NextResponse.json(
+        { ok: true, email: user.email, verified: true, signedIn: false },
+        { status: 201 }
+      );
+    }
+    return NextResponse.json(
+      { ok: true, email: user.email, verified: true, signedIn: true },
+      { status: 201 }
+    );
   }
 
   try {
