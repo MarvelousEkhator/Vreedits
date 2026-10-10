@@ -24,6 +24,17 @@ function daysIn(month, year) {
   return new Date(Date.UTC(y, Number(month), 0)).getUTCDate();
 }
 
+// Room for the text on the left and the dropdown arrow on the right.
+const selectStyle = {
+  minWidth: 0,
+  paddingLeft: 12,
+  paddingRight: 30,
+  textAlign: "left",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+  overflow: "hidden",
+};
+
 export default function BirthdayPicker({ value, onChange }) {
   const [parts, setParts] = useState(() => parse(value));
 
@@ -48,11 +59,11 @@ export default function BirthdayPicker({ value, onChange }) {
   return (
     <div style={{ display: "flex", gap: 8 }}>
       <select
-        className="input"
+        className="input pl-3"
         aria-label="Month"
         value={parts.month}
         onChange={(e) => update({ month: e.target.value })}
-        style={{ flex: 2, minWidth: 0 }}
+        style={{ ...selectStyle, flex: 1.8 }}
       >
         <option value="">Month</option>
         {MONTHS.map((name, i) => (
@@ -61,11 +72,11 @@ export default function BirthdayPicker({ value, onChange }) {
       </select>
 
       <select
-        className="input"
+        className="input pl-3"
         aria-label="Day"
         value={parts.day}
         onChange={(e) => update({ day: e.target.value })}
-        style={{ flex: 1, minWidth: 0 }}
+        style={{ ...selectStyle, flex: 1 }}
       >
         <option value="">Day</option>
         {Array.from({ length: dayCount }, (_, i) => (
@@ -74,11 +85,11 @@ export default function BirthdayPicker({ value, onChange }) {
       </select>
 
       <select
-        className="input"
+        className="input pl-3"
         aria-label="Year"
         value={parts.year}
         onChange={(e) => update({ year: e.target.value })}
-        style={{ flex: 1.3, minWidth: 0 }}
+        style={{ ...selectStyle, flex: 1.4 }}
       >
         <option value="">Year</option>
         {years.map((y) => (
