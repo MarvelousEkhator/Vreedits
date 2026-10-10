@@ -4,8 +4,9 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { sendVerificationEmail } from "@/lib/email";
 import { generateCode, CODE_TTL_MS } from "@/lib/security";
-import { ageFromDob, tierForAge } from "@/lib/userSettings";
+import { ageFromDob, tierForAge, hashPin, isValidPin } from "@/lib/userSettings";
 import { signSession, setSessionCookie } from "@/lib/auth";
+import { maskEmail, makeConfirmCode, sendConfirmEmail } from "@/lib/guardianEmail";
 
 const MIN_AGE = 13;
 const MAX_AGE = 120;
@@ -34,6 +35,10 @@ function parseDob(value) {
     return null;
   }
   return date;
+}
+
+function isValidEmail(value) {
+  return value.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
 function err(error, status = 400) {
@@ -91,6 +96,23 @@ export async function POST(req) {
     return err("Password must be at least 8 characters.");
   }
 
+  // Parent hand-off (under 18). Under 16 must set a PIN; 16-17 may skip it.
+  let guardianInput = null;
+  if (age < 18) {
+    const gPin = typeof body.guardianPin === "string" ? body.guardianPin.trim() : "";
+    const gEmail = typeof body.guardianEmail === "string" ? body.guardianEmail.trim().toLowerCase() : "";
+    const wantsPin = age < 16 || gPin || gEmail;
+
+    if (wantsPin) {
+      if (!isValidPin(gPin)) return err("The parent PIN must be 4 digits.");
+      if (gEmail) {
+        if (!isValidEmail(gEmail)) return err("Enter a valid parent email.");
+        if (gEmail === email) return err("The parent email must be different from the account email.");
+      }
+      guardianInput = { pin: gPin, email: gEmail || null };
+    }
+  }
+
   const displayName = displayNameRaw.slice(0, 50) || username;
 
   const [emailTaken, usernameTaken] = await Promise.all([
@@ -105,9 +127,23 @@ export async function POST(req) {
 
   const passwordHash = await bcrypt.hash(password, 12);
   const code = generateCode();
+  const guardianPinHash = guardianInput ? await hashPin(guardianInput.pin) : null;
 
   // Under 16: private account, friends-only, hidden from suggestions from day one.
   const isStrict = tierForAge(age) === "strict";
+
+  // Settings saved with the account (strict-tier protections and/or the parent PIN).
+  const settingsData = {
+    ...(isStrict ? { discoverable: false, whoCanMessage: "friends" } : {}),
+    ...(guardianInput
+      ? {
+          guardianPinHash,
+          ...(guardianInput.email
+            ? { guardianEmail: guardianInput.email, guardianEmailVerified: false }
+            : {}),
+        }
+      : {}),
+  };
 
   let user;
   try {
@@ -138,11 +174,11 @@ export async function POST(req) {
         },
       });
 
-      if (isStrict) {
+      if (Object.keys(settingsData).length) {
         await tx.userSettings.upsert({
           where: { userId: created.id },
-          create: { userId: created.id, discoverable: false, whoCanMessage: "friends" },
-          update: { discoverable: false, whoCanMessage: "friends" },
+          create: { userId: created.id, ...settingsData },
+          update: settingsData,
         });
       }
 
@@ -156,6 +192,33 @@ export async function POST(req) {
     return err("Something went wrong. Please try again.", 500);
   }
 
+  // Email the parent a confirmation code. This never blocks the signup:
+  // if it fails, the parent can ask for a new code in the parental settings.
+  let guardianNote = {};
+  if (guardianInput?.email) {
+    let sent = false;
+    try {
+      const c = makeConfirmCode(user.id);
+      await prisma.userSettings.update({
+        where: { userId: user.id },
+        data: {
+          guardianEmailCodeHash: c.hash,
+          guardianEmailCodeExpires: c.expires,
+          guardianEmailCodeSentAt: new Date(),
+          guardianEmailCodeAttempts: 0,
+        },
+      });
+      await sendConfirmEmail(guardianInput.email, c.code);
+      sent = true;
+    } catch (e) {
+      console.error("Parent email confirmation at signup failed:", e);
+    }
+    guardianNote = {
+      guardianEmailMasked: maskEmail(guardianInput.email),
+      guardianEmailSent: sent,
+    };
+  }
+
   // Email verification is paused: the account is ready to use right away,
   // so sign the new user in immediately instead of sending them to login.
   if (SKIP_EMAIL_VERIFICATION) {
@@ -165,12 +228,12 @@ export async function POST(req) {
       console.error("Auto sign-in after register failed:", e);
       // Account exists; the client falls back to the login page.
       return NextResponse.json(
-        { ok: true, email: user.email, verified: true, signedIn: false },
+        { ok: true, email: user.email, verified: true, signedIn: false, ...guardianNote },
         { status: 201 }
       );
     }
     return NextResponse.json(
-      { ok: true, email: user.email, verified: true, signedIn: true },
+      { ok: true, email: user.email, verified: true, signedIn: true, ...guardianNote },
       { status: 201 }
     );
   }
@@ -178,11 +241,13 @@ export async function POST(req) {
   try {
     await sendVerificationEmail(user.email, code);
   } catch (e) {
+    // Log the real reason on the server; don't send provider details to the browser.
+    console.error("Verification email failed:", e);
     return NextResponse.json(
-      { ok: true, email: user.email, emailError: e.message },
+      { ok: true, email: user.email, emailError: true, ...guardianNote },
       { status: 201 }
     );
   }
 
-  return NextResponse.json({ ok: true, email: user.email }, { status: 201 });
+  return NextResponse.json({ ok: true, email: user.email, ...guardianNote }, { status: 201 });
 }
