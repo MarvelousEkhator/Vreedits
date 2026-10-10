@@ -6,6 +6,7 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
 model User {
   id       String @id @default(uuid())
   username String @unique
@@ -881,7 +882,9 @@ model CommunityGuide {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-}// ─────────────────────────────────────────────
+}
+
+// ─────────────────────────────────────────────
 // ACTIVE — Community admin tools (Audit Log, AutoMod, Emojis, Webhooks, Integrations, Widget)
 // ─────────────────────────────────────────────
 
@@ -1025,6 +1028,7 @@ model Block {
 
   @@unique([blockerId, blockedId])
 }
+
 model UserReport {
   id           String   @id @default(uuid())
   reporterId   String
@@ -1036,6 +1040,7 @@ model UserReport {
   @@index([targetUserId])
   @@index([reporterId])
 }
+
 model ConversationHide {
   id           String   @id @default(uuid())
   userId       String
@@ -1045,6 +1050,7 @@ model ConversationHide {
 
   @@unique([userId, otherUserId])
 }
+
 model PostReport {
   id        String   @id @default(uuid())
   postId    String
@@ -1065,6 +1071,7 @@ model MutedCreator {
 
   @@unique([userId, mutedUserId])
 }
+
 model Sound {
   id           String   @id
   authorId     String
@@ -1076,6 +1083,7 @@ model Sound {
   @@index([authorId])
   @@index([sourcePostId])
 }
+
 model Feedback {
   id            String    @id @default(uuid())
   userId        String
@@ -1093,6 +1101,7 @@ model Feedback {
   @@index([userId, createdAt])
   @@index([createdAt])
 }
+
 model UserSettings {
   id                String    @id @default(uuid())
   userId            String    @unique
@@ -1121,4 +1130,17 @@ model UserSettings {
   guardianEmailCodeAttempts Int       @default(0)     // NEW
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
+}
+
+// RESTORED — matches the existing table in the database exactly (6 rows kept)
+model ScreenTimeDay {
+  id           String   @id @default(uuid())
+  userId       String
+  day          String
+  secondsUsed  Int      @default(0)
+  bonusMinutes Int      @default(0)
+  updatedAt    DateTime @updatedAt
+
+  @@unique([userId, day])
+  @@index([userId])
 }
