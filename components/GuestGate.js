@@ -11,9 +11,30 @@ const SNOOZE_MS = 30 * 60 * 1000; // quiet time after the prompt is dismissed
 const TICK_MS = 15 * 1000;
 const USERNAME_PATTERN = /^[a-z0-9_.]+$/;
 
-// Guests can only use the AI tools page and the Syna chat.
+const GENERIC_GATE_TEXT =
+  "Create a free account to do this. Everything you've done as a guest comes with you.";
+
+// Shown in the popup when a component says which action the guest tried.
+// To open the popup from any component:
+//   window.dispatchEvent(new CustomEvent("vreedits:guest-blocked", { detail: { action: "share" } }));
+const ACTION_TEXT = {
+  like: "Sign up free to like posts. Everything you've done as a guest comes with you.",
+  comment: "Sign up free to comment. Everything you've done as a guest comes with you.",
+  share: "Sign up free to share posts. Everything you've done as a guest comes with you.",
+  save: "Sign up free to save posts to your favourites. Everything you've done as a guest comes with you.",
+  follow: "Sign up free to follow people. Everything you've done as a guest comes with you.",
+  post: "Sign up free to post. Everything you've done as a guest comes with you.",
+  report: "Sign up free to report content. Everything you've done as a guest comes with you.",
+};
+
+// Guests can use the AI tools page, the Syna chat, and look around the feed.
 function isAllowedForGuest(path) {
-  return path === "/ai-tools" || path.startsWith("/ai-tools/chat");
+  return (
+    path === "/ai-tools" ||
+    path.startsWith("/ai-tools/chat") ||
+    path === "/feed" ||
+    path.startsWith("/feed/")
+  );
 }
 
 function readNum(key) {
@@ -220,6 +241,7 @@ export default function GuestGate({ user, children }) {
   const isGuest = !!user?.isGuest;
   const [formOpen, setFormOpen] = useState(false);
   const [promptOpen, setPromptOpen] = useState(false);
+  const [gateText, setGateText] = useState(null); // set while the "sign up to do this" popup is open
 
   // Counts guest time (across visits) and shows the prompt after a while.
   useEffect(() => {
@@ -240,10 +262,49 @@ export default function GuestGate({ user, children }) {
     if (!isGuest) return;
     function open() {
       setPromptOpen(false);
+      setGateText(null);
       setFormOpen(true);
     }
     window.addEventListener("vreedits:open-signup", open);
     return () => window.removeEventListener("vreedits:open-signup", open);
+  }, [isGuest]);
+
+  // Opens the "sign up to do this" popup. Any component can trigger it:
+  //   window.dispatchEvent(new CustomEvent("vreedits:guest-blocked", { detail: { action: "like" } }));
+  useEffect(() => {
+    if (!isGuest) return;
+    function onBlocked(e) {
+      setPromptOpen(false);
+      setGateText(ACTION_TEXT[e?.detail?.action] || GENERIC_GATE_TEXT);
+    }
+    window.addEventListener("vreedits:guest-blocked", onBlocked);
+    return () => window.removeEventListener("vreedits:guest-blocked", onBlocked);
+  }, [isGuest]);
+
+  // Watches server replies: when a route answers "guestBlocked" (the reply from
+  // guestBlockedResponse), the popup opens by itself. No changes are needed in
+  // the components that made the request.
+  useEffect(() => {
+    if (!isGuest) return;
+    const originalFetch = window.fetch;
+    window.fetch = async (...args) => {
+      const res = await originalFetch(...args);
+      try {
+        if (res.status === 403) {
+          const type = res.headers.get("content-type") || "";
+          if (type.includes("application/json")) {
+            const data = await res.clone().json();
+            if (data && data.guestBlocked) {
+              window.dispatchEvent(new CustomEvent("vreedits:guest-blocked", { detail: {} }));
+            }
+          }
+        }
+      } catch {}
+      return res;
+    };
+    return () => {
+      window.fetch = originalFetch;
+    };
   }, [isGuest]);
 
   if (!isGuest) return children;
@@ -253,6 +314,12 @@ export default function GuestGate({ user, children }) {
   function dismissPrompt() {
     setPromptOpen(false);
     writeNum("guest_snooze_until", Date.now() + SNOOZE_MS);
+  }
+
+  function startSignup() {
+    setGateText(null);
+    setPromptOpen(false);
+    setFormOpen(true);
   }
 
   return (
@@ -272,11 +339,11 @@ export default function GuestGate({ user, children }) {
           </div>
           <h2 className="text-lg font-semibold mb-2">Create a free account</h2>
           <p className="text-sm mb-6" style={{ color: "var(--text-muted)", maxWidth: 320 }}>
-            As a guest you can chat with Syna AI. Create an account to use the rest of Vreedits,
-            and everything you've done so far will be kept.
+            As a guest you can chat with Syna AI and browse the feed. Create an account to use the
+            rest of Vreedits, and everything you've done so far will be kept.
           </p>
           <div className="flex flex-col gap-2" style={{ width: "100%", maxWidth: 260 }}>
-            <button className="btn-primary" onClick={() => setFormOpen(true)}>Create account</button>
+            <button className="btn-primary" onClick={startSignup}>Create account</button>
             <Link
               href="/ai-tools/chat"
               className="btn-primary"
@@ -290,7 +357,8 @@ export default function GuestGate({ user, children }) {
         children
       )}
 
-      {!blocked && promptOpen && !formOpen && (
+      {/* Timed prompt */}
+      {!blocked && promptOpen && !formOpen && !gateText && (
         <div
           className="card"
           style={{
@@ -301,14 +369,15 @@ export default function GuestGate({ user, children }) {
         >
           <Sparkles size={20} style={{ color: "var(--accent)", flexShrink: 0 }} />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="text-sm font-semibold">Enjoying Vreedits?</div>
+            <div className="text-sm font-semibold">Get the full Vreedits experience</div>
             <div className="text-xs" style={{ color: "var(--text-muted)" }}>
-              Create a free account to keep your chats and unlock everything.
+              Sign up free to post, join communities, and message friends. Everything you've done as
+              a guest comes with you.
             </div>
           </div>
           <button
             className="btn-primary"
-            onClick={() => { setPromptOpen(false); setFormOpen(true); }}
+            onClick={startSignup}
             style={{ width: "auto", padding: "8px 14px", flexShrink: 0 }}
           >
             Sign up
@@ -320,6 +389,42 @@ export default function GuestGate({ user, children }) {
           >
             <X size={16} />
           </button>
+        </div>
+      )}
+
+      {/* "Sign up to do this" popup (like, comment, share, save, follow...) */}
+      {gateText && !formOpen && (
+        <div
+          onClick={() => setGateText(null)}
+          style={{
+            position: "fixed", inset: 0, zIndex: 8500, background: "rgba(0,0,0,0.55)",
+            display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
+          }}
+        >
+          <div
+            className="card"
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: "100%", maxWidth: 360, padding: 22, textAlign: "center" }}
+          >
+            <div
+              style={{
+                width: 52, height: 52, borderRadius: "50%", background: "var(--accent-soft)",
+                display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px",
+              }}
+            >
+              <Sparkles size={24} style={{ color: "var(--accent)" }} />
+            </div>
+            <h3 className="text-base font-semibold mb-2">Join Vreedits to do this</h3>
+            <p className="text-sm mb-5" style={{ color: "var(--text-muted)" }}>{gateText}</p>
+            <button className="btn-primary mb-2" onClick={startSignup}>Create free account</button>
+            <button
+              onClick={() => setGateText(null)}
+              className="btn-text text-sm"
+              style={{ background: "none", border: "none" }}
+            >
+              Not now
+            </button>
+          </div>
         </div>
       )}
 
