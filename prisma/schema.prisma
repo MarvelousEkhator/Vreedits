@@ -6,7 +6,6 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
-
 model User {
   id       String @id @default(uuid())
   username String @unique
@@ -31,6 +30,7 @@ model User {
   isGuest       Boolean  @default(false)
   verificationCode    String?
   verificationExpires DateTime?
+  verifyAttempts      Int       @default(0)
   resetCode    String?
   resetExpires DateTime?
   lastCodeSentAt DateTime?
@@ -38,8 +38,8 @@ model User {
   lockedUntil         DateTime?
   dateOfBirth     DateTime?
   termsAcceptedAt DateTime?
-  birthdayEmailEnabled  Boolean @default(true) // NEW
-  lastBirthdayEmailYear Int?                   // NEW
+  birthdayEmailEnabled  Boolean @default(true)
+  lastBirthdayEmailYear Int?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   conversations Conversation[]
@@ -94,6 +94,7 @@ model User {
   // ACTIVE — Community onboarding
   onboardingCompletions OnboardingCompletion[]
 }
+
 
 model Follow {
   id          String   @id @default(uuid())
