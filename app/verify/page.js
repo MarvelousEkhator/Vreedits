@@ -1,5 +1,5 @@
 "use client";
-import { useState, Suspense } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ShieldCheck, Loader2, AlertCircle, CheckCircle2, RotateCcw } from "lucide-react";
 
@@ -7,14 +7,35 @@ function VerifyForm() {
   const router = useRouter();
   const params = useSearchParams();
   const email = params.get("email") || "";
+  const emailFailed = params.get("emailFailed") === "1";
+
   const [code, setCode] = useState("");
-  const [error, setError] = useState("");
+  const [error, setError] = useState(
+    emailFailed ? "We couldn't send the email just now. Tap Resend code to try again." : ""
+  );
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
+  // Wait before allowing another email (a code was just sent unless sending failed).
+  const [cooldown, setCooldown] = useState(emailFailed ? 0 : 30);
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const id = setTimeout(() => setCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(id);
+  }, [cooldown]);
 
   async function handleVerify(e) {
     e.preventDefault();
     setError("");
+    setSuccess("");
+    if (!email) {
+      setError("Missing email. Go back and sign up again.");
+      return;
+    }
+    if (code.length < 6) {
+      setError("Enter the 6-digit code.");
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch("/api/auth/verify", {
@@ -22,13 +43,15 @@ function VerifyForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, code }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setError(data.error || "Verification failed.");
         setLoading(false);
         return;
       }
-      router.push("/dashboard");
+      // The verify route signs the user in, so go straight into the app.
+      router.push("/feed");
+      router.refresh();
     } catch {
       setError("Network error. Please try again.");
       setLoading(false);
@@ -36,6 +59,7 @@ function VerifyForm() {
   }
 
   async function handleResend() {
+    if (cooldown > 0) return;
     setError("");
     setSuccess("");
     try {
@@ -44,9 +68,11 @@ function VerifyForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, purpose: "verify" }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) return setError(data.error || "Could not resend code.");
-      setSuccess("A new code was emailed to you.");
+      setCode("");
+      setCooldown(60);
+      setSuccess("A new code was emailed to you. Check your spam folder too.");
     } catch {
       setError("Network error. Please try again.");
     }
@@ -59,7 +85,7 @@ function VerifyForm() {
           Verify your email
         </h1>
         <p className="text-sm mb-4" style={{ color: "var(--text-muted)" }}>
-          Enter the code we emailed to {email}.
+          {email ? `Enter the code we emailed to ${email}.` : "Enter the code we emailed to you."}
         </p>
 
         <div
@@ -67,7 +93,7 @@ function VerifyForm() {
           style={{ background: "var(--accent-soft)", color: "var(--accent)" }}
         >
           <ShieldCheck size={17} />
-          Check your inbox (and spam folder) for a 6-digit code.
+          Check your inbox and your spam or junk folder for a 6-digit code. It can take a few minutes.
         </div>
 
         {error && <div className="alert alert-error mb-4"><AlertCircle size={15} />{error}</div>}
@@ -77,10 +103,12 @@ function VerifyForm() {
           <input
             className="input pl-3 tracking-[0.2em] font-semibold"
             value={code}
-            onChange={(e) => setCode(e.target.value)}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
             placeholder="000000"
             inputMode="numeric"
+            autoComplete="one-time-code"
             maxLength={6}
+            autoFocus
           />
           <button className="btn-primary" type="submit" disabled={loading}>
             {loading && <Loader2 size={15} className="animate-spin" />}
@@ -89,8 +117,14 @@ function VerifyForm() {
         </form>
 
         <div className="text-center mt-4">
-          <button className="btn-text inline-flex items-center gap-1.5" onClick={handleResend} type="button">
-            <RotateCcw size={13} /> Resend code
+          <button
+            className="btn-text inline-flex items-center gap-1.5"
+            onClick={handleResend}
+            type="button"
+            disabled={cooldown > 0}
+          >
+            <RotateCcw size={13} />
+            {cooldown > 0 ? `Resend code in ${cooldown}s` : "Resend code"}
           </button>
         </div>
       </div>
