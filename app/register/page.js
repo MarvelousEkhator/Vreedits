@@ -3,11 +3,29 @@ import BirthdayPicker from "@/components/BirthdayPicker";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Mail, Lock, User, Eye, EyeOff, Loader2, AlertCircle, ChevronLeft } from "lucide-react";
+import { Mail, Lock, User, Eye, EyeOff, Loader2, AlertCircle, ChevronLeft, X } from "lucide-react";
 import { PasswordRequirement, UsernameStatus } from "@/components/AuthWidgets";
 import { LanguageProvider, useLanguage } from "@/components/LanguageProvider";
 
-const STEPS = ["account", "identity", "birthday", "terms"];
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Set to false if you don't want to require opening both documents
+// before the "I agree" checkbox unlocks.
+const REQUIRE_OPENING_DOCS = true;
+
+// Age from a "YYYY-MM-DD" string, or null if it isn't one.
+function ageFromDobString(value) {
+  if (typeof value !== "string") return null;
+  const m = value.trim().slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  const now = new Date();
+  let age = now.getFullYear() - y;
+  if (now.getMonth() + 1 < mo || (now.getMonth() + 1 === mo && now.getDate() < d)) age--;
+  return age;
+}
 
 function RegisterInner() {
   const router = useRouter();
@@ -20,12 +38,19 @@ function RegisterInner() {
     displayName: "",
     username: "",
     dateOfBirth: "",
+    guardianPin: "",
+    guardianPin2: "",
+    guardianEmail: "",
     termsAccepted: false,
   });
   const [showPw, setShowPw] = useState(false);
   const [usernameStatus, setUsernameStatus] = useState("idle");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // Terms / Privacy reader (opens on top of the form so nothing typed is lost)
+  const [reader, setReader] = useState(null); // "terms" | "privacy" | null
+  const [opened, setOpened] = useState({ terms: false, privacy: false });
 
   useEffect(() => {
     const uname = form.username.trim();
@@ -46,8 +71,27 @@ function RegisterInner() {
     return () => clearTimeout(handle);
   }, [form.username]);
 
+  // Under 18 gets an extra step for a parent or guardian.
+  const age = ageFromDobString(form.dateOfBirth);
+  const minor = age !== null && age >= 13 && age < 18;
+  const under16 = age !== null && age >= 13 && age < 16;
+  const steps = minor
+    ? ["account", "identity", "birthday", "parent", "terms"]
+    : ["account", "identity", "birthday", "terms"];
+
+  const readAll = !REQUIRE_OPENING_DOCS || (opened.terms && opened.privacy);
+
+  function openReader(which) {
+    setReader(which);
+    setOpened((o) => ({ ...o, [which]: true }));
+  }
+
   function updateField(key, value) {
     setForm((f) => ({ ...f, [key]: value }));
+  }
+
+  function digitsOnly(key) {
+    return (e) => updateField(key, e.target.value.replace(/\D/g, "").slice(0, 4));
   }
 
   function isOldEnoughClientSide(dobString) {
@@ -60,7 +104,7 @@ function RegisterInner() {
 
   function validateStep() {
     setError("");
-    const current = STEPS[step];
+    const current = steps[step];
 
     if (current === "account") {
       if (!form.email.trim()) return "Email is required.";
@@ -79,7 +123,24 @@ function RegisterInner() {
       if (!isOldEnoughClientSide(form.dateOfBirth)) return "You must be at least 13 years old to sign up.";
     }
 
+    if (current === "parent") {
+      const pin = form.guardianPin;
+      const email = form.guardianEmail.trim();
+      const wantsPin = under16 || pin || form.guardianPin2 || email;
+      if (wantsPin) {
+        if (!/^\d{4}$/.test(pin)) return "The parent PIN must be 4 digits.";
+        if (pin !== form.guardianPin2) return "The two PINs don't match.";
+      }
+      if (email) {
+        if (!EMAIL_PATTERN.test(email)) return "Enter a valid parent email.";
+        if (email.toLowerCase() === form.email.trim().toLowerCase()) {
+          return "Use a different email from the account's own email.";
+        }
+      }
+    }
+
     if (current === "terms") {
+      if (!readAll) return "Please open and read both the Terms and the Privacy Policy first.";
       if (!form.termsAccepted) return "You must accept the Terms and Privacy Policy.";
     }
 
@@ -131,17 +192,23 @@ function RegisterInner() {
     setLoading(true);
     setError("");
     try {
+      const payload = {
+        username: form.username,
+        displayName: form.displayName,
+        email: form.email,
+        password: form.password,
+        dateOfBirth: form.dateOfBirth,
+        termsAccepted: form.termsAccepted,
+      };
+      if (minor) {
+        if (form.guardianPin) payload.guardianPin = form.guardianPin;
+        if (form.guardianEmail.trim()) payload.guardianEmail = form.guardianEmail.trim();
+      }
+
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          username: form.username,
-          displayName: form.displayName,
-          email: form.email,
-          password: form.password,
-          dateOfBirth: form.dateOfBirth,
-          termsAccepted: form.termsAccepted,
-        }),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -149,20 +216,29 @@ function RegisterInner() {
         setLoading(false);
         return;
       }
-      // Email verification paused: the account is ready, so go straight to login.
+
+      // Email verification is paused: the account is ready and already signed in.
       if (data.verified) {
-        router.push("/login");
+        if (data.signedIn) {
+          router.push("/feed");
+          router.refresh();
+        } else {
+          router.push("/login");
+        }
         return;
       }
-      router.push(`/verify?email=${encodeURIComponent(data.email)}`);
+
+      // Email verification is on: the verify page tells them to check spam.
+      const flag = data.emailError ? "&emailFailed=1" : "";
+      router.push(`/verify?email=${encodeURIComponent(data.email)}${flag}`);
     } catch {
       setError("Network error. Please try again.");
       setLoading(false);
     }
   }
 
-  const current = STEPS[step];
-  const isLastStep = step === STEPS.length - 1;
+  const current = steps[step];
+  const isLastStep = step === steps.length - 1;
 
   return (
     <div className="min-h-screen flex flex-col items-center px-4">
@@ -178,11 +254,11 @@ function RegisterInner() {
           </h1>
         </div>
         <p className="text-sm mb-2" style={{ color: "var(--text-muted)" }}>
-          {t("auth.stepOf", { n: step + 1, total: STEPS.length })}
+          {t("auth.stepOf", { n: step + 1, total: steps.length })}
         </p>
 
         <div className="flex gap-1.5 mb-6">
-          {STEPS.map((s, i) => (
+          {steps.map((s, i) => (
             <div
               key={s}
               style={{
@@ -324,18 +400,121 @@ function RegisterInner() {
             </div>
           )}
 
+          {current === "parent" && (
+            <>
+              <div className="alert" style={{ background: "var(--accent-soft)", color: "var(--text)" }}>
+                Because this account is for someone under 18, a parent or guardian should complete
+                this step.
+                {under16 ? " A PIN is required for under 16." : " You can leave it empty and set it up later in Settings."}
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--text-muted)" }}>
+                  Parent PIN
+                </label>
+                <div className="relative flex items-center">
+                  <Lock size={15} className="absolute left-3" style={{ color: "var(--text-muted)" }} />
+                  <input
+                    className="input"
+                    type="password"
+                    inputMode="numeric"
+                    maxLength={4}
+                    value={form.guardianPin}
+                    onChange={digitsOnly("guardianPin")}
+                    placeholder="Choose a 4-digit PIN"
+                    autoComplete="off"
+                  />
+                </div>
+                <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
+                  This PIN locks the safety settings, like screen time and who can message.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--text-muted)" }}>
+                  Confirm PIN
+                </label>
+                <div className="relative flex items-center">
+                  <Lock size={15} className="absolute left-3" style={{ color: "var(--text-muted)" }} />
+                  <input
+                    className="input"
+                    type="password"
+                    inputMode="numeric"
+                    maxLength={4}
+                    value={form.guardianPin2}
+                    onChange={digitsOnly("guardianPin2")}
+                    placeholder="Type it again"
+                    autoComplete="off"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--text-muted)" }}>
+                  Parent's email (recommended)
+                </label>
+                <div className="relative flex items-center">
+                  <Mail size={15} className="absolute left-3" style={{ color: "var(--text-muted)" }} />
+                  <input
+                    className="input"
+                    type="email"
+                    value={form.guardianEmail}
+                    onChange={(e) => updateField("guardianEmail", e.target.value)}
+                    placeholder="parent@example.com"
+                    autoComplete="off"
+                  />
+                </div>
+                <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
+                  Used only to reset the PIN if it's forgotten. Use an email the parent controls and
+                  the teen can't open, different from the account's own email. Without one, a
+                  forgotten PIN can't be reset.
+                </p>
+              </div>
+            </>
+          )}
+
           {current === "terms" && (
             <div>
-              <label className="flex items-start gap-2.5" style={{ cursor: "pointer" }}>
+              <p className="text-sm mb-3" style={{ color: "var(--text-muted)" }}>
+                Please read these before you agree. They open on top of this page, so nothing you've
+                typed is lost.
+              </p>
+
+              <div className="flex gap-2 mb-3">
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => openReader("terms")}
+                  style={{ flex: 1, background: "var(--surface-2)", color: "var(--text)", border: "1px solid var(--border)" }}
+                >
+                  {opened.terms ? "✓ " : ""}Read Terms
+                </button>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => openReader("privacy")}
+                  style={{ flex: 1, background: "var(--surface-2)", color: "var(--text)", border: "1px solid var(--border)" }}
+                >
+                  {opened.privacy ? "✓ " : ""}Read Privacy
+                </button>
+              </div>
+
+              {!readAll && (
+                <p className="text-xs mb-3" style={{ color: "var(--text-muted)" }}>
+                  Open and read both to unlock the checkbox.
+                </p>
+              )}
+
+              <label className="flex items-start gap-2.5" style={{ cursor: readAll ? "pointer" : "not-allowed", opacity: readAll ? 1 : 0.55 }}>
                 <input
                   type="checkbox"
                   checked={form.termsAccepted}
+                  disabled={!readAll}
                   onChange={(e) => updateField("termsAccepted", e.target.checked)}
                   style={{ marginTop: 3 }}
                 />
                 <span className="text-sm">
-                  {t("auth.agreeToPrefix")} <Link href="/terms" className="btn-text">{t("auth.termsOfService")}</Link>{" "}
-                  {t("auth.and")} <Link href="/privacy" className="btn-text">{t("auth.privacyPolicy")}</Link>.
+                  {t("auth.agreeToPrefix")} {t("auth.termsOfService")} {t("auth.and")} {t("auth.privacyPolicy")}.
                 </span>
               </label>
             </div>
@@ -378,6 +557,77 @@ function RegisterInner() {
           </>
         )}
       </div>
+
+      {/* Terms / Privacy reader */}
+      {reader && (
+        <div
+          style={{
+            position: "fixed", inset: 0, zIndex: 200,
+            background: "var(--surface)", color: "var(--text)",
+            display: "flex", flexDirection: "column",
+          }}
+        >
+          <div
+            className="flex items-center justify-between px-4"
+            style={{ height: 56, borderBottom: "1px solid var(--border)", flexShrink: 0 }}
+          >
+            <div className="flex gap-4 text-sm font-semibold">
+              <button
+                type="button"
+                onClick={() => openReader("terms")}
+                style={{
+                  background: "none", border: "none", padding: "4px 0", color: "var(--text)",
+                  borderBottom: reader === "terms" ? "2px solid var(--accent)" : "2px solid transparent",
+                }}
+              >
+                Terms
+              </button>
+              <button
+                type="button"
+                onClick={() => openReader("privacy")}
+                style={{
+                  background: "none", border: "none", padding: "4px 0", color: "var(--text)",
+                  borderBottom: reader === "privacy" ? "2px solid var(--accent)" : "2px solid transparent",
+                }}
+              >
+                Privacy
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => setReader(null)}
+              aria-label="Close"
+              style={{ background: "none", border: "none", color: "var(--text)", display: "flex" }}
+            >
+              <X size={22} />
+            </button>
+          </div>
+
+          <iframe
+            key={reader}
+            src={reader === "terms" ? "/terms" : "/privacy"}
+            title={reader === "terms" ? "Terms of Service" : "Privacy Policy"}
+            style={{ flex: 1, width: "100%", border: "none", background: "var(--surface)" }}
+          />
+
+          <div
+            className="flex items-center gap-3 p-3"
+            style={{ borderTop: "1px solid var(--border)", flexShrink: 0 }}
+          >
+            <button type="button" className="btn-primary" onClick={() => setReader(null)} style={{ flex: 1 }}>
+              Done
+            </button>
+            <a
+              href={reader === "terms" ? "/terms" : "/privacy"}
+              target="_blank"
+              rel="noreferrer"
+              className="btn-text text-sm"
+            >
+              Open in new tab
+            </a>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
