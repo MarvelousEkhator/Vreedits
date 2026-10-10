@@ -10,10 +10,13 @@ import {
 import { localTime } from "@/lib/screenTime";
 import { sendEmail } from "@/lib/email";
 import { generateCode, CODE_TTL_MS } from "@/lib/security";
+import {
+  maskEmail, hashConfirmCode, makeConfirmCode, sendConfirmEmail,
+} from "@/lib/guardianEmail";
 
 export const dynamic = "force-dynamic";
 
-const MAX_RESET_ATTEMPTS = 5;
+const MAX_CODE_ATTEMPTS = 5;
 const RESEND_COOLDOWN_MS = 60 * 1000;
 
 function fail(error, status = 400, code) {
@@ -36,11 +39,10 @@ function isValidEmail(value) {
   return value.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
-// "someone@gmail.com" -> "s***@gmail.com"
-function maskEmail(email) {
-  const [name, domain] = String(email).split("@");
-  if (!name || !domain) return "";
-  return `${name[0]}***@${domain}`;
+function sameHex(a, b) {
+  const x = Buffer.from(String(a));
+  const y = Buffer.from(String(b));
+  return x.length === y.length && timingSafeEqual(x, y);
 }
 
 function hashResetCode(userId, code) {
@@ -57,6 +59,40 @@ async function clearReset(userId) {
       pinResetAttempts: 0,
     },
   });
+}
+
+async function clearConfirm(userId) {
+  await prisma.userSettings.update({
+    where: { userId },
+    data: {
+      guardianEmailCodeHash: null,
+      guardianEmailCodeExpires: null,
+      guardianEmailCodeSentAt: null,
+      guardianEmailCodeAttempts: 0,
+    },
+  });
+}
+
+// Stores a fresh confirmation code and emails it. Returns true if it was sent.
+async function issueConfirmCode(userId, email) {
+  const c = makeConfirmCode(userId);
+  await prisma.userSettings.update({
+    where: { userId },
+    data: {
+      guardianEmailCodeHash: c.hash,
+      guardianEmailCodeExpires: c.expires,
+      guardianEmailCodeSentAt: new Date(),
+      guardianEmailCodeAttempts: 0,
+    },
+  });
+  try {
+    await sendConfirmEmail(email, c.code);
+    return true;
+  } catch (e) {
+    console.error("Parent email confirmation failed:", e);
+    await clearConfirm(userId);
+    return false;
+  }
 }
 
 function resetEmailHtml(code) {
@@ -110,6 +146,7 @@ export async function GET(req) {
     return NextResponse.json({
       hasPin: !!settings.guardianPinHash,
       hasGuardianEmail: !!settings.guardianEmail,
+      guardianEmailVerified: !!settings.guardianEmailVerified,
       guardianEmailMasked: settings.guardianEmail ? maskEmail(settings.guardianEmail) : null,
       tier,
       day: local.day,
@@ -142,7 +179,7 @@ export async function POST(req) {
     const action = body?.action;
 
     // First-time setup: pick a 4-digit PIN (and, optionally, a parent email
-    // that can receive a reset code if the PIN is ever forgotten).
+    // that gets a confirmation code and can later reset a forgotten PIN).
     if (action === "setPin") {
       if (settings.guardianPinHash) return fail("A PIN is already set.");
       if (!isValidPin(body.pin)) return fail("The PIN must be 4 digits.");
@@ -153,17 +190,30 @@ export async function POST(req) {
       if (rawEmail) {
         if (!isValidEmail(rawEmail)) return fail("Enter a valid parent email.");
         data.guardianEmail = rawEmail;
+        data.guardianEmailVerified = false;
       }
 
       await prisma.userSettings.update({ where: { userId: user.id }, data });
+
+      if (rawEmail) {
+        const sent = await issueConfirmCode(user.id, rawEmail);
+        return NextResponse.json({
+          ok: true,
+          guardianEmailSent: sent,
+          sentTo: maskEmail(rawEmail),
+        });
+      }
       return NextResponse.json({ ok: true });
     }
 
-    // Forgot the PIN: email a 6-digit code to the parent email on file.
+    // Forgot the PIN: email a 6-digit code to the CONFIRMED parent email.
     if (action === "requestPinReset") {
       if (!settings.guardianPinHash) return fail("No PIN is set.");
       if (!settings.guardianEmail) {
         return fail("There's no parent email on file, so the PIN can't be reset by email.");
+      }
+      if (!settings.guardianEmailVerified) {
+        return fail("The parent email hasn't been confirmed yet, so the PIN can't be reset by email.");
       }
 
       const last = settings.pinResetSentAt ? new Date(settings.pinResetSentAt).getTime() : 0;
@@ -208,16 +258,13 @@ export async function POST(req) {
       }
       if (!isValidPin(body.newPin)) return fail("The new PIN must be 4 digits.");
 
-      if ((settings.pinResetAttempts ?? 0) >= MAX_RESET_ATTEMPTS) {
+      if ((settings.pinResetAttempts ?? 0) >= MAX_CODE_ATTEMPTS) {
         await clearReset(user.id);
         return fail("Too many wrong codes. Ask for a new one.", 429);
       }
 
-      const given = Buffer.from(hashResetCode(user.id, String(body.code ?? "").trim()));
-      const stored = Buffer.from(settings.pinResetCodeHash);
-      const matches = given.length === stored.length && timingSafeEqual(given, stored);
-
-      if (!matches) {
+      const given = hashResetCode(user.id, String(body.code ?? "").trim());
+      if (!sameHex(given, settings.pinResetCodeHash)) {
         await prisma.userSettings.update({
           where: { userId: user.id },
           data: { pinResetAttempts: { increment: 1 } },
@@ -257,21 +304,89 @@ export async function POST(req) {
       return NextResponse.json({ ok: true });
     }
 
-    // Add or change the parent email used for PIN resets.
+    // Add or change the parent email. It starts unconfirmed and gets a code.
     if (action === "setGuardianEmail") {
       const email = cleanEmail(body.guardianEmail);
       if (!isValidEmail(email)) return fail("Enter a valid parent email.");
+
       await prisma.userSettings.update({
         where: { userId: user.id },
         data: {
           guardianEmail: email,
+          guardianEmailVerified: false,
+          guardianEmailCodeHash: null,
+          guardianEmailCodeExpires: null,
+          guardianEmailCodeSentAt: null,
+          guardianEmailCodeAttempts: 0,
           pinResetCodeHash: null,
           pinResetExpires: null,
           pinResetSentAt: null,
           pinResetAttempts: 0,
         },
       });
-      return NextResponse.json({ ok: true, guardianEmailMasked: maskEmail(email) });
+
+      const sent = await issueConfirmCode(user.id, email);
+      return NextResponse.json({
+        ok: true,
+        guardianEmailMasked: maskEmail(email),
+        guardianEmailSent: sent,
+      });
+    }
+
+    // Send the confirmation code again.
+    if (action === "sendGuardianEmailCode") {
+      if (!settings.guardianEmail) return fail("Add a parent email first.");
+      if (settings.guardianEmailVerified) return fail("That email is already confirmed.");
+
+      const last = settings.guardianEmailCodeSentAt
+        ? new Date(settings.guardianEmailCodeSentAt).getTime()
+        : 0;
+      if (Date.now() - last < RESEND_COOLDOWN_MS) {
+        return fail("Please wait a minute before asking for another code.", 429);
+      }
+
+      const sent = await issueConfirmCode(user.id, settings.guardianEmail);
+      if (!sent) return fail("We couldn't send the email right now. Please try again later.", 502);
+      return NextResponse.json({ ok: true, sentTo: maskEmail(settings.guardianEmail) });
+    }
+
+    // Confirm the parent email with the code that was emailed to it.
+    if (action === "confirmGuardianEmail") {
+      if (!settings.guardianEmail) return fail("Add a parent email first.");
+      if (settings.guardianEmailVerified) return NextResponse.json({ ok: true });
+
+      if (!settings.guardianEmailCodeHash || !settings.guardianEmailCodeExpires) {
+        return fail("Ask for a new code first.");
+      }
+      if (new Date(settings.guardianEmailCodeExpires).getTime() < Date.now()) {
+        await clearConfirm(user.id);
+        return fail("That code has expired. Ask for a new one.");
+      }
+      if ((settings.guardianEmailCodeAttempts ?? 0) >= MAX_CODE_ATTEMPTS) {
+        await clearConfirm(user.id);
+        return fail("Too many wrong codes. Ask for a new one.", 429);
+      }
+
+      const given = hashConfirmCode(user.id, String(body.code ?? "").trim());
+      if (!sameHex(given, settings.guardianEmailCodeHash)) {
+        await prisma.userSettings.update({
+          where: { userId: user.id },
+          data: { guardianEmailCodeAttempts: { increment: 1 } },
+        });
+        return fail("That code isn't right.");
+      }
+
+      await prisma.userSettings.update({
+        where: { userId: user.id },
+        data: {
+          guardianEmailVerified: true,
+          guardianEmailCodeHash: null,
+          guardianEmailCodeExpires: null,
+          guardianEmailCodeSentAt: null,
+          guardianEmailCodeAttempts: 0,
+        },
+      });
+      return NextResponse.json({ ok: true });
     }
 
     // Removing the PIN unlocks the settings again (their values stay as they are).
