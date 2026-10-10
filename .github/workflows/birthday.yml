@@ -16,4 +16,4 @@ jobs:
           curl --fail --show-error --silent \
             --max-time 180 --retry 2 --retry-delay 20 \
             -H "Authorization: Bearer $CRON_SECRET" \
-            https://synovra-i8yr.onrender.com/api/cron/birthday
+            https://synovra-i8yr.onrender.com/api/cron/birthdays
