@@ -15,6 +15,7 @@ const BLOCK_SECONDS = 60 * 60 * 24 * 7; // 7 days
 const MIN_USERNAME_LENGTH = 3;
 const MAX_USERNAME_LENGTH = 30;
 const USERNAME_PATTERN = /^[a-z0-9_.]+$/;
+const RESEND_COOLDOWN_MS = 60 * 1000;
 
 // Set SKIP_EMAIL_VERIFICATION=true on Render to let people sign up without
 // the email code. Remove it (or set it to false) to turn verification back on.
@@ -115,14 +116,30 @@ export async function POST(req) {
 
   const displayName = displayNameRaw.slice(0, 50) || username;
 
-  const [emailTaken, usernameTaken] = await Promise.all([
-    prisma.user.findUnique({ where: { email } }),
-    prisma.user.findFirst({
-      where: { username: { equals: username, mode: "insensitive" } },
-      select: { id: true },
-    }),
-  ]);
-  if (emailTaken) return err("An account with that email already exists.", 409);
+  // An account that was never verified doesn't own its email yet, so a new
+  // signup is allowed to take it over. Verified accounts stay protected.
+  const existingByEmail = await prisma.user.findUnique({ where: { email } });
+  let reuseId = null;
+  if (existingByEmail) {
+    if (existingByEmail.verified || existingByEmail.isGuest) {
+      return err("An account with that email already exists.", 409);
+    }
+    const last = existingByEmail.lastCodeSentAt
+      ? new Date(existingByEmail.lastCodeSentAt).getTime()
+      : 0;
+    if (Date.now() - last < RESEND_COOLDOWN_MS) {
+      return err("We just sent a code to this email. Please wait a minute and try again.", 429);
+    }
+    reuseId = existingByEmail.id;
+  }
+
+  const usernameTaken = await prisma.user.findFirst({
+    where: {
+      username: { equals: username, mode: "insensitive" },
+      ...(reuseId ? { NOT: { id: reuseId } } : {}),
+    },
+    select: { id: true },
+  });
   if (usernameTaken) return err("That username is already taken.", 409);
 
   const passwordHash = await bcrypt.hash(password, 12);
@@ -145,34 +162,42 @@ export async function POST(req) {
       : {}),
   };
 
+  const userData = {
+    username,
+    displayName,
+    passwordHash,
+    dateOfBirth: dob,
+    termsAcceptedAt: new Date(),
+    ...(SKIP_EMAIL_VERIFICATION
+      ? { verified: true, verificationCode: null, verificationExpires: null }
+      : {
+          verified: false,
+          verificationCode: code,
+          verificationExpires: new Date(Date.now() + CODE_TTL_MS),
+          lastCodeSentAt: new Date(),
+          verifyAttempts: 0,
+        }),
+    ...(isStrict
+      ? {
+          isPublic: false,
+          allowDownloads: false,
+          allowComments: "friends",
+          allowMentions: "friends",
+        }
+      : {}),
+  };
+
   let user;
   try {
     user = await prisma.$transaction(async (tx) => {
-      const created = await tx.user.create({
-        data: {
-          username,
-          displayName,
-          email,
-          passwordHash,
-          dateOfBirth: dob,
-          termsAcceptedAt: new Date(),
-          ...(SKIP_EMAIL_VERIFICATION
-            ? { verified: true }
-            : {
-                verificationCode: code,
-                verificationExpires: new Date(Date.now() + CODE_TTL_MS),
-                lastCodeSentAt: new Date(),
-              }),
-          ...(isStrict
-            ? {
-                isPublic: false,
-                allowDownloads: false,
-                allowComments: "friends",
-                allowMentions: "friends",
-              }
-            : {}),
-        },
-      });
+      let created;
+      if (reuseId) {
+        // Start the taken-over account fresh: clear its old settings first.
+        await tx.userSettings.deleteMany({ where: { userId: reuseId } });
+        created = await tx.user.update({ where: { id: reuseId }, data: userData });
+      } else {
+        created = await tx.user.create({ data: { email, ...userData } });
+      }
 
       if (Object.keys(settingsData).length) {
         await tx.userSettings.upsert({
