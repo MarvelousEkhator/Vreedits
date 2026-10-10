@@ -79,6 +79,16 @@ export default function ParentalControlsPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
+  // Parent email (used to reset a forgotten PIN)
+  const [emailInput, setEmailInput] = useState("");
+
+  // "Forgot PIN?" flow
+  const [mode, setMode] = useState("unlock"); // "unlock" | "reset"
+  const [resetStep, setResetStep] = useState("send"); // "send" | "enter"
+  const [sentTo, setSentTo] = useState("");
+  const [resetCode, setResetCode] = useState("");
+  const [resetNewPin, setResetNewPin] = useState("");
+
   const load = useCallback(async () => {
     try {
       const res = await fetch(`/api/settings/parental?tz=${new Date().getTimezoneOffset()}`, { cache: "no-store" });
@@ -117,13 +127,20 @@ export default function ParentalControlsPage() {
     setError("");
     if (!/^\d{4}$/.test(pin)) return setError("The PIN must be 4 digits.");
     if (pin !== pin2) return setError("The two PINs don't match.");
+    const email = emailInput.trim();
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return setError("Enter a valid parent email, or leave it empty.");
+    }
     setBusy(true);
-    const r = await post({ action: "setPin", pin });
+    const body = { action: "setPin", pin };
+    if (email) body.guardianEmail = email;
+    const r = await post(body);
     setBusy(false);
     if (!r.ok) return handleFail(r);
     setUnlocked(pin);
     setPin("");
     setPin2("");
+    setEmailInput("");
     await load();
   }
 
@@ -136,6 +153,52 @@ export default function ParentalControlsPage() {
     if (!r.ok) return setError(r.data?.error || "Wrong PIN.");
     setUnlocked(pin);
     setPin("");
+  }
+
+  function openReset() {
+    setError("");
+    setNotice("");
+    setPin("");
+    setResetCode("");
+    setResetNewPin("");
+    setResetStep("send");
+    setMode("reset");
+  }
+
+  function closeReset() {
+    setError("");
+    setNotice("");
+    setMode("unlock");
+  }
+
+  async function handleRequestReset() {
+    setError("");
+    setNotice("");
+    setBusy(true);
+    const r = await post({ action: "requestPinReset" });
+    setBusy(false);
+    if (!r.ok) return setError(r.data?.error || "Couldn't send the code.");
+    setSentTo(r.data?.sentTo || info?.guardianEmailMasked || "");
+    setResetStep("enter");
+    setNotice("Code sent.");
+  }
+
+  async function handleResetPin() {
+    setError("");
+    setNotice("");
+    const code = resetCode.trim();
+    if (!code) return setError("Enter the code from the email.");
+    if (!/^\d{4}$/.test(resetNewPin)) return setError("The new PIN must be 4 digits.");
+    setBusy(true);
+    const r = await post({ action: "resetPin", code, newPin: resetNewPin });
+    setBusy(false);
+    if (!r.ok) return setError(r.data?.error || "Couldn't reset the PIN.");
+    setUnlocked(resetNewPin);
+    setResetCode("");
+    setResetNewPin("");
+    setMode("unlock");
+    setNotice("PIN reset.");
+    await load();
   }
 
   async function handleSave() {
@@ -171,6 +234,20 @@ export default function ParentalControlsPage() {
     setNotice(`Added ${minutes} minutes for today.`);
   }
 
+  async function handleSaveEmail() {
+    setError("");
+    setNotice("");
+    const email = emailInput.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return setError("Enter a valid parent email.");
+    setBusy(true);
+    const r = await post({ action: "setGuardianEmail", pin: unlocked, guardianEmail: email });
+    setBusy(false);
+    if (!r.ok) return handleFail(r);
+    setEmailInput("");
+    setNotice("Parent email saved.");
+    await load();
+  }
+
   async function handleChangePin() {
     setError("");
     if (!/^\d{4}$/.test(newPin)) return setError("The new PIN must be 4 digits.");
@@ -197,6 +274,8 @@ export default function ParentalControlsPage() {
 
   const strict = info?.tier === "strict";
   const pinInputStyle = { textAlign: "center", letterSpacing: 6 };
+  const secondaryButton = { background: "var(--surface-2)", color: "var(--text)", border: "1px solid var(--border)" };
+  const linkButton = { background: "none", border: "none", color: "var(--accent)", padding: 0 };
 
   return (
     <div
@@ -227,6 +306,7 @@ export default function ParentalControlsPage() {
           </div>
         )}
 
+        {/* ── First-time setup ── */}
         {info && !info.hasPin && (
           <>
             <div className="flex items-center gap-2 mb-2">
@@ -241,6 +321,13 @@ export default function ParentalControlsPage() {
               placeholder="Choose a 4-digit PIN" value={pin} onChange={digits(setPin)} style={pinInputStyle} />
             <input className="input pl-3 mb-3" type="password" inputMode="numeric" maxLength={4}
               placeholder="Type it again" value={pin2} onChange={digits(setPin2)} style={pinInputStyle} />
+            <input className="input pl-3 mb-1" type="email" autoComplete="off"
+              placeholder="Parent's email (recommended)" value={emailInput}
+              onChange={(e) => setEmailInput(e.target.value)} />
+            <p className="text-xs mb-3" style={{ color: "var(--text-muted)" }}>
+              Used only to reset the PIN if it's forgotten. Use an email the parent controls and the
+              teen can't open. Without one, a forgotten PIN can't be reset.
+            </p>
             <button className="btn-primary" onClick={handleSetPin} disabled={busy}>
               {busy ? <Loader2 size={16} className="animate-spin" /> : "Set PIN"}
             </button>
@@ -248,7 +335,8 @@ export default function ParentalControlsPage() {
           </>
         )}
 
-        {info && info.hasPin && !unlocked && (
+        {/* ── Locked: enter PIN ── */}
+        {info && info.hasPin && !unlocked && mode === "unlock" && (
           <>
             <div className="flex items-center gap-2 mb-2">
               <Lock size={18} />
@@ -262,10 +350,79 @@ export default function ParentalControlsPage() {
             <button className="btn-primary" onClick={handleUnlock} disabled={busy}>
               {busy ? <Loader2 size={16} className="animate-spin" /> : "Unlock"}
             </button>
+            {notice && <div className="mt-3 text-sm font-semibold" style={{ color: "var(--accent)" }}>{notice}</div>}
             {error && <div className="alert alert-error mt-3">{error}</div>}
+
+            <div className="mt-4 text-sm">
+              {info.hasGuardianEmail ? (
+                <button onClick={openReset} className="font-semibold" style={linkButton}>
+                  Forgot PIN?
+                </button>
+              ) : (
+                <span style={{ color: "var(--text-muted)" }}>
+                  No parent email is saved for this account, so a forgotten PIN can't be reset by email.
+                </span>
+              )}
+            </div>
           </>
         )}
 
+        {/* ── Forgot PIN ── */}
+        {info && info.hasPin && !unlocked && mode === "reset" && (
+          <>
+            <div className="flex items-center gap-2 mb-2">
+              <Lock size={18} />
+              <h2 className="text-base font-bold">Reset the PIN</h2>
+            </div>
+
+            {resetStep === "send" && (
+              <>
+                <p className="text-sm mb-4" style={{ color: "var(--text-muted)" }}>
+                  We'll email a code to the parent email on file
+                  {info.guardianEmailMasked ? ` (${info.guardianEmailMasked})` : ""}.
+                </p>
+                <button className="btn-primary mb-3" onClick={handleRequestReset} disabled={busy}>
+                  {busy ? <Loader2 size={16} className="animate-spin" /> : "Send code"}
+                </button>
+              </>
+            )}
+
+            {resetStep === "enter" && (
+              <>
+                <p className="text-sm mb-1" style={{ color: "var(--text-muted)" }}>
+                  We sent a code to {sentTo || "the parent email"}. It can take a minute to arrive.
+                </p>
+                <p className="text-sm mb-4 font-semibold">
+                  Check the spam or junk folder if you don't see it.
+                </p>
+                <input className="input pl-3 mb-3" type="text" inputMode="numeric" autoComplete="one-time-code"
+                  maxLength={12} placeholder="Code from the email" value={resetCode}
+                  onChange={(e) => setResetCode(e.target.value.trim().slice(0, 12))}
+                  style={{ textAlign: "center", letterSpacing: 4 }} />
+                <input className="input pl-3 mb-3" type="password" inputMode="numeric" maxLength={4}
+                  placeholder="New 4-digit PIN" value={resetNewPin} onChange={digits(setResetNewPin)}
+                  style={pinInputStyle} />
+                <button className="btn-primary mb-3" onClick={handleResetPin} disabled={busy}>
+                  {busy ? <Loader2 size={16} className="animate-spin" /> : "Reset PIN"}
+                </button>
+                <div className="text-sm mb-3">
+                  <button onClick={handleRequestReset} disabled={busy} className="font-semibold" style={linkButton}>
+                    Send a new code
+                  </button>
+                </div>
+              </>
+            )}
+
+            {notice && <div className="mb-3 text-sm font-semibold" style={{ color: "var(--accent)" }}>{notice}</div>}
+            {error && <div className="alert alert-error mb-3">{error}</div>}
+
+            <button onClick={closeReset} disabled={busy} className="text-sm font-semibold" style={linkButton}>
+              Back
+            </button>
+          </>
+        )}
+
+        {/* ── Unlocked: settings ── */}
         {info && info.hasPin && unlocked && form && (
           <>
             {strict && (
@@ -314,7 +471,7 @@ export default function ParentalControlsPage() {
               <div className="flex gap-2">
                 {[15, 30, 60].map((m) => (
                   <button key={m} className="btn-primary" disabled={busy} onClick={() => handleAddTime(m)}
-                    style={{ flex: 1, background: "var(--surface-2)", color: "var(--text)", border: "1px solid var(--border)" }}>
+                    style={{ flex: 1, ...secondaryButton }}>
                     +{m} min
                   </button>
                 ))}
@@ -360,11 +517,25 @@ export default function ParentalControlsPage() {
             {notice && <div className="mt-3 text-sm font-semibold" style={{ color: "var(--accent)" }}>{notice}</div>}
             {error && <div className="alert alert-error mt-3">{error}</div>}
 
+            <Section title="Parent email (for PIN reset)">
+              <p className="text-xs mb-3" style={{ color: "var(--text-muted)" }}>
+                {info.hasGuardianEmail
+                  ? `Current: ${info.guardianEmailMasked}. `
+                  : "None saved yet. Without one, a forgotten PIN can't be reset. "}
+                Use an email the parent controls and the teen can't open.
+              </p>
+              <input className="input pl-3 mb-3" type="email" autoComplete="off"
+                placeholder={info.hasGuardianEmail ? "New parent email" : "Parent's email"}
+                value={emailInput} onChange={(e) => setEmailInput(e.target.value)} />
+              <button className="btn-primary" onClick={handleSaveEmail} disabled={busy} style={secondaryButton}>
+                {info.hasGuardianEmail ? "Change email" : "Save email"}
+              </button>
+            </Section>
+
             <Section title="Guardian PIN">
               <input className="input pl-3 mb-3" type="password" inputMode="numeric" maxLength={4}
                 placeholder="New 4-digit PIN" value={newPin} onChange={digits(setNewPin)} style={pinInputStyle} />
-              <button className="btn-primary mb-3" onClick={handleChangePin} disabled={busy}
-                style={{ background: "var(--surface-2)", color: "var(--text)", border: "1px solid var(--border)" }}>
+              <button className="btn-primary mb-3" onClick={handleChangePin} disabled={busy} style={secondaryButton}>
                 Change PIN
               </button>
               <button onClick={handleRemovePin} disabled={busy} className="text-sm font-semibold"
