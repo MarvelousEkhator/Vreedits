@@ -79,8 +79,11 @@ export default function ParentalControlsPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
-  // Parent email (used to reset a forgotten PIN)
+  // Parent email (confirmation + PIN reset)
   const [emailInput, setEmailInput] = useState("");
+  const [confirmCode, setConfirmCode] = useState("");
+  const [emailMsg, setEmailMsg] = useState("");
+  const [emailError, setEmailError] = useState("");
 
   // "Forgot PIN?" flow
   const [mode, setMode] = useState("unlock"); // "unlock" | "reset"
@@ -118,6 +121,18 @@ export default function ParentalControlsPage() {
     if (r.status === 429 || /PIN/i.test(message)) setUnlocked(null);
   }
 
+  // Parent-email actions show their errors inside their own section and only
+  // lock the page again if the PIN itself was the problem.
+  function handleEmailFail(r) {
+    const message = r.data?.error || "Something went wrong.";
+    if (/PIN|locked/i.test(message)) {
+      setError(message);
+      setUnlocked(null);
+      return;
+    }
+    setEmailError(message);
+  }
+
   function setField(key, value) {
     setForm((f) => ({ ...f, [key]: value }));
     setNotice("");
@@ -125,6 +140,9 @@ export default function ParentalControlsPage() {
 
   async function handleSetPin() {
     setError("");
+    setNotice("");
+    setEmailMsg("");
+    setEmailError("");
     if (!/^\d{4}$/.test(pin)) return setError("The PIN must be 4 digits.");
     if (pin !== pin2) return setError("The two PINs don't match.");
     const email = emailInput.trim();
@@ -141,6 +159,13 @@ export default function ParentalControlsPage() {
     setPin("");
     setPin2("");
     setEmailInput("");
+    if (email) {
+      setEmailMsg(
+        r.data?.guardianEmailSent
+          ? `We emailed a confirmation code to ${r.data.sentTo}. Check the spam folder too.`
+          : "PIN set. We couldn't send the confirmation email right now. Tap Send a new code below."
+      );
+    }
     await load();
   }
 
@@ -235,17 +260,46 @@ export default function ParentalControlsPage() {
   }
 
   async function handleSaveEmail() {
-    setError("");
-    setNotice("");
+    setEmailError("");
+    setEmailMsg("");
     const email = emailInput.trim();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return setError("Enter a valid parent email.");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return setEmailError("Enter a valid parent email.");
     setBusy(true);
     const r = await post({ action: "setGuardianEmail", pin: unlocked, guardianEmail: email });
     setBusy(false);
-    if (!r.ok) return handleFail(r);
+    if (!r.ok) return handleEmailFail(r);
     setEmailInput("");
-    setNotice("Parent email saved.");
+    setConfirmCode("");
+    setEmailMsg(
+      r.data?.guardianEmailSent
+        ? `We emailed a confirmation code to ${r.data.guardianEmailMasked}. Check the spam folder too.`
+        : `Saved ${r.data?.guardianEmailMasked || "the email"}, but we couldn't send the code right now. Tap Send a new code.`
+    );
     await load();
+  }
+
+  async function handleConfirmEmail() {
+    setEmailError("");
+    setEmailMsg("");
+    if (!/^\d{6}$/.test(confirmCode)) return setEmailError("Enter the 6-digit code from the email.");
+    setBusy(true);
+    const r = await post({ action: "confirmGuardianEmail", pin: unlocked, code: confirmCode });
+    setBusy(false);
+    if (!r.ok) return handleEmailFail(r);
+    setConfirmCode("");
+    setEmailMsg("Parent email confirmed. It can now be used to reset the PIN.");
+    await load();
+  }
+
+  async function handleResendConfirm() {
+    setEmailError("");
+    setEmailMsg("");
+    setBusy(true);
+    const r = await post({ action: "sendGuardianEmailCode", pin: unlocked });
+    setBusy(false);
+    if (!r.ok) return handleEmailFail(r);
+    setConfirmCode("");
+    setEmailMsg(`We emailed a new code to ${r.data?.sentTo || info?.guardianEmailMasked}. Check the spam folder too.`);
   }
 
   async function handleChangePin() {
@@ -276,6 +330,7 @@ export default function ParentalControlsPage() {
   const pinInputStyle = { textAlign: "center", letterSpacing: 6 };
   const secondaryButton = { background: "var(--surface-2)", color: "var(--text)", border: "1px solid var(--border)" };
   const linkButton = { background: "none", border: "none", color: "var(--accent)", padding: 0 };
+  const canResetByEmail = !!info?.hasGuardianEmail && !!info?.guardianEmailVerified;
 
   return (
     <div
@@ -325,8 +380,9 @@ export default function ParentalControlsPage() {
               placeholder="Parent's email (recommended)" value={emailInput}
               onChange={(e) => setEmailInput(e.target.value)} />
             <p className="text-xs mb-3" style={{ color: "var(--text-muted)" }}>
-              Used only to reset the PIN if it's forgotten. Use an email the parent controls and the
-              teen can't open. Without one, a forgotten PIN can't be reset.
+              We'll email a code to this address to confirm it. Once confirmed, it can reset the PIN if
+              it's forgotten. Use an email the parent controls and the teen can't open. Without one, a
+              forgotten PIN can't be reset.
             </p>
             <button className="btn-primary" onClick={handleSetPin} disabled={busy}>
               {busy ? <Loader2 size={16} className="animate-spin" /> : "Set PIN"}
@@ -354,11 +410,18 @@ export default function ParentalControlsPage() {
             {error && <div className="alert alert-error mt-3">{error}</div>}
 
             <div className="mt-4 text-sm">
-              {info.hasGuardianEmail ? (
+              {canResetByEmail && (
                 <button onClick={openReset} className="font-semibold" style={linkButton}>
                   Forgot PIN?
                 </button>
-              ) : (
+              )}
+              {info.hasGuardianEmail && !info.guardianEmailVerified && (
+                <span style={{ color: "var(--text-muted)" }}>
+                  The parent email ({info.guardianEmailMasked}) isn't confirmed yet. Unlock to confirm it.
+                  Until then, a forgotten PIN can't be reset by email.
+                </span>
+              )}
+              {!info.hasGuardianEmail && (
                 <span style={{ color: "var(--text-muted)" }}>
                   No parent email is saved for this account, so a forgotten PIN can't be reset by email.
                 </span>
@@ -428,6 +491,13 @@ export default function ParentalControlsPage() {
             {strict && (
               <div className="alert mb-4" style={{ background: "var(--accent-soft)", color: "var(--text)" }}>
                 This account is under 16, so some privacy settings stay on and can't be loosened.
+              </div>
+            )}
+
+            {info.hasGuardianEmail && !info.guardianEmailVerified && (
+              <div className="alert mb-4" style={{ background: "var(--accent-soft)", color: "var(--text)" }}>
+                The parent email ({info.guardianEmailMasked}) isn't confirmed yet. Scroll down to enter the
+                code we emailed to it.
               </div>
             )}
 
@@ -518,10 +588,43 @@ export default function ParentalControlsPage() {
             {error && <div className="alert alert-error mt-3">{error}</div>}
 
             <Section title="Parent email (for PIN reset)">
+              {info.hasGuardianEmail ? (
+                <p className="text-sm mb-2">
+                  {info.guardianEmailMasked}{" "}
+                  {info.guardianEmailVerified ? (
+                    <span className="font-semibold" style={{ color: "var(--accent)" }}>✓ Confirmed</span>
+                  ) : (
+                    <span className="font-semibold" style={{ color: "var(--danger, #e55)" }}>Not confirmed</span>
+                  )}
+                </p>
+              ) : (
+                <p className="text-xs mb-3" style={{ color: "var(--text-muted)" }}>
+                  None saved yet. Without one, a forgotten PIN can't be reset.
+                </p>
+              )}
+
+              {info.hasGuardianEmail && !info.guardianEmailVerified && (
+                <>
+                  <p className="text-xs mb-3" style={{ color: "var(--text-muted)" }}>
+                    We emailed a 6-digit code to {info.guardianEmailMasked}. It can take a few minutes,
+                    and it may be in the spam or junk folder.
+                  </p>
+                  <input className="input pl-3 mb-3" type="text" inputMode="numeric" autoComplete="one-time-code"
+                    maxLength={6} placeholder="6-digit code" value={confirmCode}
+                    onChange={(e) => setConfirmCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    style={{ textAlign: "center", letterSpacing: 4 }} />
+                  <button className="btn-primary mb-3" onClick={handleConfirmEmail} disabled={busy}>
+                    {busy ? <Loader2 size={16} className="animate-spin" /> : "Confirm email"}
+                  </button>
+                  <div className="text-sm mb-4">
+                    <button onClick={handleResendConfirm} disabled={busy} className="font-semibold" style={linkButton}>
+                      Send a new code
+                    </button>
+                  </div>
+                </>
+              )}
+
               <p className="text-xs mb-3" style={{ color: "var(--text-muted)" }}>
-                {info.hasGuardianEmail
-                  ? `Current: ${info.guardianEmailMasked}. `
-                  : "None saved yet. Without one, a forgotten PIN can't be reset. "}
                 Use an email the parent controls and the teen can't open.
               </p>
               <input className="input pl-3 mb-3" type="email" autoComplete="off"
@@ -530,6 +633,9 @@ export default function ParentalControlsPage() {
               <button className="btn-primary" onClick={handleSaveEmail} disabled={busy} style={secondaryButton}>
                 {info.hasGuardianEmail ? "Change email" : "Save email"}
               </button>
+
+              {emailMsg && <div className="mt-3 text-sm font-semibold" style={{ color: "var(--accent)" }}>{emailMsg}</div>}
+              {emailError && <div className="alert alert-error mt-3">{emailError}</div>}
             </Section>
 
             <Section title="Guardian PIN">
