@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser, guestBlockedResponse } from "@/lib/requireUser";
+import { releaseSoundForPost } from "@/lib/sounds";
 
 // Single-post fetch, used by share links (/feed/[id]). Guests can read it.
 // Private posts, drafts, private accounts and blocked people are hidden from
@@ -71,6 +72,11 @@ export async function DELETE(req, { params }) {
   if (post.authorId !== user.id) {
     return NextResponse.json({ error: "You can only delete your own posts." }, { status: 403 });
   }
+
+  // If other videos use this post's sound, its audio is copied onto the
+  // sound first so they keep working. If nobody else uses it, the sound
+  // and its favorites are removed.
+  await releaseSoundForPost(post);
 
   await prisma.feedPost.delete({ where: { id: params.id } });
   return NextResponse.json({ ok: true });
