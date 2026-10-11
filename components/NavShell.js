@@ -8,6 +8,7 @@ import GlossIcon from "@/components/GlossIcon";
 import ThemeToggle from "@/components/ThemeToggle";
 import ScreenTimeGate from "@/components/ScreenTimeGate";
 import GuestGate from "@/components/GuestGate";
+import EmailVerifyBanner from "@/components/EmailVerifyBanner";
 import { LanguageProvider, useLanguage } from "@/components/LanguageProvider";
 import { isTabRoot, getBackFallback } from "@/lib/backRoutes";
 import {
@@ -266,6 +267,8 @@ function NavShellInner({ children, user }) {
         <span className="vreedits-brand">Vreedits</span>
         <ThemeToggle />
       </div>
+
+      <EmailVerifyBanner />
 
       <div className={`vreedits-overlay ${menuOpen ? "open" : ""}`} onClick={() => setMenuOpen(false)} />
 
