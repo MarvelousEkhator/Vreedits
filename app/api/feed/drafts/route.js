@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/requireUser";
+import { requireUser, guestBlockedResponse } from "@/lib/requireUser";
 import { extractHashtags } from "@/lib/hashtags";
 import { releaseSoundForPost } from "@/lib/sounds";
 
@@ -30,6 +30,7 @@ function shapeDraft(p, includeMedia) {
 export async function GET(req) {
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
+  if (user.isGuest) return guestBlockedResponse();
 
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
@@ -59,6 +60,7 @@ export async function GET(req) {
 export async function PATCH(req) {
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
+  if (user.isGuest) return guestBlockedResponse();
 
   let body;
   try {
@@ -119,6 +121,7 @@ export async function PATCH(req) {
 export async function DELETE(req) {
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
+  if (user.isGuest) return guestBlockedResponse();
 
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
