@@ -1,0 +1,19 @@
+name: Weekly guest cleanup
+
+on:
+  schedule:
+    - cron: "0 3 * * 0"
+  workflow_dispatch:
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call guest cleanup route
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          curl --fail --show-error --silent \
+            --max-time 180 --retry 2 --retry-delay 20 \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            https://synovra-i8yr.onrender.com/api/cron/guests
