@@ -66,6 +66,7 @@ export async function POST(req) {
     where: { id: user.id },
     data: {
       verified: true,
+      emailVerified: true,
       online: true,
       verificationCode: null,
       verificationExpires: null,
