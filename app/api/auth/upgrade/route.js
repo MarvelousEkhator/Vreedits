@@ -31,7 +31,8 @@ function err(error, status = 400) {
 }
 
 // Turns the logged-in guest into a real account. Same user row, so
-// everything the guest already made is kept.
+// everything the guest already made is kept. The account can be used
+// straight away; the email is confirmed later from the banner in the app.
 export async function POST(req) {
   const guest = await requireUser();
   if (!guest) return err("Not authenticated.", 401);
@@ -76,14 +77,23 @@ export async function POST(req) {
 
   const displayName = displayNameRaw.slice(0, 50) || username;
 
-  const [emailTaken, usernameTaken] = await Promise.all([
-    prisma.user.findFirst({ where: { email, NOT: { id: guest.id } }, select: { id: true } }),
+  const [emailOwner, usernameTaken] = await Promise.all([
+    prisma.user.findFirst({
+      where: { email, NOT: { id: guest.id } },
+      select: { id: true, verified: true, emailVerified: true, isGuest: true },
+    }),
     prisma.user.findFirst({
       where: { username: { equals: username, mode: "insensitive" }, NOT: { id: guest.id } },
       select: { id: true },
     }),
   ]);
-  if (emailTaken) return err("An account with that email already exists.", 409);
+  if (emailOwner) {
+    const unconfirmed = !emailOwner.verified || emailOwner.emailVerified === false;
+    if (unconfirmed && !emailOwner.isGuest) {
+      return err("That email has an unfinished sign-up. Use a different email, or log in to finish that one.", 409);
+    }
+    return err("An account with that email already exists.", 409);
+  }
   if (usernameTaken) return err("That username is already taken.", 409);
 
   const passwordHash = await bcrypt.hash(password, 12);
@@ -103,13 +113,15 @@ export async function POST(req) {
           dateOfBirth: dob,
           termsAcceptedAt: new Date(),
           isGuest: false,
+          verified: true,
           ...(SKIP_EMAIL_VERIFICATION
-            ? { verified: true }
+            ? { emailVerified: true }
             : {
-                verified: false,
+                emailVerified: false,
                 verificationCode: code,
                 verificationExpires: new Date(Date.now() + CODE_TTL_MS),
                 lastCodeSentAt: new Date(),
+                verifyAttempts: 0,
               }),
           ...(isStrict
             ? {
@@ -141,10 +153,15 @@ export async function POST(req) {
     return NextResponse.json({ ok: true, email: updated.email, verified: true });
   }
 
+  let emailSent = true;
   try {
     await sendVerificationEmail(updated.email, code);
   } catch (e) {
-    return NextResponse.json({ ok: true, email: updated.email, emailError: e.message });
+    // Log the real reason on the server; don't send provider details to the browser.
+    console.error("Verification email failed (guest upgrade):", e);
+    emailSent = false;
   }
-  return NextResponse.json({ ok: true, email: updated.email });
+
+  // verified: true tells the sign-up form to reload as a full member.
+  return NextResponse.json({ ok: true, email: updated.email, verified: true, emailPending: true, emailSent });
 }
