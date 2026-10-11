@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/requireUser";
+import { requireUser, guestBlockedResponse } from "@/lib/requireUser";
 
 // Toggles a follow relationship: creates it if it doesn't exist, removes
 // it if it does. Uses the existing Follow model (follower -> following).
 export async function POST(req, { params }) {
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
+  if (user.isGuest) return guestBlockedResponse();
 
   const targetId = params.userId;
   if (targetId === user.id) {
