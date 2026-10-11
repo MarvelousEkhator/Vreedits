@@ -12,7 +12,22 @@ export const revalidate = 0;
 export default async function FeedPage() {
   const userId = getSessionUserId();
   if (!userId) redirect("/login");
-  const user = await prisma.user.findUnique({ where: { id: userId } });
+
+  // Only the fields the app needs. Never pass the whole row to client
+  // components: it would put the password hash and codes in the page data.
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      username: true,
+      displayName: true,
+      avatarDataUrl: true,
+      online: true,
+      language: true,
+      isGuest: true,
+      verified: true,
+    },
+  });
   if (!user || !user.verified) redirect("/login");
 
   return (
