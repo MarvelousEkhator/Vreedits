@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireUser } from "@/lib/requireUser";
+import { requireUser, guestBlockedResponse } from "@/lib/requireUser";
 import { prisma } from "@/lib/prisma";
 
 const GEMINI_MODEL = "gemini-3.1-flash-lite";
@@ -7,6 +7,7 @@ const GEMINI_MODEL = "gemini-3.1-flash-lite";
 export async function POST(req, { params }) {
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
+  if (user.isGuest) return guestBlockedResponse();
 
   const comment = await prisma.feedComment.findUnique({ where: { id: params.commentId } });
   if (!comment || comment.postId !== params.id) {
@@ -14,7 +15,7 @@ export async function POST(req, { params }) {
   }
 
   const { targetLanguage } = await req.json().catch(() => ({}));
-  const language = targetLanguage || "English";
+  const language = String(targetLanguage || "English").slice(0, 40);
 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
