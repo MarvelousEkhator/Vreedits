@@ -2,8 +2,13 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser, guestBlockedResponse } from "@/lib/requireUser";
 
-const MAX_MENTIONS_PER_COMMENT = 10;
-const MAX_COMMENT_LENGTH = 500;
+const MAX_MENTIONS_PER_COMMENT = 20;
+
+// Longest allowed comment. Infinity = no limit. To set a limit again,
+// put a number here, for example 2000.
+const MAX_COMMENT_LENGTH = Infinity;
+
+const AUTHOR_SELECT = { id: true, username: true, displayName: true, avatarDataUrl: true };
 
 function shapeComment(c, userId) {
   return {
@@ -11,6 +16,7 @@ function shapeComment(c, userId) {
     content: c.content,
     author: c.author,
     createdAt: c.createdAt,
+    pinned: !!c.pinned,
     likeCount: c.likedBy.length,
     likedByMe: c.likedBy.includes(userId),
   };
@@ -106,10 +112,10 @@ async function notifyMentions({ content, commenter, postId }) {
   }
 }
 
+// Guests can read comments. Writing one needs an account (see POST).
 export async function GET(req, { params }) {
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
-  if (user.isGuest) return guestBlockedResponse();
 
   // Only fetch top-level comments (parentId: null) here; each one carries
   // its replies nested inside it, one level deep — matching how the
@@ -118,10 +124,10 @@ export async function GET(req, { params }) {
     where: { postId: params.id, parentId: null },
     orderBy: [{ pinned: "desc" }, { createdAt: "asc" }],
     include: {
-      author: { select: { id: true, username: true, avatarDataUrl: true } },
+      author: { select: AUTHOR_SELECT },
       replies: {
         orderBy: { createdAt: "asc" },
-        include: { author: { select: { id: true, username: true, avatarDataUrl: true } } },
+        include: { author: { select: AUTHOR_SELECT } },
       },
     },
   });
@@ -202,7 +208,7 @@ export async function POST(req, { params }) {
 
   const comment = await prisma.feedComment.create({
     data: { postId: params.id, authorId: user.id, content: trimmed, parentId: parentId || null },
-    include: { author: { select: { id: true, username: true, avatarDataUrl: true } } },
+    include: { author: { select: AUTHOR_SELECT } },
   });
 
   await notifyMentions({
@@ -218,6 +224,7 @@ export async function POST(req, { params }) {
       content: comment.content,
       author: comment.author,
       createdAt: comment.createdAt,
+      pinned: false,
       likeCount: 0,
       likedByMe: false,
       parentId: comment.parentId,
