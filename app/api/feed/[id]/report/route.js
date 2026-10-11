@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/requireUser";
+import { requireUser, guestBlockedResponse } from "@/lib/requireUser";
 
 export async function POST(req, { params }) {
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
+  if (user.isGuest) return guestBlockedResponse();
 
   const post = await prisma.feedPost.findUnique({ where: { id: params.id }, select: { id: true } });
   if (!post) return NextResponse.json({ error: "Post not found." }, { status: 404 });
