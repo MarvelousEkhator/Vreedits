@@ -57,21 +57,29 @@ export async function POST(req) {
     });
   }
 
+  let emailPending = user.emailVerified === false;
+
+  // Older account that never confirmed its email: let them in, and give them a
+  // fresh code to confirm from the banner inside the app.
   if (!user.verified) {
+    emailPending = true;
     const code = generateCode();
     await prisma.user.update({
       where: { id: user.id },
       data: {
+        verified: true,
+        emailVerified: false,
         verificationCode: code,
         verificationExpires: new Date(Date.now() + CODE_TTL_MS),
         lastCodeSentAt: new Date(),
+        verifyAttempts: 0,
       },
     });
-    await sendVerificationEmail(user.email, code);
-    return NextResponse.json(
-      { needsVerification: true, email: user.email },
-      { status: 200 }
-    );
+    try {
+      await sendVerificationEmail(user.email, code);
+    } catch (e) {
+      console.error("Verification email failed (login):", e);
+    }
   }
 
   await prisma.user.update({ where: { id: user.id }, data: { online: true } });
@@ -79,6 +87,7 @@ export async function POST(req) {
 
   return NextResponse.json({
     ok: true,
+    emailPending,
     user: { id: user.id, username: user.username, email: user.email },
   });
 }
