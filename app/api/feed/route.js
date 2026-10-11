@@ -104,10 +104,11 @@ async function shapePosts(posts, user, followedIds) {
   }));
 }
 
+// Guests can read the feed (public posts, search, sounds). Anything that
+// creates or changes data is blocked for guests in POST below.
 export async function GET(req) {
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
-  if (user.isGuest) return guestBlockedResponse();
 
   const blocked = await screenTimeBlock(user, req);
   if (blocked) return blockedResponse(blocked);
