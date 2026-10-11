@@ -1,9 +1,11 @@
 // app/api/feed/[id]/route.js
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/requireUser";
+import { requireUser, guestBlockedResponse } from "@/lib/requireUser";
 
-// Single-post fetch — used by share links (/feed/[id]) if that page exists.
+// Single-post fetch, used by share links (/feed/[id]). Guests can read it.
+// Private posts, drafts, private accounts and blocked people are hidden from
+// everyone except the owner, the same rules the feed itself uses.
 export async function GET(req, { params }) {
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
@@ -11,7 +13,12 @@ export async function GET(req, { params }) {
   const post = await prisma.feedPost.findUnique({
     where: { id: params.id },
     include: {
-      author: { select: { id: true, username: true, avatarDataUrl: true, allowDownloads: true } },
+      author: {
+        select: {
+          id: true, username: true, displayName: true, avatarDataUrl: true,
+          allowDownloads: true, isPublic: true,
+        },
+      },
       _count: { select: { comments: true } },
       saves: { where: { userId: user.id }, select: { id: true } },
     },
@@ -19,14 +26,33 @@ export async function GET(req, { params }) {
 
   if (!post) return NextResponse.json({ error: "Not found." }, { status: 404 });
 
+  if (post.authorId !== user.id) {
+    if (post.isDraft || post.isPrivate || !post.author.isPublic) {
+      return NextResponse.json({ error: "Not found." }, { status: 404 });
+    }
+    const block = await prisma.block.findFirst({
+      where: {
+        OR: [
+          { blockerId: user.id, blockedId: post.authorId },
+          { blockerId: post.authorId, blockedId: user.id },
+        ],
+      },
+      select: { id: true },
+    });
+    if (block) return NextResponse.json({ error: "Not found." }, { status: 404 });
+  }
+
+  const { isPublic, ...author } = post.author;
+
   return NextResponse.json({
     post: {
       id: post.id,
       caption: post.caption,
       mediaUrl: post.mediaUrl,
+      mediaUrls: post.mediaUrls && post.mediaUrls.length > 1 ? post.mediaUrls : undefined,
       mediaType: post.mediaType,
       createdAt: post.createdAt,
-      author: post.author,
+      author,
       likeCount: post.likedBy.length,
       likedByMe: post.likedBy.includes(user.id),
       commentCount: post._count.comments,
@@ -35,12 +61,10 @@ export async function GET(req, { params }) {
   });
 }
 
-// This is the handler FeedClient.js's handleDeletePost has been calling
-// all along — it just never existed, so every delete attempt silently
-// 404'd with no error surfaced anywhere.
 export async function DELETE(req, { params }) {
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
+  if (user.isGuest) return guestBlockedResponse();
 
   const post = await prisma.feedPost.findUnique({ where: { id: params.id } });
   if (!post) return NextResponse.json({ error: "Not found." }, { status: 404 });
