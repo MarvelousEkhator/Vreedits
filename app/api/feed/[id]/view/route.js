@@ -1,13 +1,17 @@
 // app/api/feed/[id]/view/route.js
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireUser, guestBlockedResponse } from "@/lib/requireUser";
+import { requireUser } from "@/lib/requireUser";
 
 // Counts one view per person per post (unique viewers).
 export async function POST(req, { params }) {
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
-  if (user.isGuest) return guestBlockedResponse();
+
+  // Guests can watch, but their views aren't counted. This must NOT answer
+  // "guest blocked": every video a guest watches calls this route, and that
+  // reply opens the sign-up popup.
+  if (user.isGuest) return NextResponse.json({ ok: true, counted: false });
 
   const post = await prisma.feedPost.findUnique({
     where: { id: params.id },
