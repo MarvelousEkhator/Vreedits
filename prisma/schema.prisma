@@ -14,6 +14,7 @@ model User {
   email    String @unique
   passwordHash String
   verified     Boolean @default(false)
+  emailVerified Boolean @default(true) // NEW: false until they confirm their email
   online       Boolean @default(false)
   lastSeenAt   DateTime?
   avatarDataUrl String?  @db.Text
