@@ -174,8 +174,11 @@ function NavShellInner({ children, user }) {
           display: flex; flex-direction: column; overflow-y: auto;
         }
         .vreedits-menu.open { transform: translateX(0); }
+        /* z-index keeps the X above the profile block, which stretches across
+           the full width and used to sit on top of it, swallowing the taps. */
         .vreedits-menu-close {
-          position: absolute; top: 14px; right: 14px; width: 34px; height: 34px; border-radius: 10px;
+          position: absolute; top: 12px; right: 12px; z-index: 5;
+          width: 40px; height: 40px; border-radius: 12px;
           border: 1px solid var(--border); background: var(--surface-2); display: flex;
           align-items: center; justify-content: center; cursor: pointer; color: var(--text-muted);
         }
@@ -273,8 +276,13 @@ function NavShellInner({ children, user }) {
       <div className={`vreedits-overlay ${menuOpen ? "open" : ""}`} onClick={() => setMenuOpen(false)} />
 
       <nav ref={menuRef} className={`vreedits-menu ${menuOpen ? "open" : ""}`}>
-        <button className="vreedits-menu-close tappable" onClick={() => setMenuOpen(false)} aria-label="Close menu">
-          <X size={17} />
+        <button
+          type="button"
+          className="vreedits-menu-close tappable"
+          onClick={() => setMenuOpen(false)}
+          aria-label="Close menu"
+        >
+          <X size={18} />
         </button>
 
         <div className="vreedits-profile-block">
