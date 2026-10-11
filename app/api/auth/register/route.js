@@ -17,8 +17,12 @@ const MAX_USERNAME_LENGTH = 30;
 const USERNAME_PATTERN = /^[a-z0-9_.]+$/;
 const RESEND_COOLDOWN_MS = 60 * 1000;
 
-// Set SKIP_EMAIL_VERIFICATION=true on Render to let people sign up without
-// the email code. Remove it (or set it to false) to turn verification back on.
+// A signup whose email was never confirmed can only be taken over by a new
+// signup for this long. After that, the owner must log in or reset the password.
+const TAKEOVER_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+// Set SKIP_EMAIL_VERIFICATION=true on Render to skip the email code entirely
+// (no banner, no email). Remove it, or set it to false, to turn it back on.
 const SKIP_EMAIL_VERIFICATION = process.env.SKIP_EMAIL_VERIFICATION === "true";
 
 // Accepts "YYYY-MM-DD" only, and rejects impossible dates like Feb 30.
@@ -116,13 +120,24 @@ export async function POST(req) {
 
   const displayName = displayNameRaw.slice(0, 50) || username;
 
-  // An account that was never verified doesn't own its email yet, so a new
-  // signup is allowed to take it over. Verified accounts stay protected.
+  // An account whose email was never confirmed doesn't own that email yet, so
+  // a recent one can be taken over by a new signup. Confirmed accounts and
+  // older unconfirmed ones stay protected.
   const existingByEmail = await prisma.user.findUnique({ where: { email } });
   let reuseId = null;
   if (existingByEmail) {
-    if (existingByEmail.verified || existingByEmail.isGuest) {
+    const emailUnconfirmed = !existingByEmail.verified || existingByEmail.emailVerified === false;
+    const recent =
+      Date.now() - new Date(existingByEmail.createdAt).getTime() < TAKEOVER_WINDOW_MS;
+
+    if (existingByEmail.isGuest || !emailUnconfirmed) {
       return err("An account with that email already exists.", 409);
+    }
+    if (!recent) {
+      return err(
+        "An account with that email already exists. Log in, or use Forgot password if you lost access.",
+        409
+      );
     }
     const last = existingByEmail.lastCodeSentAt
       ? new Date(existingByEmail.lastCodeSentAt).getTime()
@@ -162,16 +177,19 @@ export async function POST(req) {
       : {}),
   };
 
+  // The account can be used right away (verified: true). The email itself is
+  // confirmed later from the banner in the app (emailVerified).
   const userData = {
     username,
     displayName,
     passwordHash,
     dateOfBirth: dob,
     termsAcceptedAt: new Date(),
+    verified: true,
     ...(SKIP_EMAIL_VERIFICATION
-      ? { verified: true, verificationCode: null, verificationExpires: null }
+      ? { emailVerified: true, verificationCode: null, verificationExpires: null }
       : {
-          verified: false,
+          emailVerified: false,
           verificationCode: code,
           verificationExpires: new Date(Date.now() + CODE_TTL_MS),
           lastCodeSentAt: new Date(),
@@ -244,35 +262,38 @@ export async function POST(req) {
     };
   }
 
-  // Email verification is paused: the account is ready to use right away,
-  // so sign the new user in immediately instead of sending them to login.
-  if (SKIP_EMAIL_VERIFICATION) {
-    try {
-      setSessionCookie(signSession(user.id));
-    } catch (e) {
-      console.error("Auto sign-in after register failed:", e);
-      // Account exists; the client falls back to the login page.
-      return NextResponse.json(
-        { ok: true, email: user.email, verified: true, signedIn: false, ...guardianNote },
-        { status: 201 }
-      );
-    }
-    return NextResponse.json(
-      { ok: true, email: user.email, verified: true, signedIn: true, ...guardianNote },
-      { status: 201 }
-    );
-  }
-
+  // Sign the new user in straight away. If their email isn't confirmed yet,
+  // they can use the app and confirm it later from the banner inside the app.
   try {
-    await sendVerificationEmail(user.email, code);
+    setSessionCookie(signSession(user.id));
   } catch (e) {
-    // Log the real reason on the server; don't send provider details to the browser.
-    console.error("Verification email failed:", e);
+    console.error("Auto sign-in after register failed:", e);
+    // Account exists; the client falls back to the login page.
     return NextResponse.json(
-      { ok: true, email: user.email, emailError: true, ...guardianNote },
+      {
+        ok: true, email: user.email, verified: true, signedIn: false,
+        emailPending: !SKIP_EMAIL_VERIFICATION, ...guardianNote,
+      },
       { status: 201 }
     );
   }
 
-  return NextResponse.json({ ok: true, email: user.email, ...guardianNote }, { status: 201 });
+  let emailSent = true;
+  if (!SKIP_EMAIL_VERIFICATION) {
+    try {
+      await sendVerificationEmail(user.email, code);
+    } catch (e) {
+      // Log the real reason on the server; don't send provider details to the browser.
+      console.error("Verification email failed:", e);
+      emailSent = false;
+    }
+  }
+
+  return NextResponse.json(
+    {
+      ok: true, email: user.email, verified: true, signedIn: true,
+      emailPending: !SKIP_EMAIL_VERIFICATION, emailSent, ...guardianNote,
+    },
+    { status: 201 }
+  );
 }
