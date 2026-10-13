@@ -66,6 +66,7 @@ async function getAccount(userId) {
     u = await prisma.user.findUnique({ where: { id: userId }, select: { isGuest: true } });
   }
   const info = {
+    id: userId, // memory only, never written to the analytics table
     exists: Boolean(u),
     isGuest: Boolean(u?.isGuest),
     createdAt: u?.createdAt ?? null,
@@ -112,7 +113,13 @@ async function maybeRecordGuestStart(visitor, session, source, country) {
 
 // --- Signup / login (detected automatically) ---------------------------------
 // The first time a visitor is seen signed in as a real account, record one
-// event for them: "signup" if the account is new (see below), otherwise "login".
+// event for that account: "signup" if the account is new (see below),
+// otherwise "login".
+//
+// This is checked per account, not per browser. An account counts as already
+// recorded when this visitor has a signup or login event dated after the
+// account was created. So a brand-new account on a browser that has logged in
+// or signed up before is still recorded.
 //
 // An account counts as new when it was created within 10 minutes of the
 // visitor's first visit (or of their guest start, since a guest who signs up
@@ -120,26 +127,28 @@ async function maybeRecordGuestStart(visitor, session, source, country) {
 // last 24 hours.
 const NEW_ACCOUNT_SLACK_MS = 10 * 60 * 1000;
 const FRESH_ACCOUNT_MS = 24 * 60 * 60 * 1000;
-const checkedVisitors = new Set();
+const checkedAccounts = new Set();
 
 async function detectConversion(visitor, session, account, source, country) {
-  if (checkedVisitors.has(visitor)) return;
-  if (checkedVisitors.size > 2000) checkedVisitors.clear();
-  checkedVisitors.add(visitor);
+  const key = `${visitor}:${account.id}`;
+  if (checkedAccounts.has(key)) return;
+  if (checkedAccounts.size > 2000) checkedAccounts.clear();
+  checkedAccounts.add(key);
 
   try {
+    const created = account.createdAt ? new Date(account.createdAt).getTime() : null;
+
     const { rows } = await pool.query(
       `SELECT
          min(ts) AS first_seen,
          min(ts) FILTER (WHERE is_guest) AS first_guest,
-         bool_or(type IN ('signup', 'login')) AS converted
+         bool_or(type IN ('signup', 'login') AND ts >= $2::timestamptz) AS converted
        FROM analytics_events WHERE visitor_id = $1`,
-      [visitor]
+      [visitor, new Date(created !== null ? created : 0)]
     );
     const r = rows[0];
     if (!r || r.converted) return;
 
-    const created = account.createdAt ? new Date(account.createdAt).getTime() : null;
     const hadGuestPhase = Boolean(r.first_guest);
     const reference = new Date(r.first_guest || r.first_seen || Date.now()).getTime();
 
@@ -153,7 +162,7 @@ async function detectConversion(visitor, session, account, source, country) {
       name: null, path: null, isGuest: false, source, country,
     });
   } catch (e) {
-    checkedVisitors.delete(visitor);
+    checkedAccounts.delete(key);
     console.error("track conversion:", e?.message);
   }
 }
@@ -187,7 +196,7 @@ export async function POST(req) {
     // Is the person signed in as a guest? Decided here, not by the browser.
     let account = null;
     try {
-      const userId = getSessionUserId();
+      const userId = await getSessionUserId();
       if (userId != null) account = await getAccount(userId);
     } catch (e) {
       console.error("track account lookup:", e?.message);
@@ -214,7 +223,15 @@ export async function POST(req) {
       isGuest, source, country,
     });
 
-    if (type === "pageview" && account?.exists && !account.isGuest) {
+    // Any activity from a signed-in real account can trigger the check, not
+    // only page views.
+    if (
+      account?.exists &&
+      !account.isGuest &&
+      type !== "guest_start" &&
+      type !== "signup" &&
+      type !== "login"
+    ) {
       await detectConversion(visitor, session, account, source, country);
     }
     return done();
