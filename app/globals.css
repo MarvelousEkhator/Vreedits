@@ -80,6 +80,23 @@ body {
   transition: color 0.25s ease;
 }
 
+/* ───────── App-like feel on phones (full-screen install) ───────── */
+html {
+  background: var(--bg);
+  overscroll-behavior-y: none;
+  -webkit-text-size-adjust: 100%;
+}
+body {
+  overscroll-behavior-y: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.tappable {
+  transition: transform 0.1s ease;
+}
+.tappable:active {
+  transform: scale(0.97);
+}
+
 /* Full-screen gradient behind the whole app */
 body::before {
   content: "";
