@@ -121,6 +121,25 @@ function ConversationMenu({ friend, open, onClose, onBlock, blocking, onReport }
   );
 }
 
+const INBOX_CSS = `
+.ib-label{font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--text-muted);margin:0 4px 8px}
+.ib-row{
+  display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:18px;
+  background:var(--glass);border:1px solid var(--border);box-shadow:0 4px 14px rgba(0,0,0,.14);
+  text-decoration:none;color:var(--text);flex:1;min-width:0;
+  transition:transform .1s ease, background .15s ease;
+}
+.ib-row:active{transform:scale(.985)}
+.ib-row.self{background:var(--accent-soft);border-color:var(--accent)}
+.ib-badge{
+  background:var(--accent-btn);color:#fff;font-size:11px;font-weight:700;border-radius:999px;
+  min-width:20px;height:20px;display:flex;align-items:center;justify-content:center;padding:0 6px;
+  box-shadow:0 0 10px var(--accent-soft);
+}
+.ib-strip{display:flex;gap:14px;overflow-x:auto;padding:2px 2px 6px;scrollbar-width:none}
+.ib-strip::-webkit-scrollbar{display:none}
+`;
+
 export default function InboxClient({ currentUserId }) {
   const [conversations, setConversations] = useState([]);
   const [incoming, setIncoming] = useState([]);
@@ -244,9 +263,12 @@ export default function InboxClient({ currentUserId }) {
   });
 
   const menuFriend = menuFriendId ? conversations.find((c) => !c.isSelf && c.friend.id === menuFriendId)?.friend : null;
+  const onlineFriends = conversations.filter((c) => !c.isSelf && c.friend.online);
 
   return (
     <div className="p-3">
+      <style>{INBOX_CSS}</style>
+
       <div className="flex items-center gap-2 mb-3">
         <div className="v-search" style={{ flex: 1, minWidth: 0 }}>
           <GlossIcon name="search" size={34} fallback={UserPlus} />
@@ -261,6 +283,7 @@ export default function InboxClient({ currentUserId }) {
           onClick={() => setAddOpen((v) => !v)}
           className="btn-primary"
           style={{ width: "auto", padding: "10px 14px" }}
+          aria-label="Add friend"
         >
           <UserPlus size={16} />
         </button>
@@ -282,16 +305,54 @@ export default function InboxClient({ currentUserId }) {
         </form>
       )}
 
+      {onlineFriends.length > 0 && !query.trim() && (
+        <div className="mb-4">
+          <div className="ib-label">Online now</div>
+          <div className="ib-strip">
+            {onlineFriends.map(({ friend }) => (
+              <Link
+                key={friend.id}
+                href={`/inbox/${friend.username}`}
+                style={{
+                  display: "flex", flexDirection: "column", alignItems: "center", gap: 5,
+                  textDecoration: "none", color: "var(--text)", flexShrink: 0, width: 64,
+                }}
+              >
+                <div style={{ position: "relative" }}>
+                  <div style={{ padding: 2, borderRadius: "50%", background: "var(--accent-btn)" }}>
+                    <div style={{ padding: 2, borderRadius: "50%", background: "var(--surface)", lineHeight: 0 }}>
+                      <Avatar user={friend} size={50} />
+                    </div>
+                  </div>
+                  <span
+                    style={{
+                      position: "absolute", bottom: 2, right: 2, width: 14, height: 14, borderRadius: "50%",
+                      background: "var(--success)", border: "2.5px solid var(--surface)",
+                    }}
+                  />
+                </div>
+                <span
+                  style={{
+                    fontSize: 11.5, fontWeight: 600, maxWidth: 64, overflow: "hidden",
+                    textOverflow: "ellipsis", whiteSpace: "nowrap",
+                  }}
+                >
+                  {friend.displayName || friend.username}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
       {incoming.length > 0 && (
         <div className="mb-4">
-          <div className="text-xs font-semibold mb-2 px-1" style={{ color: "var(--text-muted)" }}>
-            Friend Requests ({incoming.length})
-          </div>
+          <div className="ib-label">Friend requests ({incoming.length})</div>
           <div className="space-y-2">
             {incoming.map((r) => (
               <div key={r.id} className="card p-3 flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
-                  <Avatar user={r.sender} size={36} />
+                  <Avatar user={r.sender} size={40} />
                   <span className="text-sm font-semibold">{r.sender.displayName || r.sender.username}</span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -299,17 +360,17 @@ export default function InboxClient({ currentUserId }) {
                     onClick={() => handleRespond(r.id, "accept")}
                     disabled={respondingId === r.id}
                     aria-label="Accept"
-                    style={{ background: "var(--accent)", color: "white", border: "none", borderRadius: 8, width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center" }}
+                    style={{ background: "var(--accent-btn)", color: "white", border: "none", borderRadius: 10, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 12px var(--accent-soft)" }}
                   >
-                    <Check size={15} />
+                    <Check size={16} />
                   </button>
                   <button
                     onClick={() => handleRespond(r.id, "decline")}
                     disabled={respondingId === r.id}
                     aria-label="Decline"
-                    style={{ background: "var(--surface-2)", color: "var(--text-muted)", border: "none", borderRadius: 8, width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center" }}
+                    style={{ background: "var(--surface-2)", color: "var(--text-muted)", border: "none", borderRadius: 10, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center" }}
                   >
-                    <XIcon size={15} />
+                    <XIcon size={16} />
                   </button>
                 </div>
               </div>
@@ -320,9 +381,7 @@ export default function InboxClient({ currentUserId }) {
 
       {outgoing.length > 0 && (
         <div className="mb-4">
-          <div className="text-xs font-semibold mb-2 px-1" style={{ color: "var(--text-muted)" }}>
-            Pending ({outgoing.length})
-          </div>
+          <div className="ib-label">Pending ({outgoing.length})</div>
           <div className="space-y-1">
             {outgoing.map((r) => (
               <div key={r.id} className="flex items-center justify-between gap-2.5 px-1 py-1.5">
@@ -346,6 +405,8 @@ export default function InboxClient({ currentUserId }) {
         </div>
       )}
 
+      {conversations.length > 0 && <div className="ib-label">Messages</div>}
+
       {loading ? (
         <div className="flex justify-center py-10" style={{ color: "var(--text-muted)" }}>
           <Loader2 size={22} className="animate-spin" />
@@ -355,7 +416,7 @@ export default function InboxClient({ currentUserId }) {
           {conversations.length === 0 ? "No friends yet — add one to start chatting." : "No matches."}
         </p>
       ) : (
-        <div className="space-y-1">
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {filtered.map(({ friend, lastMessage, unreadCount, isSelf }) => (
             <div
               key={isSelf ? "self" : friend.id}
@@ -368,20 +429,13 @@ export default function InboxClient({ currentUserId }) {
               onMouseLeave={handlePressEnd}
               onContextMenu={(e) => { if (!isSelf) { e.preventDefault(); openMenu(friend.id); } }}
             >
-              <Link
-                href={`/inbox/${friend.username}`}
-                className="flex items-center gap-3 p-2.5 rounded-xl"
-                style={{
-                  textDecoration: "none", color: "var(--text)", flex: 1, minWidth: 0,
-                  ...(isSelf ? { background: "var(--accent-soft)" } : {}),
-                }}
-              >
-                <div style={{ position: "relative" }}>
-                  <Avatar user={friend} size={48} />
+              <Link href={`/inbox/${friend.username}`} className={`ib-row ${isSelf ? "self" : ""}`}>
+                <div style={{ position: "relative", flexShrink: 0 }}>
+                  <Avatar user={friend} size={52} />
                   {isSelf ? (
                     <span
                       style={{
-                        position: "absolute", bottom: -1, right: -1, width: 18, height: 18, borderRadius: "50%",
+                        position: "absolute", bottom: -1, right: -1, width: 20, height: 20, borderRadius: "50%",
                         border: "2.5px solid var(--surface)", background: "var(--accent)",
                         display: "flex", alignItems: "center", justifyContent: "center",
                       }}
@@ -391,7 +445,7 @@ export default function InboxClient({ currentUserId }) {
                   ) : (
                     <span
                       style={{
-                        position: "absolute", bottom: -1, right: -1, width: 13, height: 13, borderRadius: "50%",
+                        position: "absolute", bottom: -1, right: -1, width: 15, height: 15, borderRadius: "50%",
                         border: "2.5px solid var(--surface)",
                         background: friend.online ? "var(--success)" : "var(--text-muted)",
                       }}
@@ -399,21 +453,19 @@ export default function InboxClient({ currentUserId }) {
                   )}
                 </div>
                 <div style={{ minWidth: 0, flex: 1 }}>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-semibold">
+                  <div className="flex items-center justify-between gap-2">
+                    <span style={{ fontSize: 15, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {isSelf ? "You" : (friend.displayName || friend.username)}
                     </span>
-                    <span className="text-xs" style={{ color: "var(--text-muted)" }}>{relativeTime(lastMessage?.createdAt)}</span>
+                    <span className="text-xs" style={{ color: unreadCount > 0 ? "var(--accent)" : "var(--text-muted)", fontWeight: unreadCount > 0 ? 700 : 400, flexShrink: 0 }}>
+                      {relativeTime(lastMessage?.createdAt)}
+                    </span>
                   </div>
-                  <p className="text-xs" style={{ color: unreadCount > 0 ? "var(--text)" : "var(--text-muted)", fontWeight: unreadCount > 0 ? 600 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <p style={{ fontSize: 13, marginTop: 2, color: unreadCount > 0 ? "var(--text)" : "var(--text-muted)", fontWeight: unreadCount > 0 ? 600 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {isSelf ? (lastMessage?.content || "Save a note for later") : (lastMessage?.content || "Say hi 👋")}
                   </p>
                 </div>
-                {unreadCount > 0 && (
-                  <span style={{ background: "var(--accent)", color: "white", fontSize: 11, fontWeight: 700, borderRadius: 999, minWidth: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 5px" }}>
-                    {unreadCount}
-                  </span>
-                )}
+                {unreadCount > 0 && <span className="ib-badge">{unreadCount}</span>}
               </Link>
               {!isSelf && (
                 <button
