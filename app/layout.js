@@ -1,3 +1,4 @@
+import "./globals.css";
 import "../vreedits-layout.css";
 import Tracker from "../components/Tracker";
 
