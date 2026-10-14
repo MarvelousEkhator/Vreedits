@@ -1,295 +1,150 @@
+// components/FeedbackPrompt.js
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
-import { Heart, Loader2, Send } from "lucide-react";
+import StarRating from "./StarRating";
 
-// The popup appears once a guest has spent this long actively using the app.
-const SHOW_AFTER_SECONDS = 180;
-// "Not now" snoozes it for a day, and it stops asking after two snoozes.
-const SNOOZE_MS = 24 * 60 * 60 * 1000;
-const MAX_DISMISSALS = 2;
-const STORAGE_KEY = "vreedits_feedback_v1";
+const NEED_SECONDS = 180; // about 3 minutes of real use
+const SNOOZE_MS = 7 * 24 * 60 * 60 * 1000; // "×" hides it for a week
 
-// Pages where a popup would get in the way.
-const QUIET_PATHS = ["/login", "/signup", "/register", "/verify", "/forgot", "/reset", "/terms", "/privacy", "/admin"];
-
-const CATEGORIES = [
-  "Feed & videos",
-  "Camera",
-  "Sounds",
-  "Inbox",
-  "Communities",
-  "AI Tools",
-  "Speed & bugs",
-  "Design",
-  "Other",
-];
-
-function readState() {
-  try {
-    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
-    return {
-      seconds: Number(raw.seconds) || 0,
-      dismissals: Number(raw.dismissals) || 0,
-      snoozedUntil: Number(raw.snoozedUntil) || 0,
-    };
-  } catch {
-    return { seconds: 0, dismissals: 0, snoozedUntil: 0 };
-  }
-}
-
-function writeState(state) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch {}
-}
-
-// Mount this once, somewhere that shows on every page (NavShell).
-// It only does anything for guests, and a thank-you card for anyone you've
-// thanked from the admin page.
 export default function FeedbackPrompt() {
   const pathname = usePathname();
-  const pathRef = useRef(pathname);
-  const [stage, setStage] = useState(null); // null | "ask" | "done" | "thanks"
-  const stageRef = useRef(null);
-  // ONE shared copy of the timer/snooze settings. The timer and the
-  // "Not now" button both use this, so a snooze can never be missed.
-  const stateRef = useRef({ seconds: 0, dismissals: 0, snoozedUntil: 0 });
-  const [eligible, setEligible] = useState(false);
-  const [thanks, setThanks] = useState(null);
-  const [picked, setPicked] = useState([]);
+  const [me, setMe] = useState(null); // { username, name } when eligible
+  const [open, setOpen] = useState(false);
+  const [rating, setRating] = useState(0);
   const [message, setMessage] = useState("");
-  const [sending, setSending] = useState(false);
+  const [state, setState] = useState("idle"); // idle | sending | thanks
   const [error, setError] = useState("");
+  const secsRef = useRef(0);
 
+  // Who is this, and should they be asked at all? (guests never are)
   useEffect(() => {
-    pathRef.current = pathname;
-  }, [pathname]);
-
-  // Changes the visible stage and the ref the timer checks, together.
-  function showStage(next) {
-    stageRef.current = next;
-    setStage(next);
-  }
-
-  // Ask the server who this is: a guest who should be asked, and/or someone
-  // with a thank-you waiting.
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/feedback")
-      .then((r) => r.json())
+    let alive = true;
+    fetch("/api/feedback", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
-        if (cancelled) return;
-        setEligible(!!d.eligible);
-        if (d.thanks) setThanks(d.thanks);
+        if (alive && d?.eligible) setMe({ username: d.username, name: d.name });
       })
       .catch(() => {});
     return () => {
-      cancelled = true;
+      alive = false;
     };
   }, []);
 
-  // Thank-you card shows a couple of seconds after the app opens.
+  // Count time spent in the app (only while the tab is visible).
   useEffect(() => {
-    if (!thanks) return;
-    const t = setTimeout(() => {
-      if (!stageRef.current) showStage("thanks");
-    }, 2000);
-    return () => clearTimeout(t);
-  }, [thanks]);
+    if (!me || open) return;
+    const secKey = `vre_fb_secs_${me.username}`;
+    const snoozeKey = `vre_fb_snooze_${me.username}`;
 
-  // Counts the time spent actively using the app, then asks.
-  useEffect(() => {
-    if (!eligible) return;
-    stateRef.current = readState();
+    let snoozedUntil = 0;
+    let secs = 0;
+    try {
+      snoozedUntil = Number(localStorage.getItem(snoozeKey) || 0);
+      secs = Number(localStorage.getItem(secKey) || 0);
+    } catch {}
+    if (Date.now() < snoozedUntil) return;
 
-    let ticks = 0;
+    secsRef.current = secs;
     const timer = setInterval(() => {
-      const state = stateRef.current;
-      if (state.dismissals >= MAX_DISMISSALS) return;
       if (document.visibilityState !== "visible") return;
-      if (stageRef.current) return;
-
-      state.seconds += 1;
-      ticks += 1;
-      if (ticks % 10 === 0) writeState(state);
-
-      if (state.seconds < SHOW_AFTER_SECONDS) return;
-      if (Date.now() < state.snoozedUntil) return;
-      if (QUIET_PATHS.some((p) => pathRef.current?.startsWith(p))) return;
-      // Never interrupt someone who is recording or taking a photo.
-      if (document.querySelector('[aria-label="Take photo"],[aria-label="Start recording"],[aria-label="Stop recording"]')) return;
-
-      writeState(state);
-      showStage("ask");
+      secsRef.current += 1;
+      if (secsRef.current % 5 === 0) {
+        try {
+          localStorage.setItem(secKey, String(secsRef.current));
+        } catch {}
+      }
+      if (secsRef.current >= NEED_SECONDS) {
+        clearInterval(timer);
+        setOpen(true);
+      }
     }, 1000);
+    return () => clearInterval(timer);
+  }, [me, open]);
 
-    return () => {
-      clearInterval(timer);
-      writeState(stateRef.current);
-    };
-  }, [eligible]);
-
-  function toggle(c) {
-    setPicked((prev) => (prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]));
-  }
-
-  function notNow() {
-    const state = stateRef.current;
-    state.dismissals += 1;
-    state.snoozedUntil = Date.now() + SNOOZE_MS;
-    state.seconds = 0;
-    writeState(state);
-    showStage(null);
+  function dismiss() {
+    if (me) {
+      try {
+        localStorage.setItem(`vre_fb_snooze_${me.username}`, String(Date.now() + SNOOZE_MS));
+        localStorage.removeItem(`vre_fb_secs_${me.username}`);
+      } catch {}
+    }
+    setOpen(false);
   }
 
   async function send() {
-    if (sending) return;
-    if (message.trim().length < 3) {
-      setError("Tell us a little more.");
-      return;
-    }
-    setSending(true);
+    if (!rating || state === "sending") return;
+    setState("sending");
     setError("");
     try {
-      const res = await fetch("/api/feedback", {
+      const r = await fetch("/api/feedback", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message, categories: picked, page: pathname }),
+        body: JSON.stringify({ rating, message, source: "popup" }),
       });
-      let data = {};
-      try { data = await res.json(); } catch {}
-      if (!res.ok) {
-        setError(data.error || "Couldn't send. Try again.");
-        setSending(false);
-        return;
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        throw new Error(d.error || "Something went wrong. Please try again.");
       }
-      // Done for good: never ask this device again.
-      stateRef.current = { seconds: 0, dismissals: MAX_DISMISSALS, snoozedUntil: Date.now() + 365 * SNOOZE_MS };
-      writeState(stateRef.current);
-      setEligible(false);
-      setSending(false);
-      showStage("done");
+      setState("thanks");
       setTimeout(() => {
-        if (stageRef.current === "done") showStage(null);
-      }, 3000);
-    } catch {
-      setError("Couldn't send. Check your connection and try again.");
-      setSending(false);
+        setOpen(false);
+        setMe(null);
+      }, 2200);
+    } catch (e) {
+      setError(e.message || "Something went wrong.");
+      setState("idle");
     }
   }
 
-  async function closeThanks() {
-    const id = thanks?.id;
-    showStage(null);
-    setThanks(null);
-    if (id) {
-      fetch("/api/feedback", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "seenThanks", id }),
-      }).catch(() => {});
-    }
-  }
-
-  if (!stage) return null;
+  if (!me || !open) return null;
+  if (pathname && pathname.startsWith("/settings/feedback")) return null;
 
   return (
-    <>
-      <div
-        onClick={stage === "ask" ? notNow : stage === "thanks" ? closeThanks : () => showStage(null)}
-        style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 900 }}
-      />
-      <div
-        style={{
-          position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 901,
-          background: "var(--surface)", color: "var(--text)",
-          borderRadius: "20px 20px 0 0", padding: "12px 16px",
-          paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 18px)",
-          maxHeight: "88vh", overflowY: "auto",
-        }}
-      >
-        <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}>
-          <div style={{ width: 36, height: 4, borderRadius: 2, background: "var(--border)" }} />
-        </div>
-
-        {stage === "ask" && (
-          <>
-            <h2 className="text-base font-bold mb-1">What should we improve?</h2>
-            <p className="text-sm mb-3" style={{ color: "var(--text-muted)" }}>
-              The Vreedits team reads every message. Tell us what you'd like better.
-            </p>
-
-            <div className="flex flex-wrap gap-2 mb-3">
-              {CATEGORIES.map((c) => {
-                const on = picked.includes(c);
-                return (
-                  <button
-                    key={c}
-                    onClick={() => toggle(c)}
-                    style={{
-                      borderRadius: 16, padding: "6px 12px", fontSize: 13, fontWeight: 600,
-                      border: on ? "2px solid var(--accent)" : "1px solid var(--border)",
-                      background: on ? "var(--accent-soft)" : "var(--surface-2)",
-                      color: on ? "var(--accent)" : "var(--text)",
-                    }}
-                  >
-                    {c}
-                  </button>
-                );
-              })}
-            </div>
-
-            <textarea
-              className="input pl-3"
-              style={{ minHeight: 100, resize: "none", paddingTop: 10 }}
-              placeholder="What do you want the Vreedits team to improve?"
-              maxLength={1000}
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-            />
-            <div className="text-xs mt-1 mb-3" style={{ color: "var(--text-muted)", textAlign: "right" }}>
-              {message.length}/1000
-            </div>
-
-            {error && <div className="alert alert-error mb-3">{error}</div>}
-
-            <div className="flex gap-3">
-              <button
-                onClick={notNow}
-                className="btn-primary"
-                style={{ flex: 1, background: "var(--surface-2)", color: "var(--text)", border: "1px solid var(--border)" }}
-              >
-                Not now
+    <div className="fbp" role="dialog" aria-live="polite" aria-label="Feedback">
+      <style>{CSS}</style>
+      {state === "thanks" ? (
+        <h3>Thanks, {me.name}. That really helps.</h3>
+      ) : (
+        <>
+          <button className="fbp-x" onClick={dismiss} aria-label="Close">
+            ×
+          </button>
+          <h3>How are you enjoying Vreedits so far, {me.name}?</h3>
+          <p>We'd love your feedback.</p>
+          <StarRating value={rating} onChange={setRating} label="How would you rate Vreedits?" />
+          {rating > 0 && (
+            <>
+              <textarea
+                value={message}
+                onChange={(e) => setMessage(e.target.value.slice(0, 1000))}
+                placeholder="Anything you'd like to tell us? (optional)"
+                aria-label="Your feedback"
+              />
+              <button className="fbp-send" onClick={send} disabled={state === "sending"}>
+                {state === "sending" ? "Sending…" : "Send feedback"}
               </button>
-              <button onClick={send} disabled={sending} className="btn-primary" style={{ flex: 1 }}>
-                {sending ? <Loader2 size={16} className="animate-spin" /> : (<><Send size={15} /> Send</>)}
-              </button>
-            </div>
-          </>
-        )}
-
-        {stage === "done" && (
-          <div className="text-center py-6">
-            <Heart size={34} color="var(--accent)" fill="var(--accent)" style={{ margin: "0 auto 10px" }} />
-            <h2 className="text-base font-bold mb-1">Thank you!</h2>
-            <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-              Your feedback went straight to the Vreedits team.
-            </p>
-          </div>
-        )}
-
-        {stage === "thanks" && thanks && (
-          <div className="text-center py-3">
-            <Heart size={34} color="var(--accent)" fill="var(--accent)" style={{ margin: "0 auto 10px" }} />
-            <h2 className="text-base font-bold mb-2">A message from the Vreedits team</h2>
-            <p className="text-sm mb-4" style={{ overflowWrap: "anywhere" }}>{thanks.message}</p>
-            <button onClick={closeThanks} className="btn-primary" style={{ maxWidth: 160, margin: "0 auto" }}>
-              Close
-            </button>
-          </div>
-        )}
-      </div>
-    </>
+            </>
+          )}
+          {error && <div className="fbp-err">{error}</div>}
+        </>
+      )}
+    </div>
   );
 }
+
+const CSS = `
+.fbp{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 80px);transform:translateX(-50%);
+  width:min(92vw,380px);z-index:9999;background:#fff;color:#13202a;border:1px solid #d8e0e6;border-radius:16px;
+  box-shadow:0 10px 30px rgba(0,0,0,.18);padding:18px 18px 16px;
+  font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+@media (prefers-color-scheme:dark){.fbp{background:#17222b;color:#e6edf2;border-color:#25343f}}
+.fbp h3{margin:0 24px 4px 0;font-size:16px}
+.fbp p{margin:0 0 12px;font-size:13.5px;opacity:.75}
+.fbp-x{position:absolute;top:8px;right:10px;background:none;border:none;color:inherit;opacity:.6;font-size:22px;line-height:1;cursor:pointer;padding:4px 8px}
+.fbp textarea{width:100%;box-sizing:border-box;margin-top:12px;min-height:70px;resize:vertical;padding:10px;border-radius:10px;
+  border:1px solid rgba(128,128,128,.4);background:transparent;color:inherit;font:inherit}
+.fbp-send{width:100%;margin-top:10px;padding:10px;border:none;border-radius:10px;background:#0e5a6b;color:#fff;font:inherit;font-weight:600;cursor:pointer}
+.fbp-send:disabled{opacity:.6;cursor:default}
+.fbp-err{color:#c0392b;font-size:13px;margin:8px 0 0}
+`;
