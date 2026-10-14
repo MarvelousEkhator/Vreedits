@@ -4,6 +4,24 @@ import Tracker from "../components/Tracker";
 export const metadata = {
   title: "Vreedits",
   description: "AI workspace, productivity, and community — one platform.",
+  applicationName: "Vreedits",
+  appleWebApp: {
+    capable: true,
+    title: "Vreedits",
+    statusBarStyle: "black",
+  },
+  formatDetection: { telephone: false },
+  icons: { apple: "/icon-192.png" },
+};
+
+// Full-screen on phones: content may extend into the notch / home-bar areas
+// (the bottom tab bar already pads for the home bar), and the status bar
+// takes the app's dark purple.
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#13051f",
 };
 
 export default function RootLayout({ children }) {
