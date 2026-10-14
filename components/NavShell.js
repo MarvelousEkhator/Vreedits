@@ -152,7 +152,7 @@ function NavShellInner({ children, user }) {
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100dvh" }}>
+    <div className="v-app-shell">
       <PresenceHeartbeat />
       <FeedbackPrompt />
       <style>{`
@@ -372,7 +372,7 @@ function NavShellInner({ children, user }) {
         </div>
       </nav>
 
-      <div className="vreedits-content">
+      <div className="vreedits-content v-main">
         <ScreenTimeGate>
           <GuestGate user={user}>{children}</GuestGate>
         </ScreenTimeGate>
