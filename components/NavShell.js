@@ -65,6 +65,10 @@ function NavShellInner({ children, user }) {
     /^\/inbox\/[^/]+/.test(pathname) ||
     pathname.startsWith("/ai-tools/chat");
 
+  // The main feed draws its own header on top of the video (TikTok style),
+  // so the shared Vreedits bar is hidden there to give the post the whole screen.
+  const hideTopBar = pathname === "/feed";
+
   // Whether this page gets a back arrow (any sub-page) instead of the
   // hamburger menu (home tabs only). This is the ONE thing that decides
   // the top-left button everywhere in the app — no other file needs to
@@ -94,6 +98,16 @@ function NavShellInner({ children, user }) {
     document.addEventListener("keydown", handleKey);
     return () => document.removeEventListener("keydown", handleKey);
   }, []);
+
+  // Lets a page that draws its own header (the feed) open the side menu.
+  useEffect(() => {
+    function onToggle() {
+      setMenuOpen((v) => !v);
+      router.refresh();
+    }
+    window.addEventListener("vreedits:toggle-menu", onToggle);
+    return () => window.removeEventListener("vreedits:toggle-menu", onToggle);
+  }, [router]);
 
   // The hamburger button isn't rendered while showBack is true, so if the
   // menu was left open before navigating into a sub-page, close it here —
@@ -255,23 +269,25 @@ function NavShellInner({ children, user }) {
         @media (min-width: 1024px) { .vreedits-tabbar { display: none; } }
       `}</style>
 
-      <div className="vreedits-topbar">
-        {showBack ? (
-          <button
-            className="vreedits-hamburger tappable"
-            onClick={() => router.push(backHref)}
-            aria-label="Back"
-          >
-            <ArrowLeft size={20} />
-          </button>
-        ) : (
-          <button ref={hamburgerRef} className="vreedits-hamburger tappable" onClick={toggleMenu} aria-label="Open menu">
-            <Menu size={20} />
-          </button>
-        )}
-        <span className="vreedits-brand">Vreedits</span>
-        <ThemeToggle />
-      </div>
+      {!hideTopBar && (
+        <div className="vreedits-topbar">
+          {showBack ? (
+            <button
+              className="vreedits-hamburger tappable"
+              onClick={() => router.push(backHref)}
+              aria-label="Back"
+            >
+              <ArrowLeft size={20} />
+            </button>
+          ) : (
+            <button ref={hamburgerRef} className="vreedits-hamburger tappable" onClick={toggleMenu} aria-label="Open menu">
+              <Menu size={20} />
+            </button>
+          )}
+          <span className="vreedits-brand">Vreedits</span>
+          <ThemeToggle />
+        </div>
+      )}
 
       <EmailVerifyBanner />
 
