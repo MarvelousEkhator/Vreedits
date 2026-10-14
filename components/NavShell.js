@@ -142,20 +142,22 @@ function NavShellInner({ children, user }) {
       <PresenceHeartbeat />
       <FeedbackPrompt />
       <style>{`
+        /* Slim header: more of the screen goes to the page itself. */
         .vreedits-topbar {
           display: flex; align-items: center; justify-content: space-between;
-          padding: 14px 18px; border-bottom: 1px solid var(--border); background: var(--glass);
+          padding: calc(env(safe-area-inset-top, 0px) + 7px) 14px 7px;
+          border-bottom: 1px solid var(--border); background: var(--glass);
           backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
           position: relative; z-index: 30; flex-shrink: 0;
         }
         .vreedits-hamburger {
-          width: 42px; height: 42px; border-radius: 12px; border: 1px solid var(--border);
+          width: 38px; height: 38px; border-radius: 11px; border: 1px solid var(--border);
           background: var(--surface-2); display: flex; align-items: center; justify-content: center;
           cursor: pointer; color: var(--text);
         }
         .vreedits-brand {
           font-family: var(--font-display);
-          font-size: 26px;
+          font-size: 24px;
           font-weight: 700;
           line-height: 1;
           color: var(--accent);
@@ -226,22 +228,22 @@ function NavShellInner({ children, user }) {
         .vreedits-lock-badge { margin-left: auto; }
         .vreedits-content { flex: 1; min-height: 0; overflow-y: auto; }
 
-        /* ───────── Bottom tab bar (mobile) ───────── */
+        /* ───────── Bottom tab bar (mobile) — compact ───────── */
         .vreedits-tabbar {
           display: flex; align-items: stretch; flex-shrink: 0; position: relative; z-index: 30;
-          padding: 6px 6px calc(6px + env(safe-area-inset-bottom, 0px));
+          padding: 3px 4px calc(3px + env(safe-area-inset-bottom, 0px));
           border-top: 1px solid var(--border); background: var(--glass);
           backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
         }
         .vreedits-tab {
           flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center;
-          gap: 2px; padding: 3px 0; border-radius: 12px; text-decoration: none;
-          color: var(--text-muted); font-size: 10.5px; font-weight: 500;
+          gap: 1px; padding: 2px 0; border-radius: 12px; text-decoration: none;
+          color: var(--text-muted); font-size: 10px; font-weight: 500;
           transition: color 0.15s ease, transform 0.1s ease;
         }
         .vreedits-tab:active { transform: scale(0.94); }
         .vreedits-tab-icon {
-          width: 56px; height: 38px; border-radius: 999px; display: flex;
+          width: 52px; height: 32px; border-radius: 999px; display: flex;
           align-items: center; justify-content: center; opacity: 0.8;
           transition: background 0.2s ease, transform 0.2s ease, opacity 0.2s ease;
         }
@@ -372,7 +374,7 @@ function NavShellInner({ children, user }) {
                 aria-current={active ? "page" : undefined}
               >
                 <span className="vreedits-tab-icon">
-                  <GlossIcon name={item.gloss} size={34} fallback={item.icon} />
+                  <GlossIcon name={item.gloss} size={30} fallback={item.icon} />
                 </span>
                 <span className="vreedits-tab-label">{t(item.labelKey)}</span>
               </Link>
