@@ -96,7 +96,7 @@ function PostActionSheet({ post, currentUserId, onClose, onQuickReact, onMoreRea
   }
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 200, display: "flex", alignItems: "flex-end" }} onClick={onClose}>
-      <div style={{ width: "100%", background: "var(--surface)", borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingBottom: 20, maxHeight: "70vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
+      <div style={{ width: "100%", background: "var(--surface)", borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingBottom: "calc(20px + var(--safe-b))", maxHeight: "calc(var(--app-h) * 0.7)", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 14, padding: "16px 12px" }}>
           {["❤️", "😢", "😂", "👍", "💀", "😮"].map((e) => (
             <button key={e} onClick={() => { onQuickReact(e); onClose(); }} style={{ fontSize: 24, background: "none", border: "none" }}>{e}</button>
@@ -133,7 +133,8 @@ function CropModal({ image, aspect, shape, onCancel, onConfirm }) {
   // Preview box: same width for both shapes, height derived from aspect
   // (280x280 for a 1:1 icon, 280x93 for a 3:1 banner) — matches
   // AvatarCropper's PREVIEW_SIZE convention, generalized to non-square boxes.
-  const PREVIEW_W = 280;
+  // Shrinks on narrow phones so the card never overflows the screen.
+  const PREVIEW_W = Math.min(280, (typeof window !== "undefined" ? window.innerWidth : 360) - 88);
   const PREVIEW_H = Math.round(PREVIEW_W / aspect);
   const OUTPUT_W = aspect >= 1 ? 800 : Math.round(800 * aspect);
   const OUTPUT_H = Math.round(OUTPUT_W / aspect);
@@ -278,7 +279,7 @@ function OnboardingFlowModal({ data, channels, onClose, onSubmit, submitting }) 
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "var(--surface)", zIndex: 250, display: "flex", flexDirection: "column", overflowY: "auto" }}>
-      <div className="p-5" style={{ flex: 1, maxWidth: 480, margin: "0 auto", width: "100%" }}>
+      <div className="p-5" style={{ flex: 1, maxWidth: 480, margin: "0 auto", width: "100%", paddingTop: "calc(20px + var(--safe-t))", paddingBottom: "calc(20px + var(--safe-b))" }}>
         <h1 className="text-xl font-bold mb-2" style={{ fontFamily: "var(--font-display)" }}>
           {data.welcomeTitle || "Welcome!"}
         </h1>
@@ -672,7 +673,7 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
   const [creatingEmoji, setCreatingEmoji] = useState(false);
   const [emojiError, setEmojiError] = useState("");
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
-const [newPostImage, setNewPostImage] = useState(null);
+  const [newPostImage, setNewPostImage] = useState(null);
   const [newChannelAllowImages, setNewChannelAllowImages] = useState(true);
   const messageImageInputRef = useRef(null);
 
@@ -684,7 +685,9 @@ const [newPostImage, setNewPostImage] = useState(null);
   // Bumped per post so its reaction pills reload after reacting
   const [reactionTick, setReactionTick] = useState({});
 
-  const canManage = community && (community.isOwner || community.isAdmin);const load = useCallback(async () => {
+  const canManage = community && (community.isOwner || community.isAdmin);
+
+  const load = useCallback(async () => {
     setLoading(true);
     setLoadError("");
     try {
@@ -1726,7 +1729,9 @@ const [newPostImage, setNewPostImage] = useState(null);
   function openChannel(channelId) {
     setActiveChannelId(channelId);
     setChannelViewOpen(true);
-  }return (
+  }
+
+  return (
     <div>
       {cropTarget && (
         <CropModal
@@ -1772,7 +1777,7 @@ const [newPostImage, setNewPostImage] = useState(null);
           style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 230, display: "flex", alignItems: "flex-end" }}
           onClick={() => setReactionPickerPostId(null)}
         >
-          <div style={{ width: "100%" }} onClick={(e) => e.stopPropagation()}>
+          <div style={{ width: "100%", paddingBottom: "var(--safe-b)" }} onClick={(e) => e.stopPropagation()}>
             <EmojiPicker
               customEmojis={emojis}
               onPickUnicode={(ch) => {
@@ -1799,7 +1804,7 @@ const [newPostImage, setNewPostImage] = useState(null);
         >
           <div
             className="flex items-center gap-3 p-4"
-            style={{ borderBottom: "1px solid var(--border)", position: "sticky", top: 0, background: "var(--surface)", zIndex: 1 }}
+            style={{ borderBottom: "1px solid var(--border)", position: "sticky", top: 0, background: "var(--surface)", zIndex: 1, paddingTop: "calc(16px + var(--safe-t))" }}
           >
             <button onClick={handleSettingsBack} aria-label="Back" style={{ background: "none", border: "none", color: "var(--text)" }}>
               <ChevronLeft size={22} />
@@ -1809,7 +1814,7 @@ const [newPostImage, setNewPostImage] = useState(null);
             </h1>
           </div>
 
-          <div className="p-4" style={{ flex: 1 }}>
+          <div className="p-4" style={{ flex: 1, paddingBottom: "calc(16px + var(--safe-b))" }}>
             {!settingsPage && (
               <SettingsSidebar settingsPage={settingsPage || ""} setSettingsPage={setSettingsPage} isOwner={community.isOwner} />
             )}
@@ -2234,7 +2239,9 @@ const [newPostImage, setNewPostImage] = useState(null);
                   </button>
                 </form>
               </div>
-            )}{settingsPage === "threads" && (
+            )}
+
+            {settingsPage === "threads" && (
               <div>
                 {threadsLoading ? (
                   <div className="flex justify-center py-10" style={{ color: "var(--text-muted)" }}>
@@ -2610,7 +2617,6 @@ const [newPostImage, setNewPostImage] = useState(null);
                 )}
               </div>
             )}
-
             {settingsPage === "emojis-stickers" && (
               <div>
                 <input
@@ -2744,7 +2750,8 @@ const [newPostImage, setNewPostImage] = useState(null);
           </div>
         </div>
       )}
-<div className="mb-4" style={{ borderRadius: 16, overflow: "hidden", border: "1px solid var(--border)" }}>
+
+      <div className="mb-4" style={{ borderRadius: 16, overflow: "hidden", border: "1px solid var(--border)" }}>
         <div
           onClick={() => canManage && pickImage("banner")}
           style={{
@@ -3076,7 +3083,9 @@ const [newPostImage, setNewPostImage] = useState(null);
             </p>
           )}
         </div>
-      )}{view === "feed" && channelViewOpen && activeChannel && (
+      )}
+
+      {view === "feed" && channelViewOpen && activeChannel && (
         <div
           style={{
             position: "fixed", inset: 0, background: "var(--surface)", zIndex: 150,
@@ -3085,7 +3094,7 @@ const [newPostImage, setNewPostImage] = useState(null);
         >
           <div
             className="flex items-center gap-3 p-4"
-            style={{ borderBottom: "1px solid var(--border)", flexShrink: 0 }}
+            style={{ borderBottom: "1px solid var(--border)", flexShrink: 0, paddingTop: "calc(16px + var(--safe-t))" }}
           >
             <button
               onClick={() => {
@@ -3106,7 +3115,7 @@ const [newPostImage, setNewPostImage] = useState(null);
             <h1 className="text-base font-semibold" style={{ flex: 1 }}>{activeChannel.name}</h1>
           </div>
 
-          <div style={{ flex: 1, overflowY: "auto" }} className="p-3">
+          <div className="v-chat-messages">
             {postsLoading ? (
               <div className="flex justify-center py-10" style={{ color: "var(--text-muted)" }}>
                 <Loader2 size={22} className="animate-spin" />
@@ -3351,7 +3360,7 @@ const [newPostImage, setNewPostImage] = useState(null);
           </div>
 
           {community.isMember && activeChannel.type === "forum" && !openForumPostId && (
-            <div style={{ borderTop: "1px solid var(--border)", flexShrink: 0 }} className="p-3">
+            <div className="v-chat-input">
               {!showNewPostForm ? (
                 <button
                   onClick={() => setShowNewPostForm(true)}
@@ -3396,7 +3405,7 @@ const [newPostImage, setNewPostImage] = useState(null);
           )}
 
           {community.isMember && activeChannel.type !== "forum" && (
-            <form onSubmit={handlePost} className="flex flex-col gap-1 p-3" style={{ borderTop: "1px solid var(--border)", flexShrink: 0, position: "relative" }}>
+            <form onSubmit={handlePost} className="v-chat-input flex flex-col gap-1" style={{ position: "relative" }}>
               {error && (
                 <div className="alert alert-error" style={{ position: "absolute", bottom: "100%", left: 0, right: 0, marginBottom: 8 }}>
                   <AlertCircle size={14} />{error}
@@ -3498,3 +3507,4 @@ const [newPostImage, setNewPostImage] = useState(null);
     </div>
   );
 }
+
