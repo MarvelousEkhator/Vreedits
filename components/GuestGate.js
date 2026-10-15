@@ -137,7 +137,7 @@ function SignupForm({ onClose }) {
       <div
         className="flex items-center justify-between px-4"
         style={{
-          height: 56, borderBottom: "1px solid var(--border)",
+          minHeight: 56, paddingTop: "var(--safe-t)", borderBottom: "1px solid var(--border)",
           position: "sticky", top: 0, background: "var(--surface)", zIndex: 1,
         }}
       >
@@ -147,7 +147,7 @@ function SignupForm({ onClose }) {
         </button>
       </div>
 
-      <form onSubmit={handleSubmit} className="p-4 space-y-4" style={{ maxWidth: 420, margin: "0 auto", paddingBottom: 40 }}>
+      <form onSubmit={handleSubmit} className="p-4 space-y-4" style={{ maxWidth: 420, margin: "0 auto", paddingBottom: "calc(40px + var(--safe-b))" }}>
         <p className="text-sm" style={{ color: "var(--text-muted)" }}>
           Everything you've done as a guest, like your Syna chats, stays with your new account.
         </p>
