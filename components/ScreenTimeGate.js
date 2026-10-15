@@ -31,11 +31,12 @@ function formatClock(minutes) {
   return `${h12}:${String(m).padStart(2, "0")} ${suffix}`;
 }
 
+// Full-screen overlay that clears the notch and the home bar on phones.
 const overlayStyle = {
   position: "fixed", inset: 0, zIndex: 9999,
   background: "var(--surface)", color: "var(--text)",
   display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-  textAlign: "center", padding: 24, overflowY: "auto",
+  textAlign: "center", padding: "calc(24px + var(--safe-t)) 24px calc(24px + var(--safe-b))", overflowY: "auto",
 };
 
 async function logout() {
