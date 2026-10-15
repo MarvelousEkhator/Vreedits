@@ -869,4 +869,2341 @@ function SoundSheet({ soundId, onClose, onOpenProfile, onUseSound }) {
     </div>
   );
 }
+// TikTok lets you post up to 35 photos in one post.
+const MAX_PHOTOS = 35;
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("read failed"));
+    reader.readAsDataURL(file);
+  });
+}
+
+// Shrinks a photo so a post with many photos stays a reasonable size.
+function shrinkImage(dataUrl, maxSide = 1080) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(img.width * scale));
+        canvas.height = Math.max(1, Math.round(img.height * scale));
+        canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", 0.82));
+      } catch {
+        resolve(dataUrl);
+      }
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
+// Make a brand new sound: upload an audio or video file, or record your
+// voice. The sound is saved to your account right away (nobody has to
+// favorite it first) and can be used immediately.
+function CreateSoundSheet({ onCreated, onClose }) {
+  const [name, setName] = useState("");
+  const [audio, setAudio] = useState(null);
+  const [sourceLabel, setSourceLabel] = useState("");
+  const [recording, setRecording] = useState(false);
+  const [seconds, setSeconds] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const fileRef = useRef(null);
+  const recorderRef = useRef(null);
+  const streamRef = useRef(null);
+  const chunksRef = useRef([]);
+  const timerRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      try { recorderRef.current?.stop(); } catch {}
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
+
+  function blobToDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error("read failed"));
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  async function handleFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setError("");
+    if (!/^(audio|video)\//.test(file.type)) {
+      setError("Choose an audio or video file.");
+      return;
+    }
+    if (file.size > MAX_SOUND_BYTES) {
+      setError("That file is too big. Sounds can be up to 10 MB.");
+      return;
+    }
+    try {
+      const url = await blobToDataUrl(file);
+      setAudio(url);
+      setSourceLabel(file.name);
+      setName((prev) => prev || file.name.replace(/\.[^.]+$/, "").slice(0, 60));
+    } catch {
+      setError("Couldn't read that file.");
+    }
+  }
+
+  async function startRecording() {
+    setError("");
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setError("Recording isn't supported on this browser.");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      const mime = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find((m) => MediaRecorder.isTypeSupported?.(m));
+      const recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+      chunksRef.current = [];
+      recorder.ondataavailable = (ev) => {
+        if (ev.data && ev.data.size > 0) chunksRef.current.push(ev.data);
+      };
+      recorder.onstop = async () => {
+        streamRef.current?.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || mime || "audio/webm" });
+        if (blob.size > 0) {
+          try {
+            const url = await blobToDataUrl(blob);
+            setAudio(url);
+            setSourceLabel("Voice recording");
+          } catch {
+            setError("Couldn't save that recording.");
+          }
+        }
+      };
+      recorderRef.current = recorder;
+      recorder.start();
+      setRecording(true);
+      setSeconds(0);
+      timerRef.current = setInterval(() => {
+        setSeconds((s) => {
+          if (s + 1 >= MAX_RECORD_SECONDS) stopRecording();
+          return s + 1;
+        });
+      }, 1000);
+    } catch {
+      setError("Couldn't access the microphone. Check your browser permissions.");
+    }
+  }
+
+  function stopRecording() {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    setRecording(false);
+    try { recorderRef.current?.stop(); } catch {}
+  }
+
+  async function handleSave() {
+    if (saving || recording) return;
+    if (!audio) {
+      setError("Upload a file or record something first.");
+      return;
+    }
+    if (!name.trim()) {
+      setError("Give your sound a name.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      const res = await fetch("/api/feed", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "createSound", name: name.trim(), mediaUrl: audio }),
+      });
+      let json = {};
+      try { json = await res.json(); } catch {}
+      if (!res.ok || !json.sound) {
+        setError(json.error || "Couldn't save your sound.");
+        setSaving(false);
+        return;
+      }
+      onCreated(json.sound);
+    } catch {
+      setError("Couldn't save your sound. Check your connection and try again.");
+      setSaving(false);
+    }
+  }
+
+  const bigButton = {
+    flex: 1, height: 88, borderRadius: 16, background: "var(--surface-2)",
+    border: "1px solid var(--border)", color: "var(--text)",
+    display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6,
+    fontSize: 13, fontWeight: 600,
+  };
+
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, zIndex: 560,
+        background: "var(--surface)", color: "var(--text)",
+        display: "flex", flexDirection: "column",
+      }}
+    >
+      <div
+        className="flex items-center gap-3 px-4"
+        style={{ minHeight: 56, paddingTop: "var(--safe-t)", borderBottom: "1px solid var(--border)", flexShrink: 0 }}
+      >
+        <button onClick={onClose} aria-label="Back" style={{ background: "none", border: "none", color: "var(--text)" }}>
+          <ArrowLeft size={22} />
+        </button>
+        <h2 className="text-sm font-semibold">Create sound</h2>
+      </div>
+
+      <div className="p-4" style={{ flex: 1, overflowY: "auto" }}>
+        <div className="text-sm font-semibold mb-2">Sound name</div>
+        <input
+          className="input pl-3 mb-5"
+          placeholder="Name your sound"
+          maxLength={60}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+
+        <div className="flex gap-3 mb-4">
+          <button onClick={() => fileRef.current?.click()} disabled={recording} style={bigButton}>
+            <Upload size={22} />
+            Upload audio or video
+          </button>
+          <button
+            onClick={recording ? stopRecording : startRecording}
+            style={{
+              ...bigButton,
+              ...(recording ? { background: "var(--accent-soft)", border: "2px solid var(--accent)", color: "var(--accent)" } : {}),
+            }}
+          >
+            <Mic size={22} />
+            {recording ? `Stop · ${formatTime(seconds)}` : "Record your voice"}
+          </button>
+        </div>
+        <input ref={fileRef} type="file" accept="audio/*,video/*" onChange={handleFile} style={{ display: "none" }} />
+
+        {audio && !recording && (
+          <div className="mb-4">
+            <div className="text-xs mb-2" style={{ color: "var(--text-muted)" }}>{sourceLabel}</div>
+            <audio src={audio} controls style={{ width: "100%" }} />
+          </div>
+        )}
+
+        <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+          Sounds can be up to 10 MB, or 60 seconds when recording. Once saved, your sound shows up in Your sounds and anyone can use it.
+        </p>
+
+        {error && <div className="alert alert-error mt-3">{error}</div>}
+      </div>
+
+      <div
+        className="p-4"
+        style={{ borderTop: "1px solid var(--border)", flexShrink: 0, paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 16px)" }}
+      >
+        <button className="btn-primary" onClick={handleSave} disabled={saving || recording}>
+          {saving ? <Loader2 size={16} className="animate-spin" /> : "Save and use sound"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Pick a sound to record with: Your sounds (everything you made, no
+// favoriting needed) or Favorites, plus a button to create a new one.
+function SoundPicker({ onSelect, onClose }) {
+  const [tab, setTab] = useState("mine");
+  const [lists, setLists] = useState({ mine: null, favorites: null });
+  const [busyId, setBusyId] = useState(null);
+  const [error, setError] = useState("");
+  const [createOpen, setCreateOpen] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/feed?mySounds=1")
+      .then((r) => r.json())
+      .then((d) => setLists((p) => ({ ...p, mine: d.sounds || [] })))
+      .catch(() => setLists((p) => ({ ...p, mine: [] })));
+    fetch("/api/feed?favoriteSounds=1")
+      .then((r) => r.json())
+      .then((d) => setLists((p) => ({ ...p, favorites: d.sounds || [] })))
+      .catch(() => setLists((p) => ({ ...p, favorites: [] })));
+  }, []);
+
+  async function choose(s) {
+    if (busyId) return;
+    setBusyId(s.id);
+    setError("");
+    try {
+      const res = await fetch(`/api/feed?sound=${encodeURIComponent(s.id)}`);
+      const json = await res.json();
+      if (res.ok && json.sound?.mediaUrl) {
+        onSelect({ id: json.sound.id, name: json.sound.name, mediaUrl: json.sound.mediaUrl });
+        return;
+      }
+      setError("That sound isn't available anymore.");
+    } catch {
+      setError("Couldn't load that sound.");
+    }
+    setBusyId(null);
+  }
+
+  const sounds = lists[tab];
+  const tabStyle = (id) => ({
+    flex: 1, padding: "10px 0", background: "none", border: "none",
+    fontSize: 14, fontWeight: tab === id ? 700 : 500,
+    color: tab === id ? "var(--text)" : "var(--text-muted)",
+    borderBottom: tab === id ? "2px solid var(--accent)" : "2px solid transparent",
+  });
+
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, zIndex: 520,
+        background: "var(--surface)", color: "var(--text)",
+        display: "flex", flexDirection: "column",
+      }}
+    >
+      <div
+        className="flex items-center gap-3 px-4"
+        style={{ minHeight: 56, paddingTop: "var(--safe-t)", borderBottom: "1px solid var(--border)", flexShrink: 0 }}
+      >
+        <button onClick={onClose} aria-label="Back" style={{ background: "none", border: "none", color: "var(--text)" }}>
+          <ArrowLeft size={22} />
+        </button>
+        <h2 className="text-sm font-semibold" style={{ flex: 1 }}>Sounds</h2>
+        <button
+          onClick={() => setCreateOpen(true)}
+          className="flex items-center gap-1 text-sm font-semibold"
+          style={{ background: "none", border: "none", color: "var(--accent)" }}
+        >
+          <Plus size={16} /> Create
+        </button>
+      </div>
+
+      <div className="flex" style={{ borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+        <button onClick={() => setTab("mine")} style={tabStyle("mine")}>Your sounds</button>
+        <button onClick={() => setTab("favorites")} style={tabStyle("favorites")}>Favorites</button>
+      </div>
+
+      <div className="p-4" style={{ flex: 1, overflowY: "auto" }}>
+        {error && <div className="alert alert-error mb-3">{error}</div>}
+
+        {sounds === null && (
+          <div className="flex justify-center py-10" style={{ color: "var(--text-muted)" }}>
+            <Loader2 size={20} className="animate-spin" />
+          </div>
+        )}
+
+        {sounds && sounds.length === 0 && (
+          <p className="text-sm text-center py-10" style={{ color: "var(--text-muted)" }}>
+            {tab === "mine"
+              ? "No sounds yet. Tap Create to upload or record one, or post a video and its audio becomes your sound."
+              : "No favorite sounds yet. Tap the sound disc on any video and choose Favorite."}
+          </p>
+        )}
+
+        {sounds && sounds.map((s) => (
+          <button
+            key={s.id}
+            onClick={() => choose(s)}
+            className="flex items-center gap-3 w-full"
+            style={{ background: "none", border: "none", padding: "8px 0", textAlign: "left", color: "var(--text)" }}
+          >
+            <Avatar user={s.author} size={46} />
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div className="text-sm font-semibold" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {s.name}
+              </div>
+              <div className="text-xs" style={{ color: "var(--text-muted)" }}>
+                @{(s.author?.username || "").toLowerCase()}
+                {s.uploaded ? " · Uploaded" : ""}
+              </div>
+            </div>
+            {busyId === s.id && <Loader2 size={16} className="animate-spin" />}
+          </button>
+        ))}
+      </div>
+
+      {createOpen && (
+        <CreateSoundSheet
+          onCreated={(sound) => {
+            setCreateOpen(false);
+            onSelect({ id: sound.id, name: sound.name, mediaUrl: sound.mediaUrl });
+          }}
+          onClose={() => setCreateOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// Lists the person's saved drafts. Tap one to keep editing it, or use the
+// trash icon to delete it. Videos aren't loaded in the list (they're big);
+// the full draft is fetched when you open it.
+function DraftsPicker({ onOpen, onClose }) {
+  const [drafts, setDrafts] = useState(null);
+  const [busyId, setBusyId] = useState(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    fetch("/api/feed/drafts")
+      .then((r) => r.json())
+      .then((d) => setDrafts(d.drafts || []))
+      .catch(() => setDrafts([]));
+  }, []);
+
+  async function open(d) {
+    if (busyId) return;
+    setBusyId(d.id);
+    setError("");
+    const message = await onOpen(d.id);
+    if (message) {
+      setError(message);
+      setBusyId(null);
+    }
+  }
+
+  async function remove(d) {
+    if (busyId) return;
+    if (!window.confirm("Delete this draft? This can't be undone.")) return;
+    setBusyId(d.id);
+    setError("");
+    try {
+      const res = await fetch(`/api/feed/drafts?id=${encodeURIComponent(d.id)}`, { method: "DELETE" });
+      if (res.ok) setDrafts((prev) => (prev || []).filter((x) => x.id !== d.id));
+      else setError("Couldn't delete that draft.");
+    } catch {
+      setError("Couldn't delete that draft.");
+    }
+    setBusyId(null);
+  }
+
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, zIndex: 540,
+        background: "var(--surface)", color: "var(--text)",
+        display: "flex", flexDirection: "column",
+      }}
+    >
+      <div
+        className="flex items-center gap-3 px-4"
+        style={{ minHeight: 56, paddingTop: "var(--safe-t)", borderBottom: "1px solid var(--border)", flexShrink: 0 }}
+      >
+        <button onClick={onClose} aria-label="Back" style={{ background: "none", border: "none", color: "var(--text)" }}>
+          <ArrowLeft size={22} />
+        </button>
+        <h2 className="text-sm font-semibold">Drafts</h2>
+      </div>
+
+      <div className="p-4" style={{ flex: 1, overflowY: "auto" }}>
+        {error && <div className="alert alert-error mb-3">{error}</div>}
+
+        {drafts === null && (
+          <div className="flex justify-center py-10" style={{ color: "var(--text-muted)" }}>
+            <Loader2 size={20} className="animate-spin" />
+          </div>
+        )}
+
+        {drafts && drafts.length === 0 && (
+          <p className="text-sm text-center py-10" style={{ color: "var(--text-muted)" }}>
+            No drafts yet. On the Post screen, tap Save draft.
+          </p>
+        )}
+
+        {drafts && drafts.map((d) => (
+          <div
+            key={d.id}
+            className="flex items-center gap-3"
+            style={{ padding: "8px 0", borderBottom: "1px solid var(--border)" }}
+          >
+            <button
+              onClick={() => open(d)}
+              className="flex items-center gap-3"
+              style={{ flex: 1, minWidth: 0, background: "none", border: "none", padding: 0, textAlign: "left", color: "var(--text)" }}
+            >
+              <div
+                style={{
+                  width: 48, height: 64, borderRadius: 8, overflow: "hidden", flexShrink: 0,
+                  background: "#000", display: "flex", alignItems: "center", justifyContent: "center",
+                }}
+              >
+                {d.mediaUrl && d.mediaType === "image" ? (
+                  <img src={d.mediaUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                ) : d.hasMedia ? (
+                  <Play size={18} color="white" fill="white" />
+                ) : null}
+              </div>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div className="text-sm font-semibold" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {d.caption || "No caption"}
+                </div>
+                <div className="text-xs" style={{ color: "var(--text-muted)" }}>
+                  {d.mediaType === "video" ? "Video" : d.hasMedia ? "Photo" : "Text"} · {new Date(d.createdAt).toLocaleDateString()}
+                  {d.isPrivate ? " · Only me" : ""}
+                </div>
+              </div>
+              {busyId === d.id && <Loader2 size={16} className="animate-spin" />}
+            </button>
+            <button
+              onClick={() => remove(d)}
+              aria-label="Delete draft"
+              style={{ background: "none", border: "none", color: "var(--danger, #e55)", padding: 8 }}
+            >
+              <Trash2 size={18} />
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SearchOverlay({ onClose, onOpenProfile, onOpenSound }) {
+  const [query, setQuery] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [results, setResults] = useState(null);
+  const [preview, setPreview] = useState(null);
+  const [favSounds, setFavSounds] = useState([]);
+  const reqIdRef = useRef(0);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    fetch("/api/feed?favoriteSounds=1")
+      .then((r) => r.json())
+      .then((d) => setFavSounds(d.sounds || []))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const q = query.trim();
+    const myReq = ++reqIdRef.current;
+    if (!q) {
+      setResults(null);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/feed?q=${encodeURIComponent(q)}`);
+        const data = await res.json();
+        if (reqIdRef.current !== myReq) return;
+        setResults(
+          res.ok
+            ? { users: data.users || [], posts: data.posts || [] }
+            : { users: [], posts: [] }
+        );
+      } catch {
+        if (reqIdRef.current === myReq) setResults({ users: [], posts: [] });
+      } finally {
+        if (reqIdRef.current === myReq) setLoading(false);
+      }
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  const q = query.trim();
+  const noResults = results && results.users.length === 0 && results.posts.length === 0;
+
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, zIndex: 240,
+        background: "var(--surface)", color: "var(--text)",
+        display: "flex", flexDirection: "column",
+      }}
+    >
+      <div
+        className="flex items-center gap-2 px-3"
+        style={{ minHeight: 64, paddingTop: "var(--safe-t)", borderBottom: "1px solid var(--border)", flexShrink: 0 }}
+      >
+        <button onClick={onClose} aria-label="Close search" style={{ background: "none", border: "none", color: "var(--text)" }}>
+          <ArrowLeft size={22} />
+        </button>
+        <div className="v-search" style={{ flex: 1, minWidth: 0, background: "var(--surface-2)" }}>
+          <GlossIcon name="search" size={34} fallback={Search} />
+          <input
+            ref={inputRef}
+            type="text"
+            placeholder="Search people, videos, #tags"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          {query && (
+            <button
+              onClick={() => setQuery("")}
+              aria-label="Clear"
+              style={{ background: "none", border: "none", color: "var(--text-muted)", display: "flex" }}
+            >
+              <X size={16} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="p-4" style={{ flex: 1, overflowY: "auto" }}>
+        {!q && (
+          <>
+            <p className="text-sm text-center py-6" style={{ color: "var(--text-muted)" }}>
+              Search for people, videos, and hashtags.
+            </p>
+            {favSounds.length > 0 && (
+              <div>
+                <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--text-muted)" }}>
+                  Your favorite sounds
+                </h3>
+                {favSounds.map((s) => (
+                  <button
+                    key={s.id}
+                    onClick={() => onOpenSound(s.id)}
+                    className="flex items-center gap-3 w-full"
+                    style={{ background: "none", border: "none", padding: "8px 0", textAlign: "left", color: "var(--text)" }}
+                  >
+                    <Avatar user={s.author} size={44} />
+                    <div style={{ minWidth: 0 }}>
+                      <div className="text-sm font-semibold" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {s.name}
+                      </div>
+                      <div className="text-xs" style={{ color: "var(--text-muted)" }}>
+                        @{(s.author?.username || "").toLowerCase()}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {q && loading && (
+          <div className="flex justify-center py-10" style={{ color: "var(--text-muted)" }}>
+            <Loader2 size={20} className="animate-spin" />
+          </div>
+        )}
+
+        {q && !loading && noResults && (
+          <p className="text-sm text-center py-10" style={{ color: "var(--text-muted)" }}>
+            No results found.
+          </p>
+        )}
+
+        {q && !loading && results?.users.length > 0 && (
+          <div className="mb-6">
+            <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--text-muted)" }}>
+              People
+            </h3>
+            {results.users.map((u) => (
+              <button
+                key={u.id}
+                onClick={() => onOpenProfile(u.id)}
+                className="flex items-center gap-3 w-full"
+                style={{ background: "none", border: "none", padding: "8px 0", textAlign: "left", color: "var(--text)" }}
+              >
+                <Avatar user={u} size={44} />
+                <div style={{ minWidth: 0 }}>
+                  <div
+                    className="text-sm font-semibold"
+                    style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                  >
+                    {u.displayName || u.username}
+                  </div>
+                  <div className="text-xs" style={{ color: "var(--text-muted)" }}>
+                    @{(u.username || "").toLowerCase()}
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {q && !loading && results?.posts.length > 0 && (
+          <div>
+            <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "var(--text-muted)" }}>
+              Videos & posts
+            </h3>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 4 }}>
+              {results.posts.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => setPreview(p)}
+                  style={{
+                    position: "relative", aspectRatio: "9/16", borderRadius: 8,
+                    overflow: "hidden", background: "var(--surface-2)", border: "none", padding: 0,
+                  }}
+                >
+                  {p.mediaUrl ? (
+                    p.mediaType === "video" ? (
+                      <video
+                        src={p.mediaUrl}
+                        muted
+                        playsInline
+                        preload="metadata"
+                        style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                      />
+                    ) : (
+                      <img src={p.mediaUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    )
+                  ) : (
+                    <div
+                      className="text-xs"
+                      style={{
+                        width: "100%", height: "100%", padding: 8, color: "var(--text)",
+                        background: "linear-gradient(160deg, var(--accent-soft), var(--surface-2))",
+                        overflow: "hidden", textAlign: "left",
+                      }}
+                    >
+                      {p.caption}
+                    </div>
+                  )}
+                  {p.mediaType === "video" && (
+                    <Play size={14} color="white" fill="white" style={{ position: "absolute", top: 6, right: 6 }} />
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {preview && (
+        <div
+          style={{
+            position: "fixed", inset: 0, zIndex: 250, background: "#000",
+            display: "flex", flexDirection: "column",
+          }}
+        >
+          <div className="flex items-center justify-between px-4" style={{ minHeight: 56, paddingTop: "var(--safe-t)", flexShrink: 0 }}>
+            <button
+              onClick={() => onOpenProfile(preview.author.id)}
+              className="flex items-center gap-2"
+              style={{ background: "none", border: "none", color: "white" }}
+            >
+              <Avatar user={preview.author} size={30} />
+              <span className="text-sm font-semibold">{preview.author.displayName || preview.author.username}</span>
+            </button>
+            <button
+              onClick={() => setPreview(null)}
+              aria-label="Close preview"
+              style={{ background: "none", border: "none", color: "white" }}
+            >
+              <X size={22} />
+            </button>
+          </div>
+
+          <div style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            {preview.mediaUrl ? (
+              preview.mediaType === "video" ? (
+                <video
+                  src={preview.mediaUrl}
+                  controls
+                  autoPlay
+                  loop
+                  playsInline
+                  style={{ width: "100%", height: "100%", objectFit: "contain" }}
+                />
+              ) : (
+                <img src={preview.mediaUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+              )
+            ) : (
+              <p className="text-base px-6 text-center" style={{ color: "white" }}>{preview.caption}</p>
+            )}
+          </div>
+
+          {preview.mediaUrl && preview.caption && (
+            <p className="text-sm px-4 py-3" style={{ color: "white", overflowWrap: "anywhere", paddingBottom: "calc(12px + var(--safe-b))" }}>
+              {preview.caption}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CreatePostModal({ open, onClose, onCreated, user, initialSound }) {
+  const [caption, setCaption] = useState("");
+  const [media, setMedia] = useState(null);
+  const [sound, setSound] = useState(null);
+  const [visibility, setVisibility] = useState("everyone");
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [draftsOpen, setDraftsOpen] = useState(false);
+  const [draftId, setDraftId] = useState(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [posting, setPosting] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [error, setError] = useState("");
+  const captionRef = useRef(null);
+  const addPhotosRef = useRef(null);
+
+  // Every photo in this post (one photo, or a whole carousel).
+  const photos = media?.mediaUrls?.length > 1
+    ? media.mediaUrls
+    : media?.mediaType === "image" && media?.mediaUrl
+      ? [media.mediaUrl]
+      : [];
+
+  function resetAll() {
+    setCaption("");
+    setMedia(null);
+    setSound(null);
+    setVisibility("everyone");
+    setCameraOpen(false);
+    setPickerOpen(false);
+    setDraftsOpen(false);
+    setDraftId(null);
+    setPreviewOpen(false);
+    setPosting(false);
+    setSavingDraft(false);
+    setError("");
+  }
+
+  useEffect(() => {
+    if (open) {
+      resetAll();
+      setSound(initialSound || null);
+      setCameraOpen(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  function handleCaptured(result) {
+    setMedia(result);
+    setDraftId(null);
+    setCameraOpen(false);
+    if (result.mediaType !== "video") setSound(null);
+  }
+
+  // Several photos picked from the gallery at once (like TikTok).
+  async function handleCapturedMany(items) {
+    const urls = await Promise.all(items.map((i) => shrinkImage(i.mediaUrl)));
+    if (urls.length === 0) return;
+    setMedia({ mediaType: "image", mediaUrl: urls[0], mediaUrls: urls, thumbUrl: urls[0] });
+    setDraftId(null);
+    setSound(null);
+    setCameraOpen(false);
+  }
+
+  async function addMorePhotos(e) {
+    const files = Array.from(e.target.files || []).filter((f) => f.type.startsWith("image/"));
+    e.target.value = "";
+    if (files.length === 0) return;
+    const room = MAX_PHOTOS - photos.length;
+    if (room <= 0) {
+      setError(`You can add up to ${MAX_PHOTOS} photos.`);
+      return;
+    }
+    try {
+      const raw = await Promise.all(files.slice(0, room).map(fileToDataUrl));
+      const added = await Promise.all(raw.map((u) => shrinkImage(u)));
+      const all = [...photos, ...added];
+      setMedia({ mediaType: "image", mediaUrl: all[0], mediaUrls: all, thumbUrl: all[0] });
+      setError(files.length > room ? `Only ${MAX_PHOTOS} photos fit in one post.` : "");
+    } catch {
+      setError("Couldn't add those photos.");
+    }
+  }
+
+  function removePhoto(index) {
+    const next = photos.filter((_, i) => i !== index);
+    if (next.length === 0) {
+      setMedia(null);
+      setCameraOpen(true);
+      return;
+    }
+    setMedia({ mediaType: "image", mediaUrl: next[0], mediaUrls: next, thumbUrl: next[0] });
+  }
+
+  function handleRetake() {
+    setMedia(null);
+    setDraftId(null);
+    setCameraOpen(true);
+  }
+
+  function handleClose() {
+    resetAll();
+    onClose();
+  }
+
+  // Loads a saved draft into the Post screen so it can be edited or published.
+  // Returns an error message (string) if it fails, or null on success.
+  async function openDraft(id) {
+    try {
+      const res = await fetch(`/api/feed/drafts?id=${encodeURIComponent(id)}`);
+      const json = await res.json();
+      if (!res.ok || !json.draft) return json.error || "Couldn't open that draft.";
+      const d = json.draft;
+      setMedia(d.mediaUrl ? { mediaUrl: d.mediaUrl, mediaType: d.mediaType, mediaUrls: d.mediaUrls || null } : null);
+      setCaption(d.caption || "");
+      setVisibility(d.isPrivate ? "me" : "everyone");
+      setSound(null);
+      setDraftId(d.id);
+      setError("");
+      setDraftsOpen(false);
+      setCameraOpen(false);
+      return null;
+    } catch {
+      return "Couldn't open that draft.";
+    }
+  }
+
+  function addToCaption(text, focus) {
+    setCaption((prev) => {
+      const base = prev && !/\s$/.test(prev) ? prev + " " : prev;
+      return (base + text).slice(0, 500);
+    });
+    if (focus) setTimeout(() => captionRef.current?.focus(), 0);
+  }
+
+  function addTag(tag) {
+    if (caption.toLowerCase().includes(tag.toLowerCase())) return;
+    addToCaption(tag + " ", false);
+  }
+
+  async function handlePost() {
+    if (posting || savingDraft) return;
+    if (!caption.trim() && !media) {
+      setError("Add a caption or capture something first.");
+      return;
+    }
+    setPosting(true);
+    setError("");
+
+    // Publishing a draft that was already saved.
+    if (draftId) {
+      try {
+        const res = await fetch("/api/feed/drafts", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: draftId, caption, isPrivate: visibility === "me", publish: true }),
+        });
+        let data = {};
+        try { data = await res.json(); } catch {}
+        if (!res.ok) {
+          setError(data.error || "Could not post.");
+          setPosting(false);
+          return;
+        }
+        onCreated({
+          ...data.post,
+          mediaUrl: media?.mediaUrl || null,
+          mediaUrls: photos.length > 1 ? photos : undefined,
+          soundId: null,
+          soundOwner: null,
+          likeCount: 0,
+          likedByMe: false,
+          commentCount: 0,
+          savedByMe: false,
+          followedByMe: true,
+        });
+        resetAll();
+        onClose();
+      } catch {
+        setError("Could not post. Check your connection and try again.");
+        setPosting(false);
+      }
+      return;
+    }
+
+    const totalChars = photos.length > 1 ? photos.reduce((n, u) => n + u.length, 0) : (media?.mediaUrl?.length || 0);
+    if (totalChars > MAX_MEDIA_CHARS) {
+      setError("This is too big. Try fewer photos or a shorter video.");
+      setPosting(false);
+      return;
+    }
+    try {
+      const res = await fetch("/api/feed", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          caption,
+          mediaUrl: media?.mediaUrl || null,
+          mediaType: media?.mediaType || "image",
+          mediaUrls: photos.length > 1 ? photos : undefined,
+          isPrivate: visibility === "me",
+          soundId: media?.mediaType === "video" && sound ? sound.id : undefined,
+        }),
+      });
+      let data = {};
+      try { data = await res.json(); } catch {}
+      if (!res.ok) {
+        setError(data.error || "Could not post.");
+        setPosting(false);
+        return;
+      }
+      onCreated(data.post);
+      resetAll();
+      onClose();
+    } catch {
+      setError("Could not post. Check your connection and try again.");
+      setPosting(false);
+    }
+  }
+
+  // Saves without publishing. New posts are created as drafts; a draft that
+  // was opened from the Drafts list is updated in place.
+  async function handleSaveDraft() {
+    if (posting || savingDraft) return;
+    if (!caption.trim() && !media) {
+      setError("Add a caption or capture something first.");
+      return;
+    }
+    setSavingDraft(true);
+    setError("");
+
+    try {
+      let res;
+      if (draftId) {
+        res = await fetch("/api/feed/drafts", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: draftId, caption, isPrivate: visibility === "me" }),
+        });
+      } else {
+        const totalChars = photos.length > 1 ? photos.reduce((n, u) => n + u.length, 0) : (media?.mediaUrl?.length || 0);
+        if (totalChars > MAX_MEDIA_CHARS) {
+          setError("This is too big. Try fewer photos or a shorter video.");
+          setSavingDraft(false);
+          return;
+        }
+        res = await fetch("/api/feed", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            caption,
+            mediaUrl: media?.mediaUrl || null,
+            mediaType: media?.mediaType || "image",
+            mediaUrls: photos.length > 1 ? photos : undefined,
+            isPrivate: visibility === "me",
+            soundId: media?.mediaType === "video" && sound ? sound.id : undefined,
+            isDraft: true,
+          }),
+        });
+      }
+      let data = {};
+      try { data = await res.json(); } catch {}
+      if (!res.ok) {
+        setError(data.error || "Could not save the draft.");
+        setSavingDraft(false);
+        return;
+      }
+      onCreated({ isDraft: true });
+      resetAll();
+      onClose();
+    } catch {
+      setError("Could not save the draft. Check your connection and try again.");
+      setSavingDraft(false);
+    }
+  }
+
+  if (!open) return null;
+
+  if (cameraOpen) {
+    return (
+      <>
+        <CameraCapture
+          onCapture={handleCaptured}
+          onCaptureMany={handleCapturedMany}
+          maxImages={MAX_PHOTOS}
+          onClose={handleClose}
+          sound={sound}
+          onPickSound={() => setPickerOpen(true)}
+          onRemoveSound={() => setSound(null)}
+        />
+        {!pickerOpen && !draftsOpen && (
+          <button
+            onClick={() => setDraftsOpen(true)}
+            aria-label="Open drafts"
+            style={{
+              position: "fixed", top: "calc(env(safe-area-inset-top, 0px) + 12px)", left: "50%",
+              transform: "translateX(-50%)", zIndex: 530,
+              background: "rgba(0,0,0,0.55)", color: "white", border: "none",
+              borderRadius: 16, padding: "6px 14px", fontSize: 13, fontWeight: 600,
+            }}
+          >
+            Drafts
+          </button>
+        )}
+        {pickerOpen && (
+          <SoundPicker
+            onSelect={(s) => { setSound(s); setPickerOpen(false); }}
+            onClose={() => setPickerOpen(false)}
+          />
+        )}
+        {draftsOpen && (
+          <DraftsPicker onOpen={openDraft} onClose={() => setDraftsOpen(false)} />
+        )}
+      </>
+    );
+  }
+
+  const coverSrc = media?.thumbUrl || (media?.mediaType === "image" ? media.mediaUrl : null);
+  const isVideo = media?.mediaType === "video";
+  const handle = (user?.username || "").toLowerCase();
+  const soundLabel = sound ? sound.name : `original sound - ${handle}`;
+  const busy = posting || savingDraft;
+
+  const chipStyle = {
+    background: "var(--surface-2)", border: "none", color: "var(--text)",
+    borderRadius: 16, padding: "6px 12px", fontSize: 13, fontWeight: 600,
+  };
+
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, zIndex: 300, background: "var(--surface)", color: "var(--text)",
+        display: "flex", flexDirection: "column",
+      }}
+    >
+      <div
+        className="flex items-center justify-between px-4"
+        style={{ minHeight: 56, paddingTop: "var(--safe-t)", borderBottom: "1px solid var(--border)", flexShrink: 0 }}
+      >
+        <button onClick={handleRetake} aria-label="Back to camera" style={{ background: "none", border: "none", color: "var(--text)" }}>
+          <ArrowLeft size={22} />
+        </button>
+        <h2 className="text-base font-semibold">{draftId ? "Edit draft" : "Post"}</h2>
+        <button
+          onClick={() => setDraftsOpen(true)}
+          aria-label="Open drafts"
+          className="text-sm font-semibold"
+          style={{ background: "none", border: "none", color: "var(--accent)" }}
+        >
+          Drafts
+        </button>
+      </div>
+
+      <div className="p-4" style={{ flex: 1, overflowY: "auto" }}>
+        <div className="flex items-start gap-3 mb-3">
+          <textarea
+            ref={captionRef}
+            className="input pl-3"
+            style={{ flex: 1, minHeight: 128, resize: "none", paddingTop: 10 }}
+            placeholder="Describe your post, add hashtags, or mention creators"
+            maxLength={500}
+            value={caption}
+            onChange={(e) => setCaption(e.target.value)}
+          />
+          <button
+            onClick={() => media && setPreviewOpen(true)}
+            aria-label="Preview"
+            style={{
+              position: "relative", width: 96, height: 128, borderRadius: 10, overflow: "hidden",
+              border: "none", padding: 0, flexShrink: 0, background: "#000",
+            }}
+          >
+            {coverSrc ? (
+              <img src={coverSrc} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            ) : (
+              <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <Play size={26} color="white" fill="white" />
+              </div>
+            )}
+            <span
+              style={{
+                position: "absolute", left: 0, right: 0, bottom: 0, padding: "4px 0",
+                background: "rgba(0,0,0,0.55)", color: "white", fontSize: 11, fontWeight: 600, textAlign: "center",
+              }}
+            >
+              Preview
+            </span>
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2 mb-3">
+          <button onClick={() => addToCaption("#", true)} style={chipStyle}># Hashtags</button>
+          <button onClick={() => addToCaption("@", true)} style={chipStyle}>@ Mention</button>
+          <span className="text-xs" style={{ marginLeft: "auto", color: "var(--text-muted)" }}>
+            {caption.length}/500
+          </span>
+        </div>
+
+        <div className="flex flex-wrap gap-2 mb-5">
+          {SUGGESTED_TAGS.map((t) => (
+            <button
+              key={t}
+              onClick={() => addTag(t)}
+              style={{
+                background: "none", border: "1px solid var(--border)", color: "var(--text-muted)",
+                borderRadius: 16, padding: "4px 10px", fontSize: 12, fontWeight: 600,
+              }}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+
+        {!isVideo && photos.length > 0 && (
+          <div style={{ padding: "14px 0", borderTop: "1px solid var(--border)" }}>
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-sm font-semibold">
+                {photos.length} {photos.length === 1 ? "photo" : "photos"}
+                <span className="text-xs" style={{ color: "var(--text-muted)", fontWeight: 400 }}> · up to {MAX_PHOTOS}</span>
+              </div>
+              {!draftId && photos.length < MAX_PHOTOS && (
+                <button
+                  onClick={() => addPhotosRef.current?.click()}
+                  className="text-sm font-semibold"
+                  style={{ background: "none", border: "none", color: "var(--accent)" }}
+                >
+                  + Add photos
+                </button>
+              )}
+            </div>
+            <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4 }}>
+              {photos.map((src, i) => (
+                <div
+                  key={i}
+                  style={{ position: "relative", width: 64, height: 86, flexShrink: 0, borderRadius: 8, overflow: "hidden", background: "#000" }}
+                >
+                  <img src={src} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  {!draftId && (
+                    <button
+                      onClick={() => removePhoto(i)}
+                      aria-label="Remove photo"
+                      style={{
+                        position: "absolute", top: 3, right: 3, width: 20, height: 20, borderRadius: "50%",
+                        background: "rgba(0,0,0,0.65)", border: "none", color: "white",
+                        display: "flex", alignItems: "center", justifyContent: "center", padding: 0,
+                      }}
+                    >
+                      <X size={12} />
+                    </button>
+                  )}
+                  <span
+                    style={{
+                      position: "absolute", left: 3, bottom: 3, fontSize: 10, fontWeight: 700, color: "white",
+                      background: "rgba(0,0,0,0.6)", borderRadius: 8, padding: "0 5px",
+                    }}
+                  >
+                    {i + 1}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <input ref={addPhotosRef} type="file" accept="image/*" multiple onChange={addMorePhotos} style={{ display: "none" }} />
+          </div>
+        )}
+
+        {isVideo && !draftId && (
+          <div
+            className="flex items-center gap-3"
+            style={{ padding: "14px 0", borderTop: "1px solid var(--border)" }}
+          >
+            <Music2 size={18} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
+            <div style={{ minWidth: 0 }}>
+              <div className="text-sm font-semibold">Sound</div>
+              <div className="text-xs" style={{ color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {soundLabel}
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div style={{ padding: "14px 0", borderTop: "1px solid var(--border)" }}>
+          <div className="text-sm font-semibold mb-2">Who can watch this video</div>
+          <div className="flex gap-2">
+            {[
+              { id: "everyone", label: "Everyone", icon: Globe },
+              { id: "me", label: "Only me", icon: Lock },
+            ].map((o) => (
+              <button
+                key={o.id}
+                onClick={() => setVisibility(o.id)}
+                className="flex items-center justify-center gap-2 text-sm font-semibold"
+                style={{
+                  flex: 1, height: 42, borderRadius: 12,
+                  border: visibility === o.id ? "2px solid var(--accent)" : "1px solid var(--border)",
+                  background: visibility === o.id ? "var(--accent-soft)" : "var(--surface-2)",
+                  color: visibility === o.id ? "var(--accent)" : "var(--text)",
+                }}
+              >
+                <o.icon size={15} /> {o.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {error && <div className="alert alert-error mt-2">{error}</div>}
+      </div>
+
+      <div
+        className="p-4 flex gap-3"
+        style={{ borderTop: "1px solid var(--border)", flexShrink: 0, paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 16px)" }}
+      >
+        <button
+          className="btn-primary"
+          onClick={handleSaveDraft}
+          disabled={busy}
+          style={{ flex: 1, background: "var(--surface-2)", color: "var(--text)", border: "1px solid var(--border)" }}
+        >
+          {savingDraft ? <Loader2 size={16} className="animate-spin" /> : "Save draft"}
+        </button>
+        <button className="btn-primary" onClick={handlePost} disabled={busy} style={{ flex: 1 }}>
+          {posting ? <Loader2 size={16} className="animate-spin" /> : "Post"}
+        </button>
+      </div>
+
+      {previewOpen && media && (
+        <div
+          style={{
+            position: "fixed", inset: 0, zIndex: 310, background: "#000",
+            display: "flex", flexDirection: "column",
+          }}
+        >
+          <div className="flex justify-end px-4" style={{ minHeight: 56, paddingTop: "var(--safe-t)", alignItems: "center", flexShrink: 0 }}>
+            <button
+              onClick={() => setPreviewOpen(false)}
+              aria-label="Close preview"
+              style={{ background: "none", border: "none", color: "white" }}
+            >
+              <X size={24} />
+            </button>
+          </div>
+          <div style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            {isVideo ? (
+              <video
+                src={media.mediaUrl}
+                controls
+                autoPlay
+                loop
+                playsInline
+                style={{ width: "100%", height: "100%", objectFit: "contain" }}
+              />
+            ) : (
+              photos.length > 1 ? (
+                <div style={{ display: "flex", width: "100%", height: "100%", overflowX: "auto", scrollSnapType: "x mandatory" }}>
+                  {photos.map((src, i) => (
+                    <div key={i} style={{ flex: "0 0 100%", height: "100%", scrollSnapAlign: "start" }}>
+                      <img src={src} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <img src={media.mediaUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+              )
+            )}
+          </div>
+        </div>
+      )}
+
+      {draftsOpen && (
+        <DraftsPicker onOpen={openDraft} onClose={() => setDraftsOpen(false)} />
+      )}
+    </div>
+  );
+}
+
+function HeartBurst({ x, y }) {
+  return (
+    <div
+      style={{
+        position: "absolute", left: x, top: y, transform: "translate(-50%, -50%)",
+        zIndex: 3, pointerEvents: "none", animation: "vreedits-heart-burst 700ms ease-out forwards",
+      }}
+    >
+      <Heart size={90} color="#ff4d67" fill="#ff4d67" />
+      <style>{`
+        @keyframes vreedits-heart-burst {
+          0% { opacity: 0; transform: translate(-50%, -50%) scale(0.4); }
+          25% { opacity: 1; transform: translate(-50%, -50%) scale(1.15); }
+          40% { transform: translate(-50%, -50%) scale(1); }
+          100% { opacity: 0; transform: translate(-50%, -50%) scale(1); }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onOpenComments, onLongPress, onOpenProfile, onOpenSound, registerVideoRef, onRefresh, refreshing, onCreate }) {
+  const pressTimer = useRef(null);
+  const lastTapRef = useRef(0);
+  const singleTapTimerRef = useRef(null);
+  const videoElRef = useRef(null);
+  const touchStartRef = useRef(null);
+  const [burst, setBurst] = useState(null);
+  const [isPaused, setIsPaused] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [slide, setSlide] = useState(0);
+  // A post with several photos swipes sideways like a TikTok photo post.
+  const isCarousel = Array.isArray(post.mediaUrls) && post.mediaUrls.length > 1;
+
+  function startPress() {
+    pressTimer.current = setTimeout(() => onLongPress(post), 500);
+  }
+  function cancelPress() {
+    if (pressTimer.current) clearTimeout(pressTimer.current);
+  }
+  function handleContextMenu(e) {
+    e.preventDefault();
+    onLongPress(post);
+  }
+
+  // Touch handling: long-press opens the actions sheet,
+  // a sideways swipe opens the creator's profile.
+  function handleTouchStart(e) {
+    const t = e.touches[0];
+    touchStartRef.current = t ? { x: t.clientX, y: t.clientY } : null;
+    startPress();
+  }
+  function handleTouchMove() {
+    cancelPress();
+  }
+  function handleTouchCancel() {
+    touchStartRef.current = null;
+    cancelPress();
+  }
+  function handleTouchEnd(e) {
+    cancelPress();
+    const start = touchStartRef.current;
+    touchStartRef.current = null;
+    if (!start) return;
+    const t = e.changedTouches[0];
+    if (!t) return;
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+    if (!isCarousel && Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      clearTimeout(singleTapTimerRef.current);
+      onOpenProfile(post.author.id);
+    }
+  }
+
+  function combinedVideoRef(el) {
+    videoElRef.current = el;
+    registerVideoRef(post.id, el);
+  }
+
+  // Tracks play state plus current time / duration for the scrubber below.
+  useEffect(() => {
+    const video = videoElRef.current;
+    if (!video) return;
+    const onPlay = () => setIsPaused(false);
+    const onPause = () => setIsPaused(true);
+    const onTimeUpdate = () => setCurrentTime(video.currentTime);
+    const onLoadedMetadata = () => setDuration(video.duration || 0);
+    video.addEventListener("play", onPlay);
+    video.addEventListener("pause", onPause);
+    video.addEventListener("timeupdate", onTimeUpdate);
+    video.addEventListener("loadedmetadata", onLoadedMetadata);
+    setIsPaused(video.paused);
+    if (video.duration) setDuration(video.duration);
+    return () => {
+      video.removeEventListener("play", onPlay);
+      video.removeEventListener("pause", onPause);
+      video.removeEventListener("timeupdate", onTimeUpdate);
+      video.removeEventListener("loadedmetadata", onLoadedMetadata);
+    };
+  }, [post.mediaType]);
+
+  function togglePlayback() {
+    const video = videoElRef.current;
+    if (!video) return;
+    if (video.paused) video.play().catch(() => {});
+    else video.pause();
+  }
+
+  function handleSeek(e) {
+    const video = videoElRef.current;
+    if (!video) return;
+    const value = parseFloat(e.target.value);
+    video.currentTime = value;
+    setCurrentTime(value);
+  }
+
+  function handleMediaClick(e) {
+    const now = Date.now();
+    const isDoubleTap = now - lastTapRef.current < 300;
+    lastTapRef.current = now;
+
+    if (isDoubleTap) {
+      clearTimeout(singleTapTimerRef.current);
+      const rect = e.currentTarget.getBoundingClientRect();
+      setBurst({ x: e.clientX - rect.left, y: e.clientY - rect.top, key: now });
+      setTimeout(() => setBurst((b) => (b?.key === now ? null : b)), 700);
+      if (!post.likedByMe) onLike(post);
+    } else if (post.mediaType === "video") {
+      singleTapTimerRef.current = setTimeout(() => {
+        togglePlayback();
+      }, 300);
+    }
+  }
+
+  const isVideo = post.mediaType === "video" && !!post.mediaUrl;
+  // A video made with someone's sound points back to that sound.
+  const soundKey = post.soundId || post.id;
+  // Sounds can have a custom name; otherwise it's "original sound - username".
+  const soundLabel = post.soundName || soundNameFor(post.soundOwner || post.author);
+  const progressPct = duration ? (currentTime / duration) * 100 : 0;
+
+  return (
+    <div
+      data-post-id={post.id}
+      className="v-feed-item"
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      onTouchMove={handleTouchMove}
+      onTouchCancel={handleTouchCancel}
+      onMouseDown={startPress}
+      onMouseUp={cancelPress}
+      onMouseLeave={cancelPress}
+      onContextMenu={handleContextMenu}
+      onClick={handleMediaClick}
+      style={{
+        touchAction: isCarousel ? "pan-x pan-y" : "pan-y",
+      }}
+    >
+      {isCarousel ? (
+        <div
+          onScroll={(e) => {
+            const el = e.currentTarget;
+            setSlide(Math.round(el.scrollLeft / (el.clientWidth || 1)));
+          }}
+          style={{
+            position: "absolute", inset: 0, display: "flex", overflowX: "auto",
+            scrollSnapType: "x mandatory", scrollbarWidth: "none", msOverflowStyle: "none",
+            touchAction: "pan-x pan-y",
+          }}
+        >
+          {post.mediaUrls.map((src, i) => (
+            <div key={i} style={{ position: "relative", flex: "0 0 100%", height: "100%", scrollSnapAlign: "start" }}>
+              <img
+                src={src}
+                alt=""
+                aria-hidden="true"
+                style={{
+                  position: "absolute", inset: 0, width: "100%", height: "100%",
+                  objectFit: "cover", filter: "blur(30px) brightness(0.6)",
+                  transform: "scale(1.15)", display: "block",
+                }}
+              />
+              <img
+                src={src}
+                alt=""
+                style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", display: "block" }}
+              />
+            </div>
+          ))}
+        </div>
+      ) : post.mediaType === "video" && post.mediaUrl ? (
+        <video
+          ref={combinedVideoRef}
+          src={post.mediaUrl}
+          loop
+          muted={muted}
+          playsInline
+          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+        />
+      ) : post.mediaUrl ? (
+        <>
+          {/* Blurred, zoomed copy fills the frame behind the real image so
+              non-vertical photos never get cropped like they were before. */}
+          <img
+            src={post.mediaUrl}
+            alt=""
+            aria-hidden="true"
+            style={{
+              position: "absolute", inset: 0, width: "100%", height: "100%",
+              objectFit: "cover", filter: "blur(30px) brightness(0.6)",
+              transform: "scale(1.15)", display: "block",
+            }}
+          />
+          <img
+            src={post.mediaUrl}
+            alt=""
+            style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", display: "block" }}
+          />
+        </>
+      ) : (
+        <div
+          style={{
+            position: "absolute", inset: 0,
+            background: "linear-gradient(160deg, var(--accent-soft), var(--surface-2))",
+          }}
+        />
+      )}
+      <div
+        style={{
+          position: "absolute", inset: 0, pointerEvents: "none",
+          background: "linear-gradient(to top, rgba(0,0,0,0.7), rgba(0,0,0,0) 40%)",
+        }}
+      />
+
+      {burst && <HeartBurst x={burst.x} y={burst.y} />}
+
+      {isCarousel && (
+        <>
+          <div
+            style={{
+              position: "absolute", top: 10, right: 12, zIndex: 2, pointerEvents: "none",
+              background: "rgba(0,0,0,0.5)", color: "white", fontSize: 12, fontWeight: 700,
+              padding: "2px 9px", borderRadius: 10,
+            }}
+          >
+            {slide + 1}/{post.mediaUrls.length}
+          </div>
+          <div
+            style={{
+              position: "absolute", left: 0, right: 0, bottom: 14, zIndex: 2, pointerEvents: "none",
+              display: "flex", justifyContent: "center", gap: 5,
+            }}
+          >
+            {post.mediaUrls.slice(0, 12).map((_, i) => (
+              <span
+                key={i}
+                style={{
+                  width: 6, height: 6, borderRadius: "50%",
+                  background: i === Math.min(slide, 11) ? "white" : "rgba(255,255,255,0.4)",
+                }}
+              />
+            ))}
+          </div>
+        </>
+      )}
+
+      {post.mediaType === "video" && isPaused && (
+        <>
+          <div
+            style={{
+              position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
+              zIndex: 2, width: 68, height: 68, borderRadius: "50%",
+              background: "rgba(0,0,0,0.35)", display: "flex", alignItems: "center", justifyContent: "center",
+              pointerEvents: "none",
+            }}
+          >
+            <Play size={30} color="white" fill="white" style={{ marginLeft: 4 }} />
+          </div>
+          {/* Time readout while paused, so you can tell where you are before scrubbing. */}
+          <div
+            style={{
+              position: "absolute", left: 0, right: 0, bottom: 26, zIndex: 2,
+              display: "flex", justifyContent: "center", pointerEvents: "none",
+            }}
+          >
+            <span
+              style={{
+                color: "white", fontSize: 12, fontWeight: 600,
+                background: "rgba(0,0,0,0.5)", padding: "3px 10px", borderRadius: 10,
+              }}
+            >
+              {formatTime(currentTime)} / {formatTime(duration)}
+            </span>
+          </div>
+        </>
+      )}
+
+      {isVideo && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          style={{ position: "absolute", left: 0, right: 0, bottom: 0, zIndex: 2, padding: "0 2px" }}
+        >
+          <input
+            type="range"
+            min={0}
+            max={duration || 0}
+            step={0.05}
+            value={currentTime}
+            onChange={handleSeek}
+            className="vreedits-progress"
+            style={{ "--progress": `${progressPct}%` }}
+            aria-label="Seek video"
+          />
+          <style>{`
+            .vreedits-progress {
+              -webkit-appearance: none;
+              appearance: none;
+              width: 100%;
+              height: 18px;
+              background: transparent;
+              margin: 0;
+              display: block;
+              cursor: pointer;
+            }
+            .vreedits-progress::-webkit-slider-runnable-track {
+              height: 3px;
+              border-radius: 2px;
+              background: linear-gradient(to right, #fff var(--progress), rgba(255,255,255,0.3) var(--progress));
+            }
+            .vreedits-progress::-webkit-slider-thumb {
+              -webkit-appearance: none;
+              width: 11px;
+              height: 11px;
+              border-radius: 50%;
+              background: #fff;
+              margin-top: -4px;
+              box-shadow: 0 0 2px rgba(0,0,0,0.5);
+            }
+            .vreedits-progress::-moz-range-track {
+              height: 3px;
+              border-radius: 2px;
+              background: rgba(255,255,255,0.3);
+            }
+            .vreedits-progress::-moz-range-progress {
+              height: 3px;
+              border-radius: 2px;
+              background: #fff;
+            }
+            .vreedits-progress::-moz-range-thumb {
+              width: 11px;
+              height: 11px;
+              border-radius: 50%;
+              background: #fff;
+              border: none;
+            }
+          `}</style>
+        </div>
+      )}
+
+      <div
+        style={{
+          position: "absolute", right: 10, bottom: 18, zIndex: 2,
+          display: "flex", flexDirection: "column", alignItems: "center", gap: 16,
+        }}
+      >
+        <div style={{ position: "relative", marginBottom: 6 }}>
+          <button
+            onClick={(e) => { e.stopPropagation(); onOpenProfile(post.author.id); }}
+            aria-label="View profile"
+            style={{ display: "block", background: "none", border: "none", padding: 0 }}
+          >
+            <Avatar user={post.author} size={42} />
+          </button>
+          {!isOwner && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onFollow(post); }}
+              aria-label={post.followedByMe ? "Unfollow" : "Follow"}
+              style={{
+                position: "absolute", left: "50%", bottom: -8, transform: "translateX(-50%)",
+                width: 20, height: 20, borderRadius: "50%",
+                background: post.followedByMe ? "var(--surface-2)" : "var(--accent)",
+                color: "white", display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 13, fontWeight: 700, border: "2px solid #000", lineHeight: 1, padding: 0,
+              }}
+            >
+              {post.followedByMe ? <Check size={11} /> : "+"}
+            </button>
+          )}
+        </div>
+
+        <button onClick={(e) => { e.stopPropagation(); onLike(post); }} aria-label="Like" style={{ background: "none", border: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+          <Heart size={26} color="white" fill={post.likedByMe ? "#ff4d67" : "none"} stroke={post.likedByMe ? "#ff4d67" : "white"} />
+          <span style={{ color: "white", fontSize: 12, fontWeight: 600 }}>{abbreviateCount(post.likeCount)}</span>
+        </button>
+        <button onClick={(e) => { e.stopPropagation(); onOpenComments(post); }} aria-label="Comments" style={{ background: "none", border: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+          <MessageCircle size={26} color="white" />
+          <span style={{ color: "white", fontSize: 12, fontWeight: 600 }}>{abbreviateCount(post.commentCount)}</span>
+        </button>
+        <button onClick={(e) => { e.stopPropagation(); onSave(post); }} aria-label="Save" style={{ background: "none", border: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+          <Bookmark size={24} color="white" fill={post.savedByMe ? "white" : "none"} />
+          <span style={{ color: "white", fontSize: 12, fontWeight: 600 }}>{abbreviateCount(post.saveCount || 0)}</span>
+        </button>
+        <button onClick={(e) => { e.stopPropagation(); onShare(post); }} aria-label="Share" style={{ background: "none", border: "none", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+          <Share2 size={24} color="white" />
+        </button>
+
+        {isVideo && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onOpenSound(soundKey); }}
+            aria-label="Open sound"
+            style={{ background: "none", border: "none", padding: 0 }}
+          >
+            <div
+              style={{
+                width: 36, height: 36, borderRadius: "50%",
+                background: "linear-gradient(135deg, #2a2a2a, #000)",
+                border: "2px solid rgba(255,255,255,0.25)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                animation: "vreedits-spin 5s linear infinite",
+                animationPlayState: isPaused ? "paused" : "running",
+              }}
+            >
+              <div style={{ width: 21, height: 21, borderRadius: "50%", overflow: "hidden" }}>
+                <Avatar user={post.author} size={21} />
+              </div>
+            </div>
+          </button>
+        )}
+
+        {/* Refresh + create post live at the bottom of this same icon
+            column, instead of floating over the middle of the video. */}
+        <button
+          onClick={(e) => { e.stopPropagation(); onRefresh(); }}
+          aria-label="Refresh feed"
+          style={{
+            width: 32, height: 32, borderRadius: "50%",
+            background: "rgba(255,255,255,0.15)", border: "none", color: "white",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}
+        >
+          <RotateCw size={14} className={refreshing ? "animate-spin" : ""} />
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); onCreate(); }}
+          aria-label="Create post"
+          style={{
+            width: 32, height: 32, borderRadius: 9,
+            background: "var(--accent)", border: "none", color: "white",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}
+        >
+          <Plus size={16} />
+        </button>
+
+        <style>{`@keyframes vreedits-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+      </div>
+
+      <div style={{ position: "absolute", left: 14, right: 100, bottom: 40, zIndex: 2 }}>
+        <button
+          onClick={(e) => { e.stopPropagation(); onOpenProfile(post.author.id); }}
+          className="flex flex-col items-start mb-1"
+          style={{ background: "none", border: "none", padding: 0, textAlign: "left" }}
+        >
+          <span className="text-base font-bold drop-shadow-md" style={{ color: "white", lineHeight: 1.2 }}>
+            {post.author.displayName || post.author.username}
+          </span>
+        </button>
+
+        {post.caption && (
+          <p className="text-sm drop-shadow-md" style={{ color: "white", overflowWrap: "anywhere", lineHeight: 1.4, marginTop: 2 }}>
+            {post.caption}
+          </p>
+        )}
+
+        {isVideo && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onOpenSound(soundKey); }}
+            aria-label="Open sound"
+            style={{ background: "none", border: "none", padding: 0, marginTop: 8, width: "100%", textAlign: "left" }}
+          >
+            <SoundMarquee text={soundLabel} avatarUser={post.soundOwner || post.author} />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function FeedClient({ user }) {
+  const router = useRouter();
+  const [posts, setPosts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [nextCursor, setNextCursor] = useState(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [commentsPost, setCommentsPost] = useState(null);
+  const [actionsPost, setActionsPost] = useState(null);
+  const wasPlayingBeforeActionsRef = useRef(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [useSound, setUseSound] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [muted, setMuted] = useState(true);
+  const [activeTab, setActiveTab] = useState("for-you");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [soundTarget, setSoundTarget] = useState(null);
+  const [mutedCreatorIds, setMutedCreatorIds] = useState(new Set());
+  const [notice, setNotice] = useState("");
+  const noticeTimerRef = useRef(null);
+  const overlayPausedRef = useRef([]);
+  const overlayDepthRef = useRef(0);
+  const hasInteractedRef = useRef(false);
+  const scrollRef = useRef(null);
+  const tabsRef = useRef(null);
+  const videoRefsMap = useRef(new Map());
+  const observerRef = useRef(null);
+
+  // Browsers only allow sound after a touch, so the first tap anywhere
+  // in the feed turns the sound on automatically.
+  function handleFirstTouch(e) {
+    if (hasInteractedRef.current) return;
+    if (e.target.closest && e.target.closest('[aria-label="Unmute"],[aria-label="Mute"]')) return;
+    hasInteractedRef.current = true;
+    setMuted(false);
+  }
+
+  function showNotice(text) {
+    setNotice(text);
+    if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+    noticeTimerRef.current = setTimeout(() => setNotice(""), 2200);
+  }
+
+  // Keeps the active tab in view in the tab row, so "For You" (the
+  // default) is visible on narrow phone screens.
+  useEffect(() => {
+    const row = tabsRef.current;
+    if (!row) return;
+    const active = row.querySelector('[data-tab-active="true"]');
+    if (!active) return;
+    const target = active.offsetLeft - (row.clientWidth - active.clientWidth) / 2;
+    row.scrollTo({ left: Math.max(0, target), behavior: "smooth" });
+  }, [activeTab]);
+
+  function handleLongPress(post) {
+    const video = videoRefsMap.current.get(post.id);
+    wasPlayingBeforeActionsRef.current = !!video && !video.paused;
+    video?.pause();
+    setActionsPost(post);
+  }
+
+  function handleCloseActionsSheet() {
+    const post = actionsPost;
+    setActionsPost(null);
+    if (post && wasPlayingBeforeActionsRef.current) {
+      videoRefsMap.current.get(post.id)?.play().catch(() => {});
+    }
+  }
+
+  // Pause the feed while a full-screen overlay is open and resume the same
+  // videos once every overlay is closed (overlays can stack).
+  function pauseFeedVideos() {
+    overlayDepthRef.current += 1;
+    if (overlayDepthRef.current > 1) return;
+    const ids = [];
+    videoRefsMap.current.forEach((video, id) => {
+      if (!video.paused) {
+        ids.push(id);
+        video.pause();
+      }
+    });
+    overlayPausedRef.current = ids;
+  }
+
+  function resumeFeedVideos() {
+    overlayDepthRef.current = Math.max(0, overlayDepthRef.current - 1);
+    if (overlayDepthRef.current > 0) return;
+    overlayPausedRef.current.forEach((id) => {
+      videoRefsMap.current.get(id)?.play().catch(() => {});
+    });
+    overlayPausedRef.current = [];
+  }
+
+  function openSearch() {
+    pauseFeedVideos();
+    setSearchOpen(true);
+  }
+
+  function closeSearch() {
+    setSearchOpen(false);
+    resumeFeedVideos();
+  }
+
+  function openSound(soundId) {
+    pauseFeedVideos();
+    setSoundTarget(soundId);
+  }
+
+  function closeSound() {
+    setSoundTarget(null);
+    resumeFeedVideos();
+  }
+
+  function openCreate() {
+    pauseFeedVideos();
+    setUseSound(null);
+    setCreateOpen(true);
+  }
+
+  function closeCreate() {
+    setCreateOpen(false);
+    setUseSound(null);
+    resumeFeedVideos();
+  }
+
+  // "Use this sound" from the sound screen: open the camera with that sound.
+  function handleUseSound(sound) {
+    pauseFeedVideos();
+    setSoundTarget(null);
+    resumeFeedVideos();
+    if (searchOpen) {
+      setSearchOpen(false);
+      resumeFeedVideos();
+    }
+    setUseSound(sound);
+    setCreateOpen(true);
+  }
+
+  const loadFeed = useCallback(async (cursor, tab) => {
+    const params = new URLSearchParams();
+    if (cursor) params.set("cursor", cursor);
+    params.set("tab", tab || activeTab);
+    const res = await fetch(`/api/feed?${params.toString()}`);
+    const data = await res.json();
+    if (res.ok) {
+      setPosts((prev) => (cursor ? [...prev, ...data.posts] : data.posts));
+      setNextCursor(data.nextCursor);
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    setLoading(true);
+    setPosts([]);
+    setNextCursor(null);
+    scrollRef.current?.scrollTo({ top: 0 });
+    loadFeed(null, activeTab).finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
+  const registerVideoRef = useCallback((postId, el) => {
+    if (el) videoRefsMap.current.set(postId, el);
+    else videoRefsMap.current.delete(postId);
+  }, []);
+
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+
+    observerRef.current?.disconnect();
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const postId = entry.target.getAttribute("data-post-id");
+          const video = videoRefsMap.current.get(postId);
+          if (!video) continue;
+
+          if (entry.isIntersecting && entry.intersectionRatio >= 0.6) {
+            if (overlayDepthRef.current > 0) continue;
+            video.currentTime = 0;
+            video.play().catch(() => {});
+          } else {
+            video.pause();
+          }
+        }
+      },
+      { root: container, threshold: [0, 0.6, 1] }
+    );
+
+    const cards = container.querySelectorAll("[data-post-id]");
+    cards.forEach((card) => observer.observe(card));
+    observerRef.current = observer;
+
+    return () => observer.disconnect();
+  }, [posts]);
+
+  useEffect(() => {
+    videoRefsMap.current.forEach((video) => {
+      video.muted = muted;
+    });
+  }, [muted]);
+
+  async function handleRefresh() {
+    setRefreshing(true);
+    scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+    await loadFeed(null, activeTab);
+    setRefreshing(false);
+  }
+
+  async function handleScroll() {
+    const el = scrollRef.current;
+    if (!el || loadingMore || !nextCursor) return;
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 200) {
+      setLoadingMore(true);
+      await loadFeed(nextCursor, activeTab);
+      setLoadingMore(false);
+    }
+  }
+
+  async function handleLike(post) {
+    setPosts((prev) =>
+      prev.map((p) =>
+        p.id === post.id
+          ? { ...p, likedByMe: !p.likedByMe, likeCount: p.likeCount + (p.likedByMe ? -1 : 1) }
+          : p
+      )
+    );
+    await fetch(`/api/feed/${post.id}/like`, { method: "POST" });
+  }
+
+  async function handleSave(post) {
+    setPosts((prev) => prev.map((p) => (p.id === post.id ? { ...p, savedByMe: !p.savedByMe } : p)));
+    await fetch(`/api/feed/${post.id}/save`, { method: "POST" });
+  }
+
+  async function handleFollow(post) {
+    const authorId = post.author.id;
+    const wasFollowing = post.followedByMe;
+
+    setPosts((prev) =>
+      prev.map((p) => (p.author.id === authorId ? { ...p, followedByMe: !wasFollowing } : p))
+    );
+
+    const res = await fetch(`/api/users/${authorId}/follow`, { method: "POST" });
+    if (!res.ok) {
+      setPosts((prev) =>
+        prev.map((p) => (p.author.id === authorId ? { ...p, followedByMe: wasFollowing } : p))
+      );
+    }
+  }
+
+  function handleDownload(post) {
+    if (!post.mediaUrl) return;
+    const ext = post.mediaType === "video" ? "webm" : "jpg";
+    const a = document.createElement("a");
+    a.href = post.mediaUrl;
+    a.download = `vreedits-${post.id}.${ext}`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  async function handleShare(post) {
+    const url = `${window.location.origin}/feed/${post.id}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: `${post.author.username}'s post`, url });
+      } catch {}
+    } else {
+      navigator.clipboard.writeText(url);
+    }
+  }
+
+  async function handleDeletePost(post) {
+    const confirmed = window.confirm("Delete this post? This can't be undone.");
+    if (!confirmed) return;
+    const res = await fetch(`/api/feed/${post.id}`, { method: "DELETE" });
+    if (res.ok) {
+      setPosts((prev) => prev.filter((p) => p.id !== post.id));
+    }
+  }
+
+  // Reports a specific post's content (not the person overall — that's the
+  // separate user-report flow in Inbox). Never removes the post from your
+  // own view; it just files the report.
+  async function handleReportPost(post, reason) {
+    const res = await fetch(`/api/feed/${post.id}/report`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason }),
+    });
+    return res.ok;
+  }
+
+  // Muting hides a creator's posts from your own feed without unfollowing
+  // them or blocking them — they're never notified either way. The server
+  // filters muted creators out of every feed fetch, so this client-side
+  // removal just makes the current session feel instant.
+  async function handleToggleMuteCreator(post) {
+    const authorId = post.author.id;
+    const wasMuted = mutedCreatorIds.has(authorId);
+
+    setMutedCreatorIds((prev) => {
+      const next = new Set(prev);
+      if (wasMuted) next.delete(authorId); else next.add(authorId);
+      return next;
+    });
+    if (!wasMuted) {
+      setPosts((prev) => prev.filter((p) => p.author.id !== authorId));
+    }
+
+    const res = await fetch(`/api/users/${authorId}/mute`, { method: "POST" });
+    if (!res.ok) {
+      setMutedCreatorIds((prev) => {
+        const next = new Set(prev);
+        if (wasMuted) next.add(authorId); else next.delete(authorId);
+        return next;
+      });
+    }
+  }
+
+  function handlePostCreated(newPost) {
+    // Drafts never appear in the feed.
+    if (newPost.isDraft) {
+      showNotice("Saved to drafts");
+      return;
+    }
+    // "Only me" posts live on your profile, not in the public feed.
+    if (newPost.isPrivate) return;
+    setPosts((prev) => [newPost, ...prev]);
+    scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function handleOpenProfile(userId) {
+    router.push(`/profile/${userId}`);
+  }
+
+  return (
+    <div
+      onPointerUpCapture={handleFirstTouch}
+      style={{
+        position: "relative", width: "100%", height: "100%", background: "#000",
+        display: "flex", flexDirection: "column",
+      }}
+    >
+      {/* Top bar sits ABOVE the video (its own row), so it never covers it.
+          It also clears the phone notch / status bar. */}
+      <div style={{ flexShrink: 0, background: "#000", position: "relative", zIndex: 10, paddingTop: "var(--safe-t)" }}>
+        <div className="flex items-center justify-between px-4" style={{ height: 44 }}>
+          <Link href="/profile" aria-label="My Profile" style={{ background: "none", border: "none", color: "white" }}>
+            <UserIcon size={22} />
+          </Link>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setMuted((m) => !m)}
+              aria-label={muted ? "Unmute" : "Mute"}
+              className="flex items-center gap-1.5"
+              style={{ background: "none", border: "none", color: "white" }}
+            >
+              {muted ? <VolumeX size={22} /> : <Volume2 size={22} />}
+              {muted && <span style={{ fontSize: 12, fontWeight: 600 }}>Tap to unmute</span>}
+            </button>
+            <button
+              onClick={openSearch}
+              aria-label="Search"
+              style={{ background: "none", border: "none", color: "white", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}
+            >
+              <GlossIcon name="search" size={34} fallback={Search} />
+            </button>
+          </div>
+        </div>
+
+        {/* Tab row: centers when everything fits, starts from the left
+            (scrollable) when it doesn't, so no tab is ever cut off. */}
+        <div
+          ref={tabsRef}
+          className="pb-2"
+          style={{
+            display: "flex", overflowX: "auto", whiteSpace: "nowrap",
+            scrollbarWidth: "none", msOverflowStyle: "none",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 20, margin: "0 auto", padding: "0 16px", flexShrink: 0 }}>
+            {FEED_TABS.map((t) => (
+              <button
+                key={t.id}
+                data-tab-active={activeTab === t.id ? "true" : "false"}
+                onClick={() => setActiveTab(t.id)}
+                style={{
+                  background: "none", border: "none", padding: "4px 0", flexShrink: 0,
+                  fontSize: 14, fontWeight: activeTab === t.id ? 700 : 500,
+                  color: activeTab === t.id ? "white" : "rgba(255,255,255,0.65)",
+                  borderBottom: activeTab === t.id ? "2px solid white" : "2px solid transparent",
+                }}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Video area: fills whatever space is left below the top bar. */}
+      <div style={{ position: "relative", flex: 1, minHeight: 0 }}>
+        {loading ? (
+          <div className="flex items-center justify-center" style={{ position: "absolute", inset: 0, color: "white" }}>
+            <Loader2 size={26} className="animate-spin" />
+          </div>
+        ) : posts.length === 0 ? (
+          <div className="flex flex-col items-center justify-center px-6 text-center" style={{ position: "absolute", inset: 0, color: "white" }}>
+            <p className="text-sm mb-4" style={{ color: "rgba(255,255,255,0.7)" }}>No posts yet — be the first to share something.</p>
+            <button onClick={openCreate} className="btn-primary" style={{ maxWidth: 160 }}>
+              <Plus size={14} /> Create Post
+            </button>
+          </div>
+        ) : (
+          <div
+            ref={scrollRef}
+            onScroll={handleScroll}
+            className="v-feed"
+            style={{ position: "absolute", inset: 0 }}
+          >
+            {posts.map((post) => (
+              <PostCard
+                key={post.id}
+                post={post}
+                isOwner={user?.id === post.author.id}
+                muted={muted}
+                onLike={handleLike}
+                onSave={handleSave}
+                onShare={handleShare}
+                onFollow={handleFollow}
+                onOpenComments={setCommentsPost}
+                onLongPress={handleLongPress}
+                onOpenProfile={handleOpenProfile}
+                onOpenSound={openSound}
+                registerVideoRef={registerVideoRef}
+                onRefresh={handleRefresh}
+                refreshing={refreshing}
+                onCreate={openCreate}
+              />
+            ))}
+            {loadingMore && (
+              <div className="flex items-center justify-center" style={{ height: 60, color: "white" }}>
+                <Loader2 size={18} className="animate-spin" />
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {notice && (
+        <div
+          style={{
+            position: "fixed", left: "50%", top: "calc(var(--safe-t) + 90px)", transform: "translateX(-50%)", zIndex: 400,
+            background: "rgba(0,0,0,0.8)", color: "white", fontSize: 13, fontWeight: 600,
+            padding: "8px 16px", borderRadius: 16, pointerEvents: "none",
+          }}
+        >
+          {notice}
+        </div>
+      )}
+
+      {commentsPost && (
+        <CommentsSheet
+          postId={commentsPost.id}
+          postAuthorId={commentsPost.author.id}
+          currentUserId={user?.id}
+          open={!!commentsPost}
+          onClose={() => setCommentsPost(null)}
+        />
+      )}
+      {actionsPost && (
+        <PostActionsSheet
+          post={actionsPost}
+          open={!!actionsPost}
+          isOwner={user?.id === actionsPost.author.id}
+          muted={mutedCreatorIds.has(actionsPost.author.id)}
+          onClose={handleCloseActionsSheet}
+          onDownload={handleDownload}
+          onShare={handleShare}
+          onDelete={handleDeletePost}
+          onReport={handleReportPost}
+          onToggleMute={handleToggleMuteCreator}
+        />
+      )}
+      {soundTarget && (
+        <SoundSheet
+          soundId={soundTarget}
+          onClose={closeSound}
+          onOpenProfile={handleOpenProfile}
+          onUseSound={handleUseSound}
+        />
+      )}
+      {searchOpen && (
+        <SearchOverlay onClose={closeSearch} onOpenProfile={handleOpenProfile} onOpenSound={openSound} />
+      )}
+      <CreatePostModal
+        open={createOpen}
+        onClose={closeCreate}
+        onCreated={handlePostCreated}
+        user={user}
+        initialSound={useSound}
+      />
+    </div>
+  );
+}
 
