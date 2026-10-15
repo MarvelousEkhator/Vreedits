@@ -114,7 +114,7 @@ function PostViewer({ post, onClose }) {
     >
       <div
         className="flex items-center justify-between px-4"
-        style={{ height: 56, flexShrink: 0, paddingTop: "env(safe-area-inset-top, 0px)" }}
+        style={{ minHeight: 56, flexShrink: 0, paddingTop: "var(--safe-t)" }}
       >
         <div className="flex items-center gap-3" style={{ color: "white" }}>
           <div className="flex items-center gap-1.5">
@@ -214,11 +214,11 @@ function UserListSheet({ title, open, onClose, users, loading, error }) {
       />
       <div
         style={{
-          position: "fixed", left: 0, right: 0, bottom: 0, maxHeight: "75vh",
+          position: "fixed", left: 0, right: 0, bottom: 0, maxHeight: "calc(var(--app-h) * 0.75)",
           background: "var(--surface)", borderRadius: "20px 20px 0 0",
           transform: open ? "translateY(0)" : "translateY(100%)",
           transition: "transform 0.28s cubic-bezier(0.22,1,0.36,1)", zIndex: 201,
-          display: "flex", flexDirection: "column",
+          display: "flex", flexDirection: "column", paddingBottom: "var(--safe-b)",
         }}
       >
         <div className="flex items-center justify-between p-4" style={{ borderBottom: "1px solid var(--border)" }}>
@@ -568,7 +568,7 @@ export default function ProfileClient({ profileId }) {
       {notice && (
         <div
           style={{
-            position: "fixed", left: "50%", top: 90, transform: "translateX(-50%)", zIndex: 400,
+            position: "fixed", left: "50%", top: "calc(var(--safe-t) + 90px)", transform: "translateX(-50%)", zIndex: 400,
             background: "rgba(0,0,0,0.8)", color: "white", fontSize: 13, fontWeight: 600,
             padding: "8px 16px", borderRadius: 16, pointerEvents: "none",
           }}
