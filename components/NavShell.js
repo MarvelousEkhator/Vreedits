@@ -12,42 +12,71 @@ import EmailVerifyBanner from "@/components/EmailVerifyBanner";
 import { LanguageProvider, useLanguage } from "@/components/LanguageProvider";
 import { isTabRoot, getBackFallback } from "@/lib/backRoutes";
 import {
-  Menu, X, ArrowLeft, Home, Bot, GraduationCap, Briefcase, PenLine, Plane, Wrench,
-  Users, Heart, History, FolderOpen, Bell, Crown, Settings, User,
-  HelpCircle, Phone, LogOut, Lock, MessageCircle,
+  Menu, X, ArrowLeft, Home, Bot, GraduationCap, PenLine, Dumbbell,
+  Users, Heart, History, Bell, Crown, Settings, User,
+  LogOut, Lock, MessageCircle,
 } from "lucide-react";
 
+// Side menu (opens from the hamburger). Business, Travel, Home Tools and
+// Collections have been moved out as Vreedits becomes a study app.
 const NAV_ITEMS = [
-  { id: "home", labelKey: "nav.home", href: "/feed", icon: Home, gloss: "home", available: true },
+  { id: "home", labelKey: "nav.home", href: "/dashboard", icon: Home, gloss: "home", available: true },
   { id: "inbox", labelKey: "nav.inbox", href: "/inbox", icon: MessageCircle, gloss: "inbox", available: true },
   { id: "ai-tools", labelKey: "nav.aiTools", href: "/ai-tools", icon: Bot, gloss: "ai-tools", available: true },
   { id: "school", labelKey: "nav.school", href: "/tools/school", icon: GraduationCap, gloss: "school", available: true },
-  { id: "business", labelKey: "nav.business", href: "/tools/business", icon: Briefcase, gloss: "business", available: true },
   { id: "writing", labelKey: "nav.writing", href: "/tools/writing", icon: PenLine, gloss: "writing", available: true },
-  { id: "travel", labelKey: "nav.travel", href: "/tools/travel", icon: Plane, gloss: "travel", available: true },
-  { id: "home-tools", labelKey: "nav.homeTools", href: "/tools/home", icon: Wrench, gloss: "home-tools", available: true },
+  { id: "mind-gym", labelKey: "nav.mindGym", fallbackLabel: "Mind Gym", href: "/mind-gym", icon: Dumbbell, gloss: "mind-gym", available: true },
   { id: "communities", labelKey: "nav.communities", href: "/communities", icon: Users, gloss: "communities", available: true },
   { id: "favorites", labelKey: "nav.favorites", href: "/favourites", icon: Heart, gloss: "favorites", available: true },
   { id: "history", labelKey: "nav.history", href: "/history", icon: History, gloss: "history", available: true },
-  { id: "collections", labelKey: "nav.collections", href: "/collections", icon: FolderOpen, gloss: "collections", available: true },
   { id: "notifications", labelKey: "nav.notifications", href: "/notifications", icon: Bell, gloss: "notifications", available: true },
   { id: "premium", labelKey: "nav.premium", href: "/premium", icon: Crown, gloss: "premium", available: false },
   { id: "settings", labelKey: "nav.settings", href: "/settings", icon: Settings, gloss: "settings", available: true },
   { id: "profile", labelKey: "nav.profile", href: "/profile", icon: User, gloss: "profile", available: true },
 ];
 
-// Bottom tab bar (mobile only). The hamburger menu still holds every section.
-// Uses the same glossy icons as the hamburger menu.
+// The five primary tabs. "match" lists every route that belongs to a tab,
+// so the right tab lights up on its sub-pages too.
 const TAB_ITEMS = [
-  { id: "home", labelKey: "nav.home", href: "/feed", icon: Home, gloss: "home" },
-  { id: "inbox", labelKey: "nav.inbox", href: "/inbox", icon: MessageCircle, gloss: "inbox" },
-  { id: "ai-tools", labelKey: "nav.aiTools", href: "/ai-tools", icon: Bot, gloss: "ai-tools" },
-  { id: "communities", labelKey: "nav.communities", href: "/communities", icon: Users, gloss: "communities" },
-  { id: "profile", labelKey: "nav.profile", href: "/profile", icon: User, gloss: "profile" },
+  {
+    id: "home", labelKey: "nav.home", fallbackLabel: "Home", href: "/dashboard",
+    icon: Home, gloss: "home", match: ["/dashboard"],
+  },
+  {
+    id: "network", labelKey: "nav.network", fallbackLabel: "Network", href: "/communities",
+    icon: Users, gloss: "communities", match: ["/communities", "/inbox"],
+  },
+  {
+    id: "syna", labelKey: "nav.synaAi", fallbackLabel: "Syna AI", href: "/ai-tools",
+    icon: Bot, gloss: "ai-tools", match: ["/ai-tools", "/tools/school", "/tools/writing"],
+  },
+  {
+    id: "mind-gym", labelKey: "nav.mindGym", fallbackLabel: "Mind Gym", href: "/mind-gym",
+    icon: Dumbbell, gloss: "mind-gym", match: ["/mind-gym"],
+  },
+  {
+    id: "profile", labelKey: "nav.profile", fallbackLabel: "Profile", fullLabel: "Profile & Control", href: "/profile",
+    icon: User, gloss: "profile",
+    match: ["/profile", "/settings", "/favourites", "/history", "/notifications", "/premium"],
+  },
 ];
+
+// Pages that behave like a home tab (hamburger, no back arrow). lib/backRoutes.js
+// decides for older pages; this list covers the new ones without touching it.
+const EXTRA_TAB_ROOTS = ["/dashboard", "/mind-gym", "/communities", "/inbox", "/ai-tools", "/profile"];
+
+function matchesTab(pathname, tab) {
+  return tab.match.some((p) => pathname === p || pathname.startsWith(p + "/"));
+}
 
 function NavShellInner({ children, user }) {
   const { t } = useLanguage();
+  // Falls back to plain English when a translation key doesn't exist yet.
+  const tr = (key, fallback) => {
+    const v = t(key);
+    return v && v !== key ? v : fallback;
+  };
+
   const [menuOpen, setMenuOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const router = useRouter();
@@ -65,16 +94,13 @@ function NavShellInner({ children, user }) {
     /^\/inbox\/[^/]+/.test(pathname) ||
     pathname.startsWith("/ai-tools/chat");
 
-  // The main feed draws its own header on top of the video (TikTok style),
-  // so the shared Vreedits bar is hidden there to give the post the whole screen.
+  // The old video feed draws its own header, so the shared bar stays hidden there.
   const hideTopBar = pathname === "/feed";
 
-  // Whether this page gets a back arrow (any sub-page) instead of the
-  // hamburger menu (home tabs only). This is the ONE thing that decides
-  // the top-left button everywhere in the app — no other file needs to
-  // import or render anything for this to work on a new page. Add a rule
-  // to lib/backRoutes.js if a new page needs a specific "back to" target.
-  const showBack = !isTabRoot(pathname);
+  // Network tab has two sides: Communities and Messages.
+  const showNetworkSwitch = pathname === "/communities" || pathname === "/inbox";
+
+  const showBack = !isTabRoot(pathname) && !EXTRA_TAB_ROOTS.includes(pathname);
   const backHref = getBackFallback(pathname);
 
   useEffect(() => {
@@ -99,7 +125,7 @@ function NavShellInner({ children, user }) {
     return () => document.removeEventListener("keydown", handleKey);
   }, []);
 
-  // Lets a page that draws its own header (the feed) open the side menu.
+  // Lets a page that draws its own header open the side menu.
   useEffect(() => {
     function onToggle() {
       setMenuOpen((v) => !v);
@@ -109,10 +135,8 @@ function NavShellInner({ children, user }) {
     return () => window.removeEventListener("vreedits:toggle-menu", onToggle);
   }, [router]);
 
-  // The hamburger button isn't rendered while showBack is true, so if the
-  // menu was left open before navigating into a sub-page, close it here —
-  // otherwise there'd be no way to close it (the outside-click handler
-  // above needs hamburgerRef, which won't exist on this page).
+  // The hamburger isn't rendered while showBack is true, so close the menu
+  // if it was left open before navigating into a sub-page.
   useEffect(() => {
     if (showBack) setMenuOpen(false);
   }, [showBack]);
@@ -129,11 +153,6 @@ function NavShellInner({ children, user }) {
     router.refresh();
   }
 
-  // Forces Next.js to throw away whatever cached render it has for the
-  // current route and fetch fresh server data before showing the menu —
-  // this is what actually guarantees up-to-date name/avatar here, since
-  // relying on cache-timing config alone wasn't reliably catching every
-  // navigation path.
   function toggleMenu() {
     setMenuOpen((v) => !v);
     router.refresh();
@@ -144,19 +163,15 @@ function NavShellInner({ children, user }) {
     router.refresh();
   }
 
-  // Guests open the sign-up form from here (GuestGate listens for this).
   function openGuestSignup() {
     setProfileMenuOpen(false);
     setMenuOpen(false);
     window.dispatchEvent(new Event("vreedits:open-signup"));
-  }
-
-  return (
+  }return (
     <div className="v-app-shell">
       <PresenceHeartbeat />
       <FeedbackPrompt />
       <style>{`
-        /* Slim header: more of the screen goes to the page itself. */
         .vreedits-topbar {
           display: flex; align-items: center; justify-content: space-between;
           padding: calc(env(safe-area-inset-top, 0px) + 7px) 14px 7px;
@@ -164,6 +179,7 @@ function NavShellInner({ children, user }) {
           backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
           position: relative; z-index: 30; flex-shrink: 0;
         }
+        .vreedits-topbar-right { display: flex; align-items: center; gap: 8px; }
         .vreedits-hamburger {
           width: 38px; height: 38px; border-radius: 11px; border: 1px solid var(--border);
           background: var(--surface-2); display: flex; align-items: center; justify-content: center;
@@ -177,6 +193,19 @@ function NavShellInner({ children, user }) {
           color: var(--accent);
           letter-spacing: 0.3px;
         }
+
+        /* Communities | Messages switch under the top bar */
+        .vreedits-netswitch {
+          display: flex; gap: 4px; padding: 4px; margin: 10px 14px 0; flex-shrink: 0;
+          border: 1px solid var(--border); border-radius: 14px; background: var(--surface-2);
+        }
+        .vreedits-netswitch a {
+          flex: 1; text-align: center; padding: 8px 0; border-radius: 10px;
+          font-size: 13.5px; font-weight: 600; color: var(--text-muted); text-decoration: none;
+          transition: background 0.15s ease, color 0.15s ease;
+        }
+        .vreedits-netswitch a.active { background: var(--surface); color: var(--text); box-shadow: 0 1px 0 var(--border); }
+
         .vreedits-overlay {
           position: fixed; inset: 0; background: rgba(0,0,0,0.5); opacity: 0; pointer-events: none;
           transition: opacity 0.25s ease; z-index: 40;
@@ -190,8 +219,6 @@ function NavShellInner({ children, user }) {
           display: flex; flex-direction: column; overflow-y: auto;
         }
         .vreedits-menu.open { transform: translateX(0); }
-        /* z-index keeps the X above the profile block, which stretches across
-           the full width and used to sit on top of it, swallowing the taps. */
         .vreedits-menu-close {
           position: absolute; top: 12px; right: 12px; z-index: 5;
           width: 40px; height: 40px; border-radius: 12px;
@@ -242,7 +269,7 @@ function NavShellInner({ children, user }) {
         .vreedits-lock-badge { margin-left: auto; }
         .vreedits-content { flex: 1; min-height: 0; overflow-y: auto; }
 
-        /* ───────── Bottom tab bar (mobile) — compact ───────── */
+        /* ───────── Bottom tab bar ───────── */
         .vreedits-tabbar {
           display: flex; align-items: stretch; flex-shrink: 0; position: relative; z-index: 30;
           padding: 3px 4px calc(3px + env(safe-area-inset-bottom, 0px));
@@ -266,7 +293,12 @@ function NavShellInner({ children, user }) {
           background: var(--accent-soft); opacity: 1; transform: translateY(-1px) scale(1.06);
         }
         .vreedits-tab-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        @media (min-width: 1024px) { .vreedits-tabbar { display: none; } }
+
+        /* On desktop the tabs sit in a slim centred bar instead of stretching edge to edge. */
+        @media (min-width: 1024px) {
+          .vreedits-tabbar { justify-content: center; gap: 12px; }
+          .vreedits-tab { flex: 0 0 auto; width: 104px; }
+        }
       `}</style>
 
       {!hideTopBar && (
@@ -285,7 +317,23 @@ function NavShellInner({ children, user }) {
             </button>
           )}
           <span className="vreedits-brand">Vreedits</span>
-          <ThemeToggle />
+          <div className="vreedits-topbar-right">
+            <Link href="/notifications" className="vreedits-hamburger tappable" aria-label="Notifications">
+              <Bell size={18} />
+            </Link>
+            <ThemeToggle />
+          </div>
+        </div>
+      )}
+
+      {showNetworkSwitch && (
+        <div className="vreedits-netswitch" role="tablist" aria-label="Network">
+          <Link href="/communities" className={pathname === "/communities" ? "active" : ""} role="tab" aria-selected={pathname === "/communities"}>
+            {tr("nav.communities", "Communities")}
+          </Link>
+          <Link href="/inbox" className={pathname === "/inbox" ? "active" : ""} role="tab" aria-selected={pathname === "/inbox"}>
+            {tr("nav.inbox", "Messages")}
+          </Link>
         </div>
       )}
 
@@ -348,11 +396,12 @@ function NavShellInner({ children, user }) {
         <div className="vreedits-nav-scroll">
           {NAV_ITEMS.map((item) => {
             const isActive = isItemActive(item);
+            const label = tr(item.labelKey, item.fallbackLabel || item.labelKey);
             if (!item.available) {
               return (
                 <div key={item.id} className="vreedits-nav-item locked" title={t("common.comingSoon")}>
                   <GlossIcon name={item.gloss} size={38} fallback={item.icon} />
-                  {t(item.labelKey)}
+                  {label}
                   <Lock size={14} className="vreedits-lock-badge" />
                 </div>
               );
@@ -365,7 +414,7 @@ function NavShellInner({ children, user }) {
                 onClick={() => setMenuOpen(false)}
               >
                 <GlossIcon name={item.gloss} size={38} fallback={item.icon} />
-                {t(item.labelKey)}
+                {label}
               </Link>
             );
           })}
@@ -381,18 +430,20 @@ function NavShellInner({ children, user }) {
       {!hideTabBar && (
         <nav className="vreedits-tabbar" aria-label="Main">
           {TAB_ITEMS.map((item) => {
-            const active = isItemActive(item);
+            const active = matchesTab(pathname, item);
+            const label = tr(item.labelKey, item.fallbackLabel);
             return (
               <Link
                 key={item.id}
                 href={item.href}
                 className={`vreedits-tab ${active ? "active" : ""}`}
                 aria-current={active ? "page" : undefined}
+                aria-label={item.fullLabel || label}
               >
                 <span className="vreedits-tab-icon">
                   <GlossIcon name={item.gloss} size={30} fallback={item.icon} />
                 </span>
-                <span className="vreedits-tab-label">{t(item.labelKey)}</span>
+                <span className="vreedits-tab-label">{label}</span>
               </Link>
             );
           })}
