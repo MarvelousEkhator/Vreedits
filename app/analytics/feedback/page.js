@@ -1,84 +1,234 @@
-// app/analytics/feedback/page.js  ->  yoursite.com/analytics/feedback  (owner only)
+// app/analytics/page.js  ->  yoursite.com/analytics  (owner only)
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import crypto from "crypto";
-import { prisma } from "@/lib/prisma";
-import { pool } from "../../../lib/analytics";
-import { ensureFeedbackTable } from "@/lib/feedback";
+import { pool, ensureTable } from "../../lib/analytics";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Feedback", robots: { index: false, follow: false } };
+export const metadata = { title: "Analytics", robots: { index: false, follow: false } };
 
-/* ---------- owner-only gate (same login as /analytics) ---------- */
+/* ---------- owner-only gate (ANALYTICS_SECRET env var) ---------- */
 
 const COOKIE = "vre_owner";
 const sha = (s) => crypto.createHash("sha256").update(s).digest();
 const safeEqual = (a, b) => crypto.timingSafeEqual(sha(a), sha(b));
 const token = (secret) => sha("vreedits-owner:" + secret).toString("hex");
 
-/* ---------- data ---------- */
-
-// Guess the profile-picture field so this works with your User model.
-const avatarOf = (u) =>
-  u?.avatarUrl || u?.avatar || u?.image || u?.profilePicture || u?.profileImage || u?.photoUrl || u?.pfp || null;
-
-async function load() {
-  await ensureFeedbackTable();
-  const [list, stats] = await Promise.all([
-    pool.query(
-      `SELECT id, user_id, username, display_name, rating, message, source, created_at
-       FROM feedback ORDER BY created_at DESC LIMIT 200`
-    ),
-    pool.query(`SELECT rating, count(*)::int AS c FROM feedback GROUP BY rating`),
-  ]);
-
-  const rows = list.rows;
-  const ids = [...new Set(rows.map((r) => r.user_id))];
-  let users = [];
-  if (ids.length) {
-    try {
-      users = await prisma.user.findMany({ where: { id: { in: ids } } });
-    } catch {
-      try {
-        const nums = ids.map(Number).filter(Number.isFinite);
-        users = await prisma.user.findMany({ where: { id: { in: nums } } });
-      } catch {
-        users = [];
-      }
-    }
+async function login(formData) {
+  "use server";
+  const secret = process.env.ANALYTICS_SECRET;
+  const attempt = String(formData.get("key") || "");
+  if (secret && safeEqual(attempt, secret)) {
+    (await cookies()).set(COOKIE, token(secret), {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      path: "/analytics",
+      maxAge: 60 * 60 * 24 * 30,
+    });
+    redirect("/analytics");
   }
-  const byId = new Map(users.map((u) => [String(u.id), u]));
-
-  const dist = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-  let total = 0;
-  let sum = 0;
-  for (const s of stats.rows) {
-    dist[s.rating] = s.c;
-    total += s.c;
-    sum += s.rating * s.c;
-  }
-  return { rows, byId, dist, total, avg: total ? sum / total : 0 };
+  await new Promise((r) => setTimeout(r, 800));
+  redirect("/analytics?bad=1");
 }
 
-const stars = (n) => "★".repeat(n) + "☆".repeat(5 - n);
-const when = (d) =>
-  new Date(d).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }) + " UTC";
+async function logout() {
+  "use server";
+  (await cookies()).set(COOKIE, "", { path: "/analytics", maxAge: 0 });
+  redirect("/analytics");
+}
+
+/* ---------- data ---------- */
+
+const VIEWS = {
+  daily: { unit: "day", span: "30 days", step: "1 day" },
+  weekly: { unit: "week", span: "12 weeks", step: "1 week" },
+  monthly: { unit: "month", span: "12 months", step: "1 month" },
+};
+
+async function load(view) {
+  await ensureTable();
+  const v = VIEWS[view];
+  const q = (text, params) => pool.query(text, params).then((r) => r.rows);
+
+  const [kpi, traffic, sessions, back, funnel, sources, features, countries] = await Promise.all([
+    q(`SELECT
+         count(DISTINCT visitor_id) AS visitors,
+         count(DISTINCT visitor_id) FILTER (WHERE ts > now() - interval '5 minutes') AS active,
+         count(DISTINCT session_id) FILTER (WHERE is_guest) AS guest_sessions,
+         count(DISTINCT visitor_id) FILTER (WHERE type = 'signup') AS signups
+       FROM analytics_events`),
+
+    q(
+      `SELECT b.bucket, coalesce(t.visitors, 0) AS visitors, coalesce(t.sessions, 0) AS sessions
+       FROM generate_series(
+              date_trunc($1::text, now() - $2::interval),
+              date_trunc($1::text, now()),
+              $3::interval
+            ) AS b(bucket)
+       LEFT JOIN (
+         SELECT date_trunc($1::text, ts) AS bucket,
+                count(DISTINCT visitor_id) AS visitors,
+                count(DISTINCT session_id) AS sessions
+         FROM analytics_events
+         WHERE type = 'pageview' AND ts >= date_trunc($1::text, now() - $2::interval)
+         GROUP BY 1
+       ) t ON t.bucket = b.bucket
+       ORDER BY b.bucket DESC`,
+      [v.unit, v.span, v.step]
+    ),
+
+    q(`WITH s AS (
+         SELECT session_id,
+                bool_or(is_guest) AS guest,
+                count(*) FILTER (WHERE type <> 'guest_start') AS n,
+                extract(epoch FROM max(ts) - min(ts)) AS secs
+         FROM analytics_events GROUP BY session_id
+       )
+       SELECT
+         count(*) AS sessions,
+         count(*) FILTER (WHERE guest) AS guest_sessions,
+         count(*) FILTER (WHERE guest AND n = 1) AS guest_bounced,
+         coalesce(avg(secs) FILTER (WHERE guest AND n > 1), 0) AS guest_avg_secs
+       FROM s`),
+
+    q(`WITH first AS (
+         SELECT visitor_id, min(ts)::date AS d0
+         FROM analytics_events WHERE type = 'pageview' GROUP BY visitor_id
+       ), r AS (
+         SELECT f.visitor_id, f.d0,
+           EXISTS (SELECT 1 FROM analytics_events e
+                   WHERE e.visitor_id = f.visitor_id AND e.type = 'pageview' AND e.ts::date > f.d0) AS ever,
+           EXISTS (SELECT 1 FROM analytics_events e
+                   WHERE e.visitor_id = f.visitor_id AND e.type = 'pageview' AND e.ts::date = f.d0 + 1) AS d1,
+           EXISTS (SELECT 1 FROM analytics_events e
+                   WHERE e.visitor_id = f.visitor_id AND e.type = 'pageview'
+                     AND e.ts::date BETWEEN f.d0 + 1 AND f.d0 + 7) AS w1
+         FROM first f
+       )
+       SELECT
+         count(*) FILTER (WHERE ever) AS returning,
+         count(*) FILTER (WHERE d0 < current_date) AS d1_cohort,
+         count(*) FILTER (WHERE d0 < current_date AND d1) AS d1_back,
+         count(*) FILTER (WHERE d0 <= current_date - 7) AS w1_cohort,
+         count(*) FILTER (WHERE d0 <= current_date - 7 AND w1) AS w1_back
+       FROM r`),
+
+    q(`WITH g AS (
+         SELECT visitor_id, min(ts) AS t0 FROM analytics_events WHERE is_guest GROUP BY visitor_id
+       )
+       SELECT
+         count(*) AS guests,
+         count(*) FILTER (WHERE EXISTS (SELECT 1 FROM analytics_events e
+             WHERE e.visitor_id = g.visitor_id AND e.type = 'signup' AND e.ts > g.t0)) AS to_signup,
+         count(*) FILTER (WHERE EXISTS (SELECT 1 FROM analytics_events e
+             WHERE e.visitor_id = g.visitor_id AND e.type = 'login' AND e.ts > g.t0)) AS to_login,
+         count(*) FILTER (WHERE EXISTS (SELECT 1 FROM analytics_events e
+             WHERE e.visitor_id = g.visitor_id AND e.type IN ('signup', 'login') AND e.ts > g.t0)) AS to_either
+       FROM g`),
+
+    q(`WITH s AS (
+         SELECT session_id,
+                bool_or(is_guest) AS guest,
+                (array_agg(source ORDER BY ts))[1] AS source
+         FROM analytics_events GROUP BY session_id
+       )
+       SELECT coalesce(source, 'direct') AS source,
+              count(*) AS sessions,
+              count(*) FILTER (WHERE guest) AS guest_sessions
+       FROM s GROUP BY 1 ORDER BY 2 DESC`),
+
+    q(`SELECT name, count(*) AS uses, count(DISTINCT visitor_id) AS visitors
+       FROM analytics_events
+       WHERE name IS NOT NULL AND type IN ('pageview', 'feature')
+       GROUP BY name ORDER BY uses DESC LIMIT 20`),
+
+    q(`SELECT coalesce(country, 'Unknown') AS country, count(DISTINCT visitor_id) AS visitors
+       FROM analytics_events GROUP BY 1 ORDER BY 2 DESC LIMIT 12`),
+  ]);
+
+  return { kpi: kpi[0], traffic, sessions: sessions[0], back: back[0], funnel: funnel[0], sources, features, countries };
+}
+
+/* ---------- formatting ---------- */
+
+const n = (x) => Number(x || 0);
+const pct = (a, b) => (n(b) ? `${Math.round((n(a) / n(b)) * 100)}%` : "–");
+const dur = (s) => {
+  s = Math.round(n(s));
+  if (s < 60) return `${s}s`;
+  return `${Math.floor(s / 60)}m ${s % 60}s`;
+};
+
+const FEATURE_LABELS = {
+  syna: "Syna AI",
+  community: "Community",
+  feed: "Feed",
+  coding_room: "Coding Room",
+  ai_tools: "AI Tools",
+  school: "School",
+};
+const featureLabel = (k) =>
+  FEATURE_LABELS[k] || k.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
+
+const SOURCE_LABELS = { linkedin: "LinkedIn", direct: "Direct link", search: "Search", other: "Other" };
+
+function countryName(code) {
+  if (!code || code === "Unknown") return "Unknown";
+  try {
+    return new Intl.DisplayNames(["en"], { type: "region" }).of(code) || code;
+  } catch {
+    return code;
+  }
+}
+
+function bucketLabel(d, view) {
+  const date = new Date(d);
+  if (view === "monthly") return date.toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
+  const day = date.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  return view === "weekly" ? `Week of ${day}` : day;
+}
 
 /* ---------- UI ---------- */
 
-function Shell({ children }) {
+function Rows({ items, tone }) {
+  const max = Math.max(1, ...items.map((i) => i.value));
   return (
-    <div className="fv">
+    <div>
+      {items.map((i) => (
+        <div className="va-row" key={i.label}>
+          <span className="va-name">{i.label}</span>
+          <span className="va-bar">
+            <i
+              className={tone === "guest" ? "guest" : ""}
+              style={{ width: `${i.value ? Math.max(2, (i.value / max) * 100) : 0}%` }}
+            />
+          </span>
+          <span className="va-val">{i.note}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Shell({ children, signedIn }) {
+  return (
+    <div className="va">
       <style>{CSS}</style>
-      <div className="fv-wrap">
-        <header className="fv-head">
+      <div className="va-wrap">
+        <header className="va-head">
           <div>
-            <h1>Feedback</h1>
-            <p className="fv-sub">Only visible to you</p>
+            <h1>Vreedits analytics</h1>
+            <p className="va-sub">Only visible to you</p>
           </div>
-          <a className="fv-btn" href="/analytics">
-            ← Analytics
-          </a>
+          {signedIn && (
+            <div className="va-actions">
+              <a className="va-btn" href="/analytics/feedback">Feedback</a>
+              <form action={logout}>
+                <button className="va-btn">Sign out</button>
+              </form>
+            </div>
+          )}
         </header>
         {children}
       </div>
@@ -86,111 +236,190 @@ function Shell({ children }) {
   );
 }
 
-export default async function Page() {
+function Gate({ configured, bad }) {
+  return (
+    <Shell>
+      {configured ? (
+        <form action={login} className="va-gate">
+          <label htmlFor="key">Owner key</label>
+          <input id="key" name="key" type="password" autoComplete="current-password" required />
+          {bad && <p className="va-err">That key didn't match.</p>}
+          <button className="va-btn solid">Open dashboard</button>
+        </form>
+      ) : (
+        <p className="va-err">
+          Add an ANALYTICS_SECRET environment variable in Render, redeploy, then reload this page.
+        </p>
+      )}
+    </Shell>
+  );
+}
+
+export default async function Page({ searchParams }) {
+  const sp = (await searchParams) || {};
   const secret = process.env.ANALYTICS_SECRET;
   const jar = await cookies();
   const authed = Boolean(secret) && safeEqual(jar.get(COOKIE)?.value || "", token(secret));
-  if (!authed) redirect("/analytics"); // sign in there, then come back
+  if (!authed) return <Gate configured={Boolean(secret)} bad={sp.bad === "1"} />;
 
+  const view = VIEWS[sp.view] ? sp.view : "daily";
   let d;
   try {
-    d = await load();
+    d = await load(view);
   } catch (e) {
     return (
-      <Shell>
-        <p className="fv-err">Couldn't load feedback: {String(e?.message || e)}</p>
+      <Shell signedIn>
+        <p className="va-err">Couldn't load data: {String(e?.message || e)}</p>
       </Shell>
     );
   }
 
-  if (d.total === 0) {
+  const k = d.kpi;
+  const f = d.funnel;
+  const s = d.sessions;
+  const b = d.back;
+  const maxTraffic = Math.max(1, ...d.traffic.map((t) => n(t.visitors)));
+
+  if (n(k.visitors) === 0) {
     return (
-      <Shell>
-        <p>No feedback yet. It shows up here as soon as someone sends some.</p>
+      <Shell signedIn>
+        <p>No visits recorded yet. Once the tracker is live in the app, visits show up here within seconds.</p>
       </Shell>
     );
   }
-
-  const maxDist = Math.max(1, ...Object.values(d.dist));
 
   return (
-    <Shell>
-      <section className="fv-top">
-        <div>
-          <div className="fv-num">{d.avg.toFixed(1)}</div>
-          <div className="fv-stars">{stars(Math.round(d.avg))}</div>
-          <div className="fv-sub">
-            {d.total} {d.total === 1 ? "response" : "responses"}
-          </div>
-        </div>
-        <div className="fv-dist">
-          {[5, 4, 3, 2, 1].map((n) => (
-            <div className="fv-drow" key={n}>
-              <span>{n}★</span>
-              <span className="fv-bar">
-                <i style={{ width: `${d.dist[n] ? Math.max(3, (d.dist[n] / maxDist) * 100) : 0}%` }} />
+    <Shell signedIn>
+      <div className="va-kpis">
+        <div><div className="va-num">{n(k.visitors)}</div><div className="va-lab">Total visitors</div></div>
+        <div><div className="va-num">{n(k.active)}</div><div className="va-lab">Active now (last 5 min)</div></div>
+        <div><div className="va-num">{n(k.guest_sessions)}</div><div className="va-lab">Guest sessions</div></div>
+        <div><div className="va-num">{n(k.signups)}</div><div className="va-lab">Signups</div></div>
+        <div><div className="va-num">{n(b.returning)}</div><div className="va-lab">Returning visitors</div></div>
+        <div><div className="va-num">{pct(f.to_either, f.guests)}</div><div className="va-lab">Guests who made an account</div></div>
+      </div>
+
+      <section>
+        <h2>Traffic</h2>
+        <nav className="va-tabs">
+          {Object.keys(VIEWS).map((key) => (
+            <a key={key} href={`/analytics?view=${key}`} aria-current={key === view}>
+              {key[0].toUpperCase() + key.slice(1)}
+            </a>
+          ))}
+        </nav>
+        <div className="va-scroll">
+          {d.traffic.map((t) => (
+            <div className="va-row wide" key={String(t.bucket)}>
+              <span className="va-name">{bucketLabel(t.bucket, view)}</span>
+              <span className="va-bar">
+                <i style={{ width: `${n(t.visitors) ? Math.max(2, (n(t.visitors) / maxTraffic) * 100) : 0}%` }} />
               </span>
-              <span className="fv-cnt">{d.dist[n]}</span>
+              <span className="va-val">{n(t.visitors)} visitors · {n(t.sessions)} sessions</span>
             </div>
           ))}
         </div>
       </section>
 
       <section>
-        {d.rows.map((r) => {
-          const u = d.byId.get(String(r.user_id));
-          const name = u?.displayName || r.display_name || r.username || "Unknown";
-          const handle = u?.username || r.username;
-          const av = avatarOf(u);
-          return (
-            <article className="fv-item" key={String(r.id)}>
-              {av ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img className="fv-av" src={av} alt="" />
-              ) : (
-                <div className="fv-av fv-init">{(name[0] || "?").toUpperCase()}</div>
-              )}
-              <div className="fv-body">
-                <div className="fv-line">
-                  <strong>{name}</strong>
-                  {handle && <span className="fv-sub"> @{handle}</span>}
-                </div>
-                <div className="fv-stars">{stars(r.rating)}</div>
-                {r.message && <p className="fv-msg">{r.message}</p>}
-                <div className="fv-sub">
-                  {when(r.created_at)} · {r.source === "popup" ? "popup" : "settings"}
-                </div>
-              </div>
-            </article>
-          );
-        })}
+        <h2>Guest Mode</h2>
+        <Rows
+          tone="guest"
+          items={[
+            { label: "Entered Guest Mode", value: n(f.guests), note: `${n(f.guests)}` },
+            { label: "Signed up", value: n(f.to_signup), note: `${n(f.to_signup)} · ${pct(f.to_signup, f.guests)}` },
+            { label: "Logged in", value: n(f.to_login), note: `${n(f.to_login)} · ${pct(f.to_login, f.guests)}` },
+          ]}
+        />
+        <p className="va-note">
+          Average stay {dur(s.guest_avg_secs)} · {pct(s.guest_bounced, s.guest_sessions)} left immediately
+          ({n(s.guest_bounced)} of {n(s.guest_sessions)} guest sessions)
+        </p>
+      </section>
+
+      <section>
+        <h2>Came back</h2>
+        <Rows
+          items={[
+            { label: "Next day", value: n(b.d1_back), note: `${n(b.d1_back)} of ${n(b.d1_cohort)} · ${pct(b.d1_back, b.d1_cohort)}` },
+            { label: "Within a week", value: n(b.w1_back), note: `${n(b.w1_back)} of ${n(b.w1_cohort)} · ${pct(b.w1_back, b.w1_cohort)}` },
+          ]}
+        />
+        <p className="va-note">Only visitors old enough to have had the chance to return are counted.</p>
+      </section>
+
+      <section>
+        <h2>Where visitors come from</h2>
+        <Rows
+          items={d.sources.map((r) => ({
+            label: SOURCE_LABELS[r.source] || "Other",
+            value: n(r.sessions),
+            note: `${n(r.sessions)} sessions · ${n(r.guest_sessions)} guest`,
+          }))}
+        />
+      </section>
+
+      <section>
+        <h2>What people use</h2>
+        {d.features.length ? (
+          <Rows
+            items={d.features.map((r) => ({
+              label: featureLabel(r.name),
+              value: n(r.uses),
+              note: `${n(r.uses)} uses · ${n(r.visitors)} people`,
+            }))}
+          />
+        ) : (
+          <p className="va-note">No feature activity yet.</p>
+        )}
+      </section>
+
+      <section>
+        <h2>Countries</h2>
+        <Rows
+          items={d.countries.map((r) => ({
+            label: countryName(r.country),
+            value: n(r.visitors),
+            note: `${n(r.visitors)}`,
+          }))}
+        />
       </section>
     </Shell>
   );
 }
 
 const CSS = `
-.fv{--bg:#f2f5f7;--ink:#13202a;--mute:#5a6b78;--line:#d8e0e6;--accent:#0e5a6b;
+.va{--bg:#f2f5f7;--ink:#13202a;--mute:#5a6b78;--line:#d8e0e6;--accent:#0e5a6b;--guest:#b4691f;
   background:var(--bg);color:var(--ink);min-height:100vh;padding:20px 16px 56px;
   font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-@media (prefers-color-scheme:dark){.fv{--bg:#0f171d;--ink:#e6edf2;--mute:#8fa1ae;--line:#25343f;--accent:#5fb3c6}}
-.fv-wrap{max-width:720px;margin:0 auto}
-.fv h1{font-size:22px;margin:0;letter-spacing:-.01em}
-.fv-sub{color:var(--mute);font-size:13px}
-.fv-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:22px}
-.fv-btn{border:1px solid var(--line);color:var(--mute);border-radius:8px;padding:8px 12px;font-size:13px;text-decoration:none}
-.fv-top{display:flex;gap:28px;align-items:center;flex-wrap:wrap;padding-bottom:22px;border-bottom:1px solid var(--line)}
-.fv-num{font-size:40px;font-weight:650;letter-spacing:-.02em;line-height:1.05}
-.fv-stars{color:#f5b301;letter-spacing:2px;font-size:16px}
-.fv-dist{flex:1;min-width:200px}
-.fv-drow{display:grid;grid-template-columns:28px 1fr 28px;gap:8px;align-items:center;font-size:13px;padding:2px 0}
-.fv-bar{height:8px;background:var(--line);border-radius:4px;overflow:hidden}
-.fv-bar i{display:block;height:100%;background:var(--accent);border-radius:4px}
-.fv-cnt{text-align:right;color:var(--mute)}
-.fv-item{display:flex;gap:12px;padding:16px 0;border-bottom:1px solid var(--line)}
-.fv-av{width:42px;height:42px;border-radius:50%;object-fit:cover;flex:none;background:var(--line)}
-.fv-init{display:flex;align-items:center;justify-content:center;font-weight:650;color:var(--mute)}
-.fv-body{min-width:0;flex:1}
-.fv-msg{margin:6px 0;white-space:pre-wrap;word-break:break-word}
-.fv-err{color:#c0392b;font-size:14px}
+@media (prefers-color-scheme:dark){.va{--bg:#0f171d;--ink:#e6edf2;--mute:#8fa1ae;--line:#25343f;--accent:#5fb3c6;--guest:#e0a35a}}
+.va-wrap{max-width:720px;margin:0 auto}
+.va h1{font-size:22px;margin:0;letter-spacing:-.01em}
+.va h2{font-size:16px;margin:0 0 12px}
+.va-sub{color:var(--mute);font-size:13px;margin:2px 0 0}
+.va-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:22px}
+.va-actions{display:flex;gap:8px;align-items:center}
+.va-btn{display:inline-block;background:none;border:1px solid var(--line);color:var(--mute);border-radius:8px;padding:8px 12px;font:inherit;font-size:13px;cursor:pointer;text-decoration:none}
+.va-btn.solid{background:var(--ink);color:var(--bg);border-color:var(--ink);font-size:15px}
+.va-btn:focus-visible,.va-tabs a:focus-visible,.va-gate input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.va-kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:20px 16px;padding-bottom:24px;border-bottom:1px solid var(--line)}
+@media (min-width:560px){.va-kpis{grid-template-columns:repeat(3,1fr)}}
+.va-num{font-size:30px;font-weight:650;letter-spacing:-.02em;line-height:1.1}
+.va-lab{color:var(--mute);font-size:13px;margin-top:2px}
+.va section{padding:22px 0;border-bottom:1px solid var(--line)}
+.va-row{display:grid;grid-template-columns:minmax(84px,120px) 1fr auto;gap:10px;align-items:center;padding:5px 0;font-size:14px}
+.va-row.wide{grid-template-columns:minmax(84px,110px) 1fr auto}
+.va-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.va-bar{height:8px;background:var(--line);border-radius:4px;overflow:hidden}
+.va-bar i{display:block;height:100%;background:var(--accent);border-radius:4px}
+.va-bar i.guest{background:var(--guest)}
+.va-val{color:var(--mute);font-size:12.5px;text-align:right;white-space:nowrap}
+.va-note{color:var(--mute);font-size:13px;margin:10px 0 0}
+.va-tabs{display:flex;gap:6px;margin-bottom:10px}
+.va-tabs a{padding:6px 14px;border:1px solid var(--line);border-radius:999px;color:var(--mute);text-decoration:none;font-size:13px}
+.va-tabs a[aria-current=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.va-scroll{max-height:380px;overflow-y:auto}
+.va-gate{display:flex;flex-direction:column;gap:10px;max-width:320px}
+.va-gate input{padding:10px 12px;font:inherit;border:1px solid var(--line);border-radius:8px;background:transparent;color:inherit}
+.va-err{color:#c0392b;font-size:14px}
 `;
