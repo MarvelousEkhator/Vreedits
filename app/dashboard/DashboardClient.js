@@ -1,8 +1,37 @@
 "use client";
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { User, Settings, HelpCircle, Phone, ChevronRight, MessageSquare, Sparkles, Loader2 } from "lucide-react";
+import {
+  ChevronRight, MessageSquare, Sparkles, Loader2, Dumbbell, GraduationCap,
+  PenLine, BookOpen, FileText, Users,
+} from "lucide-react";
 import { useLanguage } from "@/components/LanguageProvider";
+
+// Mind Gym keeps its progress on this device under this key (see app/mind-gym/page.js).
+const GYM_KEY = "vreedits.mindgym.v1";
+
+function pad(n) { return String(n).padStart(2, "0"); }
+function localDayKey(d = new Date()) {
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+function shiftDay(key, delta) {
+  const [y, m, d] = key.split("-").map(Number);
+  return localDayKey(new Date(y, m - 1, d + delta));
+}
+function streakFromDays(days, today) {
+  const set = new Set(days);
+  let cursor = set.has(today) ? today : shiftDay(today, -1);
+  let n = 0;
+  while (set.has(cursor)) { n++; cursor = shiftDay(cursor, -1); }
+  return n;
+}
+function loadGym() {
+  try {
+    const raw = localStorage.getItem(GYM_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return {};
+}
 
 function relativeTime(dateStr) {
   const diffMs = Date.now() - new Date(dateStr).getTime();
@@ -16,134 +45,235 @@ function relativeTime(dateStr) {
   return new Date(dateStr).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+function greetingFor(hour) {
+  if (hour < 5) return "Up late";
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  return "Good evening";
+}
+
+const SHORTCUTS = [
+  { label: "Ask Syna", sub: "Chat or upload notes", href: "/ai-tools/chat", icon: Sparkles },
+  { label: "Study planner", sub: "Plan your revision", href: "/ai-tools/study-planner", icon: BookOpen },
+  { label: "Summarizer", sub: "Shrink long notes", href: "/ai-tools/summarizer", icon: FileText },
+  { label: "School tools", sub: "Flashcards, quizzes, notes", href: "/tools/school", icon: GraduationCap },
+  { label: "Writing", sub: "Essays and grammar", href: "/tools/writing", icon: PenLine },
+  { label: "Mind Gym", sub: "Warm up your head", href: "/mind-gym", icon: Dumbbell },
+];
+
 export default function DashboardClient({ user }) {
   const { t } = useLanguage();
   const [conversations, setConversations] = useState([]);
   const [loadingChats, setLoadingChats] = useState(true);
+  const [communities, setCommunities] = useState([]);
+  const [gym, setGym] = useState(null);
+  const [greeting, setGreeting] = useState("");
+
+  const name = user.displayName || user.username;
 
   useEffect(() => {
+    setGreeting(greetingFor(new Date().getHours()));
+    setGym(loadGym());
+
     fetch("/api/ai/conversations")
       .then((r) => r.json())
-      .then((data) => setConversations((data.conversations || []).slice(0, 4)))
+      .then((data) => setConversations((data.conversations || []).slice(0, 3)))
+      .catch(() => {})
       .finally(() => setLoadingChats(false));
+
+    // Existing communities endpoint. If it answers with something unexpected the section just stays hidden.
+    fetch("/api/communities")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!data) return;
+        const list = Array.isArray(data) ? data : data.communities || data.items || [];
+        if (Array.isArray(list)) setCommunities(list.slice(0, 3));
+      })
+      .catch(() => {});
   }, []);
 
-  const quickActions = [
-    { labelKey: "settings.editProfile", href: "/profile", icon: User },
-    { labelKey: "nav.settings", href: "/settings", icon: Settings },
-    { labelKey: "settings.helpCenter", href: "/help", icon: HelpCircle },
-    { labelKey: "settings.contactUs", href: "/contact", icon: Phone },
-  ];
+  // Last seven days, oldest first, for the streak strip.
+  const today = localDayKey();
+  const played = new Set((gym && gym.playedDays) || []);
+  const week = [];
+  for (let i = 6; i >= 0; i--) {
+    const key = shiftDay(today, -i);
+    const [y, m, d] = key.split("-").map(Number);
+    week.push({
+      key,
+      letter: new Date(y, m - 1, d).toLocaleDateString(undefined, { weekday: "narrow" }),
+      done: played.has(key),
+      isToday: i === 0,
+    });
+  }
+  const streak = gym ? streakFromDays((gym.playedDays || []), today) : 0;
+  const utcToday = new Date().toISOString().slice(0, 10);
+  const sudokuDone = gym && gym.sudoku && gym.sudoku.done
+    ? Object.keys(gym.sudoku.done).filter((k) => k.startsWith(utcToday + ":")).length
+    : 0;
+  const mathBest = gym && gym.math ? gym.math.best || 0 : 0;
 
   return (
-    <div className="min-h-screen flex flex-col items-center px-4 pb-16">
-      <div className="w-full max-w-[480px] mt-10">
-        <div className="flex items-center gap-4 mb-8">
-          {user.avatarDataUrl ? (
-            <img
-              src={user.avatarDataUrl}
-              alt="Profile"
-              className="w-16 h-16 rounded-full object-cover"
-              style={{ boxShadow: "0 0 0 2px var(--border)" }}
-            />
-          ) : (
-            <div
-              className="w-16 h-16 rounded-full flex items-center justify-center text-xl font-semibold"
-              style={{ background: "var(--accent-soft)", color: "var(--accent)", fontFamily: "var(--font-display)" }}
-            >
-              {user.username.slice(0, 2).toUpperCase()}
+    <div className="dh">
+      <style>{`
+        .dh { max-width: 520px; margin: 0 auto; padding: 18px 16px 28px; }
+        .dh-hello { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
+        .dh-avatar { width: 56px; height: 56px; border-radius: 50%; object-fit: cover; flex-shrink: 0; box-shadow: 0 0 0 2px var(--border); }
+        .dh-avatar-fallback {
+          width: 56px; height: 56px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+          background: var(--accent-soft); color: var(--accent); font-family: var(--font-display); font-size: 20px; font-weight: 600;
+        }
+        .dh-greet { font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); min-height: 15px; }
+        .dh-name { font-family: var(--font-display); font-size: 30px; line-height: 1.05; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .dh-label { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); margin: 22px 0 10px; display: flex; justify-content: space-between; align-items: baseline; }
+        .dh-label a { color: var(--accent); letter-spacing: 0; text-transform: none; font-size: 12.5px; font-weight: 600; }
+
+        .dh-streak {
+          display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 16px;
+          border-radius: 20px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 4px 0 var(--border);
+          text-decoration: none; color: var(--text);
+        }
+        .dh-streak-num { font-size: 40px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+        .dh-streak-cap { font-size: 12.5px; color: var(--text-muted); margin-top: 3px; line-height: 1.3; }
+        .dh-week { display: flex; gap: 5px; }
+        .dh-day { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 10px; font-weight: 600; color: var(--text-muted); }
+        .dh-dot { width: 22px; height: 22px; border-radius: 7px; border: 1.5px solid var(--border); background: transparent; }
+        .dh-dot.done { background: var(--accent); border-color: var(--accent); }
+        .dh-dot.today { border-color: var(--accent); }
+
+        .dh-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .dh-tile {
+          display: flex; flex-direction: column; gap: 8px; padding: 13px; border-radius: 16px; text-decoration: none; color: var(--text);
+          background: var(--surface); border: 1px solid var(--border); box-shadow: 0 3px 0 var(--border);
+          transition: transform 0.1s ease, box-shadow 0.1s ease;
+        }
+        .dh-tile:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--border); }
+        .dh-tile-icon { width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center; background: var(--accent-soft); color: var(--accent); }
+        .dh-tile-title { font-size: 14px; font-weight: 700; }
+        .dh-tile-sub { font-size: 12px; color: var(--text-muted); line-height: 1.3; margin-top: -4px; }
+
+        .dh-list { border-radius: 16px; background: var(--surface); border: 1px solid var(--border); overflow: hidden; }
+        .dh-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; text-decoration: none; color: var(--text); }
+        .dh-row + .dh-row { border-top: 1px solid var(--border); }
+        .dh-row-main { display: flex; align-items: center; gap: 10px; min-width: 0; }
+        .dh-row-title { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .dh-row-sub { font-size: 12px; color: var(--text-muted); }
+        .dh-empty { display: flex; align-items: center; gap: 12px; padding: 14px; border-radius: 16px; border: 1.5px dashed var(--border); color: var(--text); text-decoration: none; }
+        .dh-empty-title { font-size: 14px; font-weight: 600; }
+        .dh-empty-sub { font-size: 12.5px; color: var(--text-muted); }
+        .dh-gym { display: flex; gap: 10px; }
+        .dh-gym > a { flex: 1; }
+        @media (min-width: 1024px) { .dh { max-width: 720px; padding-top: 28px; } .dh-grid { grid-template-columns: repeat(3, 1fr); } }
+      `}</style>
+
+      <div className="dh-hello">
+        {user.avatarDataUrl ? (
+          <img className="dh-avatar" src={user.avatarDataUrl} alt="Profile" />
+        ) : (
+          <div className="dh-avatar-fallback">{(name || "?").slice(0, 2).toUpperCase()}</div>
+        )}
+        <div style={{ minWidth: 0 }}>
+          <div className="dh-greet">{greeting || t("dash.welcomeBack")}</div>
+          <div className="dh-name">{name}</div>
+        </div>
+      </div>
+
+      <Link href="/mind-gym" className="dh-streak">
+        <div>
+          <div className="dh-streak-num">{streak}</div>
+          <div className="dh-streak-cap">
+            {streak > 0
+              ? `day${streak === 1 ? "" : "s"} in a row in Mind Gym`
+              : "Play one Mind Gym round today to start a streak"}
+          </div>
+        </div>
+        <div className="dh-week" aria-hidden="true">
+          {week.map((d) => (
+            <div key={d.key} className="dh-day">
+              <div className={`dh-dot ${d.done ? "done" : ""} ${d.isToday ? "today" : ""}`} />
+              {d.letter}
             </div>
-          )}
+          ))}
+        </div>
+      </Link>
+
+      <div className="dh-label"><span>Jump back in</span></div>
+      <div className="dh-grid">
+        {SHORTCUTS.map((s) => (
+          <Link key={s.href} href={s.href} className="dh-tile">
+            <span className="dh-tile-icon"><s.icon size={18} /></span>
+            <span className="dh-tile-title">{s.label}</span>
+            <span className="dh-tile-sub">{s.sub}</span>
+          </Link>
+        ))}
+      </div>
+
+      <div className="dh-label">
+        <span>Recent with Syna</span>
+        <Link href="/ai-tools/chat">{t("dash.newChat")}</Link>
+      </div>
+      {loadingChats && (
+        <div className="flex justify-center py-6" style={{ color: "var(--text-muted)" }}>
+          <Loader2 size={18} className="animate-spin" />
+        </div>
+      )}
+      {!loadingChats && conversations.length === 0 && (
+        <Link href="/ai-tools/chat" className="dh-empty">
+          <Sparkles size={18} style={{ color: "var(--accent)", flexShrink: 0 }} />
           <div>
-            <h1 className="text-xl font-semibold" style={{ fontFamily: "var(--font-display)" }}>
-              {t("dash.welcomeBack")}, {user.username}
-            </h1>
-            <div className="text-xs" style={{ color: "var(--text-muted)" }}>
-              {user.online ? t("settings.onlineAuto") : t("common.offline")}
-            </div>
+            <div className="dh-empty-title">{t("dash.startChat")}</div>
+            <div className="dh-empty-sub">Ask a question, or upload notes and turn them into a quiz.</div>
           </div>
+        </Link>
+      )}
+      {!loadingChats && conversations.length > 0 && (
+        <div className="dh-list">
+          {conversations.map((c) => (
+            <Link key={c.id} href={`/ai-tools/chat?id=${c.id}`} className="dh-row">
+              <div className="dh-row-main">
+                <MessageSquare size={16} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
+                <div style={{ minWidth: 0 }}>
+                  <div className="dh-row-title">{c.title}</div>
+                  <div className="dh-row-sub">{relativeTime(c.updatedAt)}</div>
+                </div>
+              </div>
+              <ChevronRight size={16} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
+            </Link>
+          ))}
         </div>
+      )}
 
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
-            {t("dash.recentAi")}
-          </h2>
-          <Link href="/ai-tools/chat" className="text-xs font-semibold" style={{ color: "var(--accent)" }}>
-            {t("dash.newChat")}
-          </Link>
-        </div>
+      <div className="dh-label"><span>Today in Mind Gym</span></div>
+      <div className="dh-gym">
+        <Link href="/mind-gym" className="dh-tile">
+          <span className="dh-tile-title">Quick Math</span>
+          <span className="dh-tile-sub">{mathBest > 0 ? `Your best: ${mathBest}` : "No score yet"}</span>
+        </Link>
+        <Link href="/mind-gym" className="dh-tile">
+          <span className="dh-tile-title">Daily Sudoku</span>
+          <span className="dh-tile-sub">{sudokuDone} of 3 solved today</span>
+        </Link>
+      </div>
 
-        {loadingChats && (
-          <div className="flex justify-center py-6 mb-6" style={{ color: "var(--text-muted)" }}>
-            <Loader2 size={18} className="animate-spin" />
+      {communities.length > 0 && (
+        <>
+          <div className="dh-label">
+            <span>Study communities</span>
+            <Link href="/communities">See all</Link>
           </div>
-        )}
-
-        {!loadingChats && conversations.length === 0 && (
-          <Link
-            href="/ai-tools/chat"
-            className="flex items-center gap-3 p-4 rounded-2xl mb-6"
-            style={{ background: "var(--accent-soft)", border: "1px solid var(--border)" }}
-          >
-            <Sparkles size={18} style={{ color: "var(--accent)" }} />
-            <div>
-              <div className="text-sm font-semibold">{t("dash.startChat")}</div>
-              <div className="text-xs" style={{ color: "var(--text-muted)" }}>{t("dash.askAnything")}</div>
-            </div>
-          </Link>
-        )}
-
-        {!loadingChats && conversations.length > 0 && (
-          <div className="card mb-6" style={{ padding: 6 }}>
-            {conversations.map((c, i, arr) => (
-              <Link
-                key={c.id}
-                href={`/ai-tools/chat?id=${c.id}`}
-                className="flex items-center justify-between p-3 rounded-xl"
-                style={{ borderBottom: i < arr.length - 1 ? "1px solid var(--border)" : "none" }}
-              >
-                <div className="flex items-start gap-2.5" style={{ minWidth: 0 }}>
-                  <MessageSquare size={16} style={{ color: "var(--text-muted)", marginTop: 2, flexShrink: 0 }} />
-                  <div style={{ minWidth: 0 }}>
-                    <div
-                      className="text-sm font-medium"
-                      style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-                    >
-                      {c.title}
-                    </div>
-                    <div className="text-xs" style={{ color: "var(--text-muted)" }}>
-                      {relativeTime(c.updatedAt)}
-                    </div>
-                  </div>
+          <div className="dh-list">
+            {communities.map((c) => (
+              <Link key={c.id} href={`/communities/${c.id}`} className="dh-row">
+                <div className="dh-row-main">
+                  <Users size={16} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
+                  <div className="dh-row-title">{c.name}</div>
                 </div>
                 <ChevronRight size={16} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
               </Link>
             ))}
           </div>
-        )}
-
-        <h2 className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: "var(--text-muted)" }}>
-          {t("dash.quickActions")}
-        </h2>
-        <div className="card" style={{ padding: 6 }}>
-          {quickActions.map((action, i) => (
-            <Link
-              key={action.href}
-              href={action.href}
-              className="flex items-center justify-between p-3 rounded-xl"
-              style={{
-                borderBottom: i < quickActions.length - 1 ? "1px solid var(--border)" : "none",
-              }}
-            >
-              <div className="flex items-center gap-2.5 text-sm font-medium">
-                <action.icon size={16} />
-                {t(action.labelKey)}
-              </div>
-              <ChevronRight size={16} style={{ color: "var(--text-muted)" }} />
-            </Link>
-          ))}
-        </div>
-      </div>
+        </>
+      )}
     </div>
   );
 }
