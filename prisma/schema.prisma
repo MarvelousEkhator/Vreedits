@@ -1086,23 +1086,18 @@ model Sound {
 }
 
 model Feedback {
-  id            String    @id @default(uuid())
-  userId        String
-  username      String?
-  isGuest       Boolean   @default(false)
-  categories    String[]  @default([])
-  message       String    @db.Text
-  page          String?
-  status        String    @default("new") // "new" | "read"
-  thanksMessage String?   @db.Text
-  thanksSentAt  DateTime?
-  thanksSeenAt  DateTime?
-  createdAt     DateTime  @default(now())
+  id          BigInt   @id @default(autoincrement())
+  userId      String   @map("user_id")
+  username    String?
+  displayName String?  @map("display_name")
+  rating      Int      @db.SmallInt
+  message     String?
+  source      String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  @@index([userId, createdAt])
-  @@index([createdAt])
+  @@index([createdAt(sort: Desc)], map: "feedback_created_idx")
+  @@map("feedback")
 }
-
 model UserSettings {
   id                String    @id @default(uuid())
   userId            String    @unique
