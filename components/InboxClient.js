@@ -52,7 +52,7 @@ function ConversationMenu({ friend, open, onClose, onBlock, blocking, onReport }
       <div
         className="card"
         style={{
-          position: "fixed", left: 16, right: 16, bottom: 16, zIndex: 201,
+          position: "fixed", left: 16, right: 16, bottom: "calc(16px + var(--safe-b))", zIndex: 201,
           padding: 8, maxWidth: 420, margin: "0 auto",
         }}
       >
