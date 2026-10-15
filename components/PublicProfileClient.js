@@ -61,7 +61,7 @@ export default function PublicProfileClient({ userId }) {
 
   if (loading) {
     return (
-      <div className="min-h-[60vh] flex items-center justify-center" style={{ color: "var(--text-muted)" }}>
+      <div className="flex items-center justify-center" style={{ minHeight: "60%", color: "var(--text-muted)" }}>
         <Loader2 size={22} className="animate-spin" />
       </div>
     );
@@ -69,7 +69,7 @@ export default function PublicProfileClient({ userId }) {
 
   if (error || !data) {
     return (
-      <div className="min-h-[60vh] flex flex-col items-center justify-center px-6 text-center" style={{ color: "var(--text-muted)" }}>
+      <div className="flex flex-col items-center justify-center px-6 text-center" style={{ minHeight: "60%", color: "var(--text-muted)" }}>
         <p className="text-sm">{error || "Profile not found."}</p>
       </div>
     );
@@ -82,7 +82,7 @@ export default function PublicProfileClient({ userId }) {
   const handle = (profile.username || "").toLowerCase();
 
   return (
-    <div className="min-h-screen flex flex-col items-center px-4 pb-16">
+    <div className="flex flex-col items-center px-4 pb-16" style={{ minHeight: "100%" }}>
       <div className="w-full max-w-[480px] mt-10">
         <Link href="/feed" className="btn-text inline-flex items-center gap-1.5 mb-4">
           <ArrowLeft size={14} /> Back
