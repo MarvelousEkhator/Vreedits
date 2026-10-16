@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { ArrowLeft, Eraser, Pencil } from "lucide-react";
+import { ArrowLeft, Eraser, Pencil, Pause, Play } from "lucide-react";
 import GlossIcon from "@/components/GlossIcon";
 
 /* ═══════════════════════════════════════════════════════════════
@@ -205,7 +205,7 @@ function findConflicts(vals) {
 // ==LOGIC-END==
 
 /* ───────── Local progress (this device only) ───────── */
-const EMPTY_STORE = { playedDays: [], math: { best: 0, plays: 0 }, sudoku: { done: {} } };
+const EMPTY_STORE = { playedDays: [], math: { best: 0, plays: 0 }, sudoku: { done: {}, partial: {} } };
 
 function loadStore() {
   try {
@@ -215,11 +215,11 @@ function loadStore() {
       return {
         playedDays: Array.isArray(s.playedDays) ? s.playedDays : [],
         math: { ...EMPTY_STORE.math, ...(s.math || {}) },
-        sudoku: { done: (s.sudoku && s.sudoku.done) || {} },
+        sudoku: { done: (s.sudoku && s.sudoku.done) || {}, partial: (s.sudoku && s.sudoku.partial) || {} },
       };
     }
   } catch {}
-  return { playedDays: [], math: { best: 0, plays: 0 }, sudoku: { done: {} } };
+  return { playedDays: [], math: { best: 0, plays: 0 }, sudoku: { done: {}, partial: {} } };
 }
 function updateStore(fn) {
   const next = fn(loadStore());
@@ -228,6 +228,14 @@ function updateStore(fn) {
   return next;
 }
 function markPlayedToday(s) { s.playedDays = [...s.playedDays, localDayKey()]; return s; }/* ═══════════════ QUICK MATH ═══════════════ */
+// Saves a round (finished, or quit part-way) to this device.
+function recordMathRound(final) {
+  updateStore((s) => {
+    s.math.plays = (s.math.plays || 0) + 1;
+    s.math.best = Math.max(s.math.best || 0, final.score);
+    return markPlayedToday(s);
+  });
+}
 const INITIAL_STATS = { score: 0, total: 0, correct: 0, tier: 1, run: 0, maxTier: 1 };
 
 function QuickMath({ onExit }) {
@@ -238,10 +246,14 @@ function QuickMath({ onExit }) {
   const [stats, setStats] = useState(INITIAL_STATS);
   const [fb, setFb] = useState(null);
   const [newBest, setNewBest] = useState(false);
+  const [paused, setPaused] = useState(false);
 
+  const phaseRef = useRef("ready");
+  const remainingRef = useRef(MATH_CONFIG.duration * 1000);
   const endAtRef = useRef(0);
   const busyRef = useRef(false);
   const recordedRef = useRef(false);
+  phaseRef.current = phase;
   const statsRef = useRef(stats); statsRef.current = stats;
   const qRef = useRef(q); qRef.current = q;
   const prevBestRef = useRef(loadStore().math.best);
@@ -256,20 +268,53 @@ function QuickMath({ onExit }) {
     setFb(null);
     setNewBest(false);
     setTimeLeft(MATH_CONFIG.duration);
+    setPaused(false);
+    remainingRef.current = MATH_CONFIG.duration * 1000;
     endAtRef.current = Date.now() + MATH_CONFIG.duration * 1000;
     setPhase("playing");
   }
 
+  function pause() {
+    if (phaseRef.current !== "playing") return;
+    remainingRef.current = Math.max(0, endAtRef.current - Date.now());
+    setPaused(true);
+  }
+  function resume() {
+    endAtRef.current = Date.now() + remainingRef.current;
+    setPaused(false);
+  }
+  // Quit part-way: the points so far are saved.
+  function quit() {
+    if (!recordedRef.current && statsRef.current.total > 0) {
+      recordedRef.current = true;
+      recordMathRound(statsRef.current);
+    }
+    onExit();
+  }
+
+  // Pause by itself if the tab is hidden, and save the round if the screen is left.
+  useEffect(() => {
+    function onHide() { if (document.visibilityState === "hidden") pause(); }
+    document.addEventListener("visibilitychange", onHide);
+    return () => {
+      document.removeEventListener("visibilitychange", onHide);
+      if (phaseRef.current === "playing" && !recordedRef.current && statsRef.current.total > 0) {
+        recordedRef.current = true;
+        recordMathRound(statsRef.current);
+      }
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Clock: based on the real end time, so a slow phone can't stretch the round.
   useEffect(() => {
-    if (phase !== "playing") return;
+    if (phase !== "playing" || paused) return;
     const id = setInterval(() => {
       const remaining = endAtRef.current - Date.now();
       if (remaining <= 0) { setTimeLeft(0); setPhase("done"); }
       else setTimeLeft(Math.ceil(remaining / 1000));
     }, 200);
     return () => clearInterval(id);
-  }, [phase]);
+  }, [phase, paused]);
 
   // Save the finished round once.
   useEffect(() => {
@@ -278,11 +323,7 @@ function QuickMath({ onExit }) {
     const final = statsRef.current;
     const was = prevBestRef.current;
     if (final.score > was && final.total > 0) setNewBest(true);
-    updateStore((s) => {
-      s.math.plays = (s.math.plays || 0) + 1;
-      s.math.best = Math.max(s.math.best || 0, final.score);
-      return markPlayedToday(s);
-    });
+    recordMathRound(final);
     prevBestRef.current = Math.max(was, final.score);
   }, [phase]);
 
@@ -300,7 +341,7 @@ function QuickMath({ onExit }) {
   const clear = useCallback(() => setInput(""), []);
 
   const submit = useCallback(() => {
-    if (phase !== "playing" || busyRef.current || !qRef.current) return;
+    if (phase !== "playing" || paused || busyRef.current || !qRef.current) return;
     if (input === "" || input === "-") return;
     busyRef.current = true;
     setTimeout(() => { busyRef.current = false; }, 150);
@@ -323,11 +364,11 @@ function QuickMath({ onExit }) {
     setFb({ ok, answer: qRef.current.answer, id: Date.now() });
     setQ(makeQuestion(tier, Math.random, qRef.current.prompt));
     setInput("");
-  }, [phase, input]);
+  }, [phase, paused, input]);
 
   // Physical keyboard (desktop)
   useEffect(() => {
-    if (phase !== "playing") return;
+    if (phase !== "playing" || paused) return;
     function onKey(e) {
       if (e.key >= "0" && e.key <= "9") press(e.key);
       else if (e.key === "-") toggleMinus();
@@ -338,7 +379,7 @@ function QuickMath({ onExit }) {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [phase, press, toggleMinus, submit]);
+  }, [phase, paused, press, toggleMinus, submit]);
 
   useEffect(() => {
     if (!fb) return;
@@ -400,6 +441,7 @@ function QuickMath({ onExit }) {
         <div className={`mg-clock ${urgent ? "urgent" : ""}`}>{timeLeft}<small>s</small></div>
         <div className="mg-chip">Tier {stats.tier} &middot; x{MATH_CONFIG.multipliers[stats.tier]}</div>
         <div className="mg-score">{stats.score}</div>
+        <button className="mg-pausebtn" onClick={pause} aria-label="Pause"><Pause size={16} /></button>
       </div>
 
       <div key={fb ? fb.id : "q"} className={`mg-qcard ${fb ? (fb.ok ? "ok" : "bad mg-shake") : ""}`}>
@@ -419,6 +461,17 @@ function QuickMath({ onExit }) {
         <button className="mg-key alt small" onClick={clear}>Clear</button>
       </div>
       <button className="mg-key submit" onClick={submit} disabled={input === "" || input === "-"}>Submit</button>
+
+      {paused && (
+        <div className="mg-pause" role="dialog" aria-label="Paused">
+          <div className="mg-pause-card">
+            <h2>Paused</h2>
+            <p>The clock is stopped. You have {Math.ceil(remainingRef.current / 1000)}s left and {stats.score} points.</p>
+            <button className="mg-cta" onClick={resume}><Play size={16} style={{ verticalAlign: "-2px" }} /> Resume</button>
+            <button className="mg-ghost" onClick={quit}>Quit and save {stats.score} points</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -452,6 +505,12 @@ function SudokuGame({ seedKey, puzzle, solution, onSolved }) {
   const [seconds, setSeconds] = useState(() => (saved && saved.seconds) || 0);
   const [sel, setSel] = useState(null);
   const [noteMode, setNoteMode] = useState(false);
+  const [paused, setPaused] = useState(false);
+  const solvedRef = useRef(false);
+
+  // Always holds the latest numbers so leaving the screen can save them.
+  const liveRef = useRef({});
+  liveRef.current = { vals, seconds };
 
   const conflicts = useMemo(() => findConflicts(vals), [vals]);
   const complete = useMemo(() => vals.every((v) => v) && conflicts.size === 0, [vals, conflicts]);
@@ -461,14 +520,36 @@ function SudokuGame({ seedKey, puzzle, solution, onSolved }) {
     return c;
   }, [vals]);
 
-  // Timer — pauses when the tab is hidden or the puzzle is solved.
+  // Timer: stops when paused, when the tab is hidden, or when the puzzle is solved.
   useEffect(() => {
-    if (complete) return;
+    if (complete || paused) return;
     const id = setInterval(() => {
       if (document.visibilityState === "visible") setSeconds((s) => s + 1);
     }, 1000);
     return () => clearInterval(id);
-  }, [complete]);
+  }, [complete, paused]);
+
+  // Switching tabs or apps pauses the puzzle (and hides the board until Resume).
+  useEffect(() => {
+    function onHide() { if (document.visibilityState === "hidden") setPaused(true); }
+    document.addEventListener("visibilitychange", onHide);
+    return () => document.removeEventListener("visibilitychange", onHide);
+  }, []);
+
+  // Leaving part-way counts: the time and how far you got are saved, the day counts
+  // toward your streak, and the puzzle is waiting where you left it.
+  useEffect(() => {
+    return () => {
+      const { vals: v, seconds: sec } = liveRef.current;
+      if (!v || solvedRef.current) return;
+      const filled = v.reduce((n, x, i) => n + (x && !puzzle[i] ? 1 : 0), 0);
+      if (filled === 0 && sec < 5) return;
+      updateStore((st) => {
+        st.sudoku.partial[seedKey] = { seconds: sec, filled, at: Date.now() };
+        return markPlayedToday(st);
+      });
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Keep progress so leaving mid-puzzle doesn't lose it.
   useEffect(() => {
@@ -478,7 +559,6 @@ function SudokuGame({ seedKey, puzzle, solution, onSolved }) {
   }, [vals, notes, seconds, seedKey]);
 
   // Record the solve once (also checks the filled grid against the stored solution).
-  const solvedRef = useRef(false);
   useEffect(() => {
     if (!complete || solvedRef.current) return;
     const matches = vals.every((v, i) => v === solution[i]);
@@ -486,13 +566,14 @@ function SudokuGame({ seedKey, puzzle, solution, onSolved }) {
     solvedRef.current = true;
     updateStore((s) => {
       if (!s.sudoku.done[seedKey]) s.sudoku.done[seedKey] = { seconds, at: Date.now() };
+      delete s.sudoku.partial[seedKey];
       return markPlayedToday(s);
     });
     onSolved && onSolved();
   }, [complete]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const place = useCallback((d) => {
-    if (sel === null || complete || puzzle[sel]) return;
+    if (sel === null || complete || paused || puzzle[sel]) return;
     if (noteMode) {
       if (vals[sel]) return;
       setNotes((n) => { const c = n.slice(); c[sel] = c[sel] ^ (1 << d); return c; });
@@ -511,13 +592,13 @@ function SudokuGame({ seedKey, puzzle, solution, onSolved }) {
       }
       return c;
     });
-  }, [sel, complete, puzzle, noteMode, vals]);
+  }, [sel, complete, paused, puzzle, noteMode, vals]);
 
   const erase = useCallback(() => {
-    if (sel === null || complete || puzzle[sel]) return;
+    if (sel === null || complete || paused || puzzle[sel]) return;
     setVals((v) => { const c = v.slice(); c[sel] = 0; return c; });
     setNotes((n) => { const c = n.slice(); c[sel] = 0; return c; });
-  }, [sel, complete, puzzle]);
+  }, [sel, complete, paused, puzzle]);
 
   useEffect(() => {
     function onKey(e) {
@@ -548,7 +629,12 @@ function SudokuGame({ seedKey, puzzle, solution, onSolved }) {
   return (
     <>
       <div className="mg-sbar">
-        <span className="mg-stime">{formatTime(seconds)}</span>
+        <span className="mg-stime">{formatTime(seconds)}{paused ? " · paused" : ""}</span>
+        {!complete && (
+          <button className="mg-notes" onClick={() => setPaused((p) => !p)} aria-label={paused ? "Resume" : "Pause"}>
+            {paused ? <Play size={14} /> : <Pause size={14} />} {paused ? "Resume" : "Pause"}
+          </button>
+        )}
         <button
           className={`mg-notes ${noteMode ? "on" : ""}`}
           onClick={() => setNoteMode((m) => !m)}
@@ -558,7 +644,8 @@ function SudokuGame({ seedKey, puzzle, solution, onSolved }) {
         </button>
       </div>
 
-      <div className={`mg-board ${complete ? "solved" : ""}`} role="grid" aria-label="Sudoku board">
+      <div className="mg-boardwrap">
+      <div className={`mg-board ${complete ? "solved" : ""} ${paused ? "hidden" : ""}`} role="grid" aria-label="Sudoku board">
         {vals.map((v, i) => {
           const r = (i / 9) | 0, c = i % 9;
           const cls = ["mg-cell"];
@@ -588,6 +675,16 @@ function SudokuGame({ seedKey, puzzle, solution, onSolved }) {
           );
         })}
       </div>
+      {paused && !complete && (
+        <div className="mg-pause" role="dialog" aria-label="Paused">
+          <div className="mg-pause-card">
+            <h2>Paused</h2>
+            <p>The clock is stopped and the board is hidden.</p>
+            <button className="mg-cta" onClick={() => setPaused(false)}><Play size={16} style={{ verticalAlign: "-2px" }} /> Resume</button>
+          </div>
+        </div>
+      )}
+      </div>
 
       {complete ? (
         <div className="mg-solved">
@@ -597,7 +694,7 @@ function SudokuGame({ seedKey, puzzle, solution, onSolved }) {
       ) : (
         <div className="mg-spad">
           {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((d) => (
-            <button key={d} className="mg-key" disabled={counts[d] >= 9} onClick={() => place(d)}>{d}</button>
+            <button key={d} className="mg-key" disabled={paused || counts[d] >= 9} onClick={() => place(d)}>{d}</button>
           ))}
           <button className="mg-key alt" onClick={erase} aria-label="Erase cell"><Eraser size={20} /></button>
         </div>
@@ -623,7 +720,7 @@ function Sudoku({ onExit }) {
         {["easy", "medium", "hard"].map((d) => (
           <button key={d} role="tab" aria-selected={difficulty === d} className={difficulty === d ? "on" : ""} onClick={() => setDifficulty(d)}>
             {d[0].toUpperCase() + d.slice(1)}
-            {store.sudoku.done[`${dayKey}:${d}`] ? <span className="mg-tick" aria-label="solved">{"✓"}</span> : null}
+            {store.sudoku.done[`${dayKey}:${d}`] ? <span className="mg-tick" aria-label="solved">{"✓"}</span> : store.sudoku.partial[`${dayKey}:${d}`] ? <span className="mg-tick" aria-label="in progress">{"…"}</span> : null}
           </button>
         ))}
       </div>
@@ -639,6 +736,7 @@ function Hub({ onOpen }) {
   const played = new Set(store.playedDays);
   const streak = streakFromDays(store.playedDays, today);
   const solvedToday = ["easy", "medium", "hard"].filter((d) => store.sudoku.done[`${utcToday}:${d}`]).length;
+  const inProgress = ["easy", "medium", "hard"].filter((d) => !store.sudoku.done[`${utcToday}:${d}`] && store.sudoku.partial[`${utcToday}:${d}`]).length;
 
   const week = [];
   for (let i = 6; i >= 0; i--) {
@@ -682,7 +780,7 @@ function Hub({ onOpen }) {
         <div className="mg-game-body">
           <div className="mg-game-title">Daily Sudoku</div>
           <div className="mg-game-desc">A fresh puzzle every day at 00:00 UTC. Three levels.</div>
-          <div className="mg-game-meta">{solvedToday} of 3 solved today</div>
+          <div className="mg-game-meta">{solvedToday} of 3 solved today{inProgress ? ` · ${inProgress} in progress` : ""}</div>
         </div>
       </button>
 
@@ -733,6 +831,15 @@ const CSS = `
 .mg-art.math { background: var(--accent-soft); display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--accent); }
 .mg-art.math span { margin-top: 2px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .mg-art.sudoku { background: var(--accent-soft); display: flex; align-items: center; justify-content: center; }
+.mg-pausebtn { margin-left: 8px; width: 34px; height: 34px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+.mg-boardwrap { position: relative; }
+.mg-board.hidden .mg-cell { color: transparent; }
+.mg-board.hidden .mg-pencil { visibility: hidden; }
+.mg-pause { position: absolute; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; padding: 18px; background: rgba(8, 3, 22, .72); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-radius: 14px; }
+.mg-play .mg-pause { position: fixed; border-radius: 0; }
+.mg-pause-card { width: 100%; max-width: 320px; text-align: center; padding: 22px 18px; border-radius: 20px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 6px 0 var(--border); }
+.mg-pause-card h2 { font-family: var(--font-display); font-size: 30px; margin: 0 0 6px; color: var(--text); }
+.mg-pause-card p { font-size: 14px; color: var(--text-muted); line-height: 1.4; margin: 0 0 16px; }
 .mg-game-body { display: flex; flex-direction: column; justify-content: center; min-width: 0; }
 .mg-game-title { font-size: 17px; font-weight: 700; }
 .mg-game-desc { font-size: 13px; color: var(--text-muted); line-height: 1.35; margin-top: 2px; }
