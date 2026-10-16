@@ -6,6 +6,7 @@ import { extractHashtags } from "@/lib/hashtags";
 import { ensureSound, resolveSound } from "@/lib/sounds";
 import { getSettings } from "@/lib/userSettings";
 import { localTime, buildStatus } from "@/lib/screenTime";
+import { scoreInBackground } from "@/lib/schoolScore";
 
 // Videos are stored inside the database as base64 text, so keep a ceiling
 // (about 45 million characters, roughly 33 MB of video).
@@ -21,6 +22,17 @@ const MAX_UPLOADED_SOUNDS = 30;
 // Trending looks at engagement within this rolling window rather than
 // all-time, so a post from months ago can't outrank what's hot today.
 const TRENDING_WINDOW_HOURS = 48;
+
+// Ranked tabs (For You, Explore, School) pick the best posts out of the
+// newest POOL_SIZE posts, then hand them out PAGE_SIZE at a time.
+const POOL_SIZE = 150;
+const PAGE_SIZE = 10;
+
+// How fast a post fades with age (hours until its recency weight halves).
+const RECENCY_HALF_LIFE = { "for-you": 36, explore: 96, school: 48 };
+
+// Posts Syna hasn't scored yet count as slightly-not-school until she does.
+const UNSCORED_SCHOOL_SCORE = 0.35;
 
 const FEED_AUTHOR_SELECT = {
   id: true, username: true, displayName: true, avatarDataUrl: true, allowDownloads: true, school: true,
@@ -62,6 +74,59 @@ function soundNameFor(author, sound) {
   return `original sound - ${(author?.username || "").toLowerCase()}`;
 }
 
+// ── School ranking ────────────────────────────────────────────
+
+// Likes + comments + saves, with comments and saves counting double
+// because they show a viewer actually cared.
+function postEngagement(p) {
+  return p.likedBy.length + 2 * (p._count?.comments || 0) + 2 * (p._count?.saves || 0);
+}
+
+// Turns a school score (0 to 1) into a multiplier. Clearly-school posts get
+// about 2.0, unscored posts about 0.38, and unrelated posts about 0.17, so
+// anything that isn't school sinks a long way down.
+function schoolFactor(score) {
+  const s = typeof score === "number" ? score : UNSCORED_SCHOOL_SCORE;
+  return 0.15 + 1.85 * s * s;
+}
+
+// "Top students": creators whose school posts got good feedback. Each
+// creator gets a boost between 1x and 2x based on the total engagement on
+// their school posts in this pool.
+function creatorBoosts(posts) {
+  const totals = new Map();
+  for (const p of posts) {
+    if (typeof p.schoolScore === "number" && p.schoolScore >= 0.5) {
+      totals.set(p.authorId, (totals.get(p.authorId) || 0) + postEngagement(p));
+    }
+  }
+  const boosts = new Map();
+  for (const [authorId, total] of totals) {
+    boosts.set(authorId, 1 + Math.min(1, Math.log1p(total) / 4));
+  }
+  return boosts;
+}
+
+// The boost only counts as much as the post itself is about school, so a
+// top student's non-school post doesn't ride on their reputation.
+function boostFor(p, boosts) {
+  const b = boosts.get(p.authorId) || 1;
+  const s = typeof p.schoolScore === "number" ? p.schoolScore : UNSCORED_SCHOOL_SCORE;
+  return 1 + (b - 1) * s;
+}
+
+function rankScore(p, boosts, tab) {
+  const hours = Math.max(0, (Date.now() - new Date(p.createdAt).getTime()) / 3_600_000);
+  const halfLife = RECENCY_HALF_LIFE[tab] || 36;
+  const recency = Math.max(0.15, 1 / (1 + hours / halfLife));
+  return (
+    schoolFactor(p.schoolScore) *
+    boostFor(p, boosts) *
+    (1 + Math.log1p(postEngagement(p))) *
+    recency
+  );
+}
+
 // Shared shaping used by every feed tab so the object shape FeedClient.js
 // expects (likeCount, likedByMe, soundOwner, followedByMe, etc.) stays
 // identical no matter which tab produced the posts.
@@ -99,6 +164,7 @@ async function shapePosts(posts, user, followedIds) {
     likeCount: p.likedBy.length,
     likedByMe: p.likedBy.includes(user.id),
     commentCount: p._count.comments,
+    saveCount: p._count.saves || 0,
     savedByMe: p.saves.length > 0,
     followedByMe: p.authorId === user.id ? true : followedIds.has(p.authorId),
   }));
@@ -325,6 +391,7 @@ export async function GET(req) {
   // This is a bounded, single-page list (score isn't something the
   // database can paginate by cursor), so nextCursor is always null here —
   // scrolling to the bottom of Trending just won't load more for now.
+  // School posts from top students rise; non-school posts sink.
   if (tab === "trending") {
     const cutoff = new Date(Date.now() - TRENDING_WINDOW_HOURS * 60 * 60 * 1000);
     const where = {
@@ -339,10 +406,20 @@ export async function GET(req) {
       where,
       include: {
         author: { select: FEED_AUTHOR_SELECT },
-        _count: { select: { comments: true } },
+        _count: { select: { comments: true, saves: true } },
         saves: { where: { userId: user.id }, select: { id: true } },
       },
     });
+
+    scoreInBackground(rawPosts.filter((p) => !p.scoredAt).slice(0, 4).map((p) => p.id));
+
+    const boosts = creatorBoosts(rawPosts);
+    const trendRank = new Map(
+      rawPosts.map((p) => [
+        p.id,
+        (1 + postEngagement(p)) * schoolFactor(p.schoolScore) * boostFor(p, boosts),
+      ])
+    );
 
     const authorIds = [...new Set(rawPosts.map((p) => p.authorId))];
     const authorFollows = await prisma.follow.findMany({
@@ -352,9 +429,7 @@ export async function GET(req) {
     const followedIds = new Set(authorFollows.map((f) => f.followingId));
 
     const shaped = await shapePosts(rawPosts, user, followedIds);
-    // Score = likes + (comments * 2), weighted toward comments since they
-    // signal deeper engagement than a like.
-    shaped.sort((a, b) => (b.likeCount + b.commentCount * 2) - (a.likeCount + a.commentCount * 2));
+    shaped.sort((a, b) => (trendRank.get(b.id) || 0) - (trendRank.get(a.id) || 0));
 
     return NextResponse.json({
       posts: shaped.slice(0, 30),
@@ -391,32 +466,80 @@ export async function GET(req) {
     ],
   };
 
-  const posts = await prisma.feedPost.findMany({
-    take: 10,
+  // ── Following: newest first, only people you follow ───────────
+  if (tab === "following") {
+    const posts = await prisma.feedPost.findMany({
+      take: PAGE_SIZE,
+      where,
+      ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+      orderBy: { createdAt: "desc" },
+      include: {
+        author: { select: FEED_AUTHOR_SELECT },
+        _count: { select: { comments: true, saves: true } },
+        saves: { where: { userId: user.id }, select: { id: true } },
+      },
+    });
+
+    const authorIds = [...new Set(posts.map((p) => p.authorId))];
+    const authorFollows = await prisma.follow.findMany({
+      where: { followerId: user.id, followingId: { in: authorIds } },
+      select: { followingId: true },
+    });
+    const followedIds = new Set(authorFollows.map((f) => f.followingId));
+
+    const shaped = await shapePosts(posts, user, followedIds);
+
+    return NextResponse.json({
+      posts: shaped,
+      tab,
+      viewerSchool: user.school || null,
+      nextCursor: posts.length === PAGE_SIZE ? posts[posts.length - 1].id : null,
+    });
+  }
+
+  // ── For You / Explore / School: ranked, school-first ──────────
+  // Takes the newest posts, scores each one (how school-related it is,
+  // how well it did, and whether the creator is a top student), sorts by
+  // that score, and serves them a page at a time. The cursor here is just
+  // how many posts have already been served.
+  const pool = await prisma.feedPost.findMany({
+    take: POOL_SIZE,
     where,
-    ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
     orderBy: { createdAt: "desc" },
     include: {
       author: { select: FEED_AUTHOR_SELECT },
-      _count: { select: { comments: true } },
+      _count: { select: { comments: true, saves: true } },
       saves: { where: { userId: user.id }, select: { id: true } },
     },
   });
 
-  const authorIds = [...new Set(posts.map((p) => p.authorId))];
+  // Older posts Syna hasn't read yet get scored a few at a time in the
+  // background, so the feed gets better as people use it.
+  scoreInBackground(pool.filter((p) => !p.scoredAt).slice(0, 4).map((p) => p.id));
+
+  const boosts = creatorBoosts(pool);
+  const ranked = pool
+    .map((p) => ({ p, rank: rankScore(p, boosts, tab) }))
+    .sort((a, b) => b.rank - a.rank || new Date(b.p.createdAt) - new Date(a.p.createdAt));
+
+  const offset = Math.max(0, parseInt(cursor || "0", 10) || 0);
+  const pagePosts = ranked.slice(offset, offset + PAGE_SIZE).map((r) => r.p);
+  const nextOffset = offset + PAGE_SIZE;
+
+  const authorIds = [...new Set(pagePosts.map((p) => p.authorId))];
   const authorFollows = await prisma.follow.findMany({
     where: { followerId: user.id, followingId: { in: authorIds } },
     select: { followingId: true },
   });
   const followedIds = new Set(authorFollows.map((f) => f.followingId));
 
-  const shaped = await shapePosts(posts, user, followedIds);
+  const shaped = await shapePosts(pagePosts, user, followedIds);
 
   return NextResponse.json({
     posts: shaped,
     tab,
     viewerSchool: user.school || null,
-    nextCursor: posts.length === 10 ? posts[posts.length - 1].id : null,
+    nextCursor: nextOffset < ranked.length ? String(nextOffset) : null,
   });
 }
 
@@ -556,6 +679,10 @@ export async function POST(req) {
       // Already created by a lookup a moment ago — that's fine.
     }
   }
+
+  // Syna reads the new post in the background and scores how school-related
+  // it is. Drafts are scored later, once they're published and show up in the feed.
+  if (!post.isDraft) scoreInBackground([post.id]);
 
   let soundOwner = null;
   if (soundRoot) {
