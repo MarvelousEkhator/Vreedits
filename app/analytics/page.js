@@ -2,7 +2,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import crypto from "crypto";
-import { pool, ensureTable } from "../../lib/analytics";
+import { pool, ensureTable } from "../../../lib/analytics";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Analytics", robots: { index: false, follow: false } };
