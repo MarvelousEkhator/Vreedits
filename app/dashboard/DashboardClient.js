@@ -1,11 +1,9 @@
 "use client";
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import {
-  ChevronRight, MessageSquare, Sparkles, Loader2, Dumbbell, GraduationCap,
-  PenLine, BookOpen, FileText, Users,
-} from "lucide-react";
+import { ChevronRight, Loader2 } from "lucide-react";
 import { useLanguage } from "@/components/LanguageProvider";
+import GlossIcon from "@/components/GlossIcon";
 
 // Mind Gym keeps its progress on this device under this key (see app/mind-gym/page.js).
 const GYM_KEY = "vreedits.mindgym.v1";
@@ -53,12 +51,12 @@ function greetingFor(hour) {
 }
 
 const SHORTCUTS = [
-  { label: "Ask Syna", sub: "Chat or upload notes", href: "/ai-tools/chat", icon: Sparkles },
-  { label: "Study planner", sub: "Plan your revision", href: "/ai-tools/study-planner", icon: BookOpen },
-  { label: "Summarizer", sub: "Shrink long notes", href: "/ai-tools/summarizer", icon: FileText },
-  { label: "School tools", sub: "Flashcards, quizzes, notes", href: "/tools/school", icon: GraduationCap },
-  { label: "Writing", sub: "Essays and grammar", href: "/tools/writing", icon: PenLine },
-  { label: "Mind Gym", sub: "Warm up your head", href: "/mind-gym", icon: Dumbbell },
+  { label: "Ask Syna", sub: "Chat or upload notes", href: "/ai-tools/chat", gloss: "ai-tools" },
+  { label: "Study planner", sub: "Plan your revision", href: "/ai-tools/study-planner", gloss: "planner" },
+  { label: "Summarizer", sub: "Shrink long notes", href: "/ai-tools/summarizer", gloss: "summarizer" },
+  { label: "School tools", sub: "Flashcards, quizzes, notes", href: "/tools/school", gloss: "school" },
+  { label: "Writing", sub: "Essays and grammar", href: "/tools/writing", gloss: "writing" },
+  { label: "Mind Gym", sub: "Warm up your head", href: "/mind-gym", gloss: "mind-gym" },
 ];
 
 export default function DashboardClient({ user }) {
@@ -148,7 +146,7 @@ export default function DashboardClient({ user }) {
           transition: transform 0.1s ease, box-shadow 0.1s ease;
         }
         .dh-tile:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--border); }
-        .dh-tile-icon { width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center; background: var(--accent-soft); color: var(--accent); }
+        .dh-tile-icon { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; }
         .dh-tile-title { font-size: 14px; font-weight: 700; }
         .dh-tile-sub { font-size: 12px; color: var(--text-muted); line-height: 1.3; margin-top: -4px; }
 
@@ -201,7 +199,7 @@ export default function DashboardClient({ user }) {
       <div className="dh-grid">
         {SHORTCUTS.map((s) => (
           <Link key={s.href} href={s.href} className="dh-tile">
-            <span className="dh-tile-icon"><s.icon size={18} /></span>
+            <span className="dh-tile-icon"><GlossIcon name={s.gloss} size={40} /></span>
             <span className="dh-tile-title">{s.label}</span>
             <span className="dh-tile-sub">{s.sub}</span>
           </Link>
@@ -219,7 +217,7 @@ export default function DashboardClient({ user }) {
       )}
       {!loadingChats && conversations.length === 0 && (
         <Link href="/ai-tools/chat" className="dh-empty">
-          <Sparkles size={18} style={{ color: "var(--accent)", flexShrink: 0 }} />
+          <GlossIcon name="ai-tools" size={34} />
           <div>
             <div className="dh-empty-title">{t("dash.startChat")}</div>
             <div className="dh-empty-sub">Ask a question, or upload notes and turn them into a quiz.</div>
@@ -231,7 +229,7 @@ export default function DashboardClient({ user }) {
           {conversations.map((c) => (
             <Link key={c.id} href={`/ai-tools/chat?id=${c.id}`} className="dh-row">
               <div className="dh-row-main">
-                <MessageSquare size={16} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
+                <GlossIcon name="ai-tools" size={26} />
                 <div style={{ minWidth: 0 }}>
                   <div className="dh-row-title">{c.title}</div>
                   <div className="dh-row-sub">{relativeTime(c.updatedAt)}</div>
@@ -265,7 +263,7 @@ export default function DashboardClient({ user }) {
             {communities.map((c) => (
               <Link key={c.id} href={`/communities/${c.id}`} className="dh-row">
                 <div className="dh-row-main">
-                  <Users size={16} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
+                  <GlossIcon name="communities" size={26} />
                   <div className="dh-row-title">{c.name}</div>
                 </div>
                 <ChevronRight size={16} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
