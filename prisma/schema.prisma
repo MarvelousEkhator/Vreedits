@@ -359,7 +359,9 @@ model Notification {
   description String
   read        Boolean @default(false)
   createdAt DateTime @default(now())
-}model FlashcardDeck {
+}
+
+model FlashcardDeck {
   id     String @id @default(uuid())
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -434,12 +436,17 @@ model FeedPost {
   tags      String[] @default([])
   // Sound: id of the ORIGINAL post whose audio this video uses (null = its own original sound)
   soundId   String?
+  // School ranking: how school-related Syna judged this post (0 = not at all, 1 = clearly school)
+  schoolScore Float?
+  schoolTopic String?
+  scoredAt    DateTime?
   createdAt DateTime @default(now())
   comments  FeedComment[]
   saves     FeedSave[]
   poll      FeedPoll?
 
   @@index([soundId])
+  @@index([createdAt])
 }
 
 model FeedComment {
@@ -648,7 +655,9 @@ model CodeRoom {
   code       String    @db.Text
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
-}// ─────────────────────────────────────────────
+}
+
+// ─────────────────────────────────────────────
 // FUTURE CHAT SYSTEM (Message-based) — not wired up yet, for later migration
 // ─────────────────────────────────────────────
 
