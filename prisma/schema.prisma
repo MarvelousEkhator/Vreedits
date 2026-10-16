@@ -1086,6 +1086,26 @@ model Sound {
 }
 
 model Feedback {
+  id            String    @id @default(uuid())
+  userId        String
+  username      String?
+  isGuest       Boolean   @default(false)
+  categories    String[]  @default([])
+  message       String    @db.Text
+  page          String?
+  status        String    @default("new") // "new" | "read"
+  thanksMessage String?   @db.Text
+  thanksSentAt  DateTime?
+  thanksSeenAt  DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([userId, createdAt])
+  @@index([createdAt])
+}
+
+// Star-rating popup feedback. Lives in its own lowercase "feedback" table
+// (created by lib/feedback.js), separate from the "Feedback" table above.
+model FeedbackRating {
   id          BigInt   @id @default(autoincrement())
   userId      String   @map("user_id")
   username    String?
@@ -1098,6 +1118,8 @@ model Feedback {
   @@index([createdAt(sort: Desc)], map: "feedback_created_idx")
   @@map("feedback")
 }
+
+
 model UserSettings {
   id                String    @id @default(uuid())
   userId            String    @unique
