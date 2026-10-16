@@ -179,6 +179,7 @@ function NavShellInner({ children, user }) {
           backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
           position: relative; z-index: 30; flex-shrink: 0;
         }
+        .vreedits-topbar-left { display: flex; align-items: center; gap: 8px; }
         .vreedits-topbar-right { display: flex; align-items: center; gap: 8px; }
         .vreedits-hamburger {
           width: 38px; height: 38px; border-radius: 11px; border: 1px solid var(--border);
@@ -312,14 +313,26 @@ function NavShellInner({ children, user }) {
               <ArrowLeft size={20} />
             </button>
           ) : (
-            <button ref={hamburgerRef} className="vreedits-hamburger tappable" onClick={toggleMenu} aria-label="Open menu">
-              <Menu size={20} />
-            </button>
+            <div className="vreedits-topbar-left">
+              {/* Exit arrow on every main screen except Home itself */}
+              {pathname !== "/dashboard" && (
+                <button
+                  className="vreedits-hamburger tappable"
+                  onClick={() => router.push("/dashboard")}
+                  aria-label="Back to Home"
+                >
+                  <ArrowLeft size={20} />
+                </button>
+              )}
+              <button ref={hamburgerRef} className="vreedits-hamburger tappable" onClick={toggleMenu} aria-label="Open menu">
+                <Menu size={20} />
+              </button>
+            </div>
           )}
           <span className="vreedits-brand">Vreedits</span>
           <div className="vreedits-topbar-right">
             <Link href="/notifications" className="vreedits-hamburger tappable" aria-label="Notifications">
-              <Bell size={18} />
+              <GlossIcon name="notifications" size={26} />
             </Link>
             <ThemeToggle />
           </div>
