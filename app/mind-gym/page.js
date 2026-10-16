@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { ArrowLeft, Eraser, Pencil } from "lucide-react";
+import GlossIcon from "@/components/GlossIcon";
 
 /* ═══════════════════════════════════════════════════════════════
    MIND GYM — Quick Math Sprint + Daily Sudoku
@@ -630,7 +631,6 @@ function Sudoku({ onExit }) {
     </div>
   );
 }/* ═══════════════ HUB ═══════════════ */
-const MINI = [5, 3, 0, 0, 7, 0, 6, 0, 0];
 
 function Hub({ onOpen }) {
   const store = loadStore();
@@ -669,7 +669,7 @@ function Hub({ onOpen }) {
       </div>
 
       <button className="mg-game" onClick={() => onOpen("math")}>
-        <div className="mg-art math"><b>60</b><span>sec</span></div>
+        <div className="mg-art math"><GlossIcon name="math" size={62} /><span>60 sec</span></div>
         <div className="mg-game-body">
           <div className="mg-game-title">Quick Math</div>
           <div className="mg-game-desc">Beat the clock and climb from sums to algebra.</div>
@@ -678,9 +678,7 @@ function Hub({ onOpen }) {
       </button>
 
       <button className="mg-game" onClick={() => onOpen("sudoku")}>
-        <div className="mg-art sudoku" aria-hidden="true">
-          {MINI.map((n, i) => <i key={i}>{n || ""}</i>)}
-        </div>
+        <div className="mg-art sudoku" aria-hidden="true"><GlossIcon name="sudoku" size={66} /></div>
         <div className="mg-game-body">
           <div className="mg-game-title">Daily Sudoku</div>
           <div className="mg-game-desc">A fresh puzzle every day at 00:00 UTC. Three levels.</div>
@@ -733,10 +731,8 @@ const CSS = `
 .mg-game:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--border); }
 .mg-art { width: 88px; height: 88px; border-radius: 16px; flex-shrink: 0; }
 .mg-art.math { background: var(--accent-soft); display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--accent); }
-.mg-art.math b { font-size: 36px; font-weight: 800; line-height: 1; }
-.mg-art.math span { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
-.mg-art.sudoku { display: grid; grid-template-columns: repeat(3, 1fr); background: var(--surface-2); border: 2px solid var(--text); border-radius: 12px; overflow: hidden; }
-.mg-art.sudoku i { font-style: normal; font-weight: 700; font-size: 17px; display: flex; align-items: center; justify-content: center; border: .5px solid var(--border); font-variant-numeric: tabular-nums; }
+.mg-art.math span { margin-top: 2px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.mg-art.sudoku { background: var(--accent-soft); display: flex; align-items: center; justify-content: center; }
 .mg-game-body { display: flex; flex-direction: column; justify-content: center; min-width: 0; }
 .mg-game-title { font-size: 17px; font-weight: 700; }
 .mg-game-desc { font-size: 13px; color: var(--text-muted); line-height: 1.35; margin-top: 2px; }
