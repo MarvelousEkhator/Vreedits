@@ -6,7 +6,8 @@ import { extractHashtags } from "@/lib/hashtags";
 import { ensureSound, resolveSound } from "@/lib/sounds";
 import { getSettings } from "@/lib/userSettings";
 import { localTime, buildStatus } from "@/lib/screenTime";
-import { scoreInBackground } from "@/lib/schoolScore";
+import { scoreInBackground, sweepUnscored, resetScores } from "@/lib/schoolScore";
+import { isFeedbackAdmin } from "@/lib/feedbackAdmin";
 
 // Videos are stored inside the database as base64 text, so keep a ceiling
 // (about 45 million characters, roughly 33 MB of video).
@@ -183,6 +184,19 @@ export async function GET(req) {
   const visibleAuthor = { OR: [{ isPublic: true }, { id: user.id }] };
 
   const { searchParams } = new URL(req.url);
+
+  // ── Owner-only: let Syna check old posts (and take down what isn't school) ──
+  // Open  /api/feed?sweep=1  again and again until "remaining" reaches 0.
+  // Open  /api/feed?sweep=reset-videos  once first to make Syna re-watch old videos.
+  const sweep = searchParams.get("sweep");
+  if (sweep) {
+    if (!isFeedbackAdmin(user)) return NextResponse.json({ error: "Not allowed." }, { status: 403 });
+    let reset = 0;
+    if (sweep === "reset-videos") reset = await resetScores("video");
+    if (sweep === "reset-all") reset = await resetScores("all");
+    const out = await sweepUnscored(5);
+    return NextResponse.json({ ok: true, reset, ...out });
+  }
 
   // ── Sound details: /api/feed?sound=SOUND_OR_POST_ID ───────────
   const soundParam = searchParams.get("sound");
