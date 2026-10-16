@@ -14,13 +14,14 @@ import { isTabRoot, getBackFallback } from "@/lib/backRoutes";
 import {
   Menu, X, ArrowLeft, Home, Bot, GraduationCap, PenLine, Dumbbell,
   Users, Heart, History, Bell, Crown, Settings, User,
-  LogOut, Lock, MessageCircle,
+  LogOut, Lock, MessageCircle, Film,
 } from "lucide-react";
 
 // Side menu (opens from the hamburger). Business, Travel, Home Tools and
 // Collections have been moved out as Vreedits becomes a study app.
 const NAV_ITEMS = [
   { id: "home", labelKey: "nav.home", href: "/dashboard", icon: Home, gloss: "home", available: true },
+  { id: "feed", labelKey: "nav.feed", fallbackLabel: "Feed", href: "/feed", icon: Film, gloss: "feed", available: true },
   { id: "inbox", labelKey: "nav.inbox", href: "/inbox", icon: MessageCircle, gloss: "inbox", available: true },
   { id: "ai-tools", labelKey: "nav.aiTools", href: "/ai-tools", icon: Bot, gloss: "ai-tools", available: true },
   { id: "school", labelKey: "nav.school", href: "/tools/school", icon: GraduationCap, gloss: "school", available: true },
@@ -94,7 +95,8 @@ function NavShellInner({ children, user }) {
     /^\/inbox\/[^/]+/.test(pathname) ||
     pathname.startsWith("/ai-tools/chat");
 
-  // The old video feed draws its own header, so the shared bar stays hidden there.
+  // The video feed draws its own header, so the shared bar stays hidden there.
+  // The universal exit arrow is drawn on top of it instead (see below).
   const hideTopBar = pathname === "/feed";
 
   // Network tab has two sides: Communities and Messages.
@@ -167,7 +169,9 @@ function NavShellInner({ children, user }) {
     setProfileMenuOpen(false);
     setMenuOpen(false);
     window.dispatchEvent(new Event("vreedits:open-signup"));
-  }return (
+  }
+
+  return (
     <div className="v-app-shell">
       <PresenceHeartbeat />
       <FeedbackPrompt />
@@ -194,6 +198,18 @@ function NavShellInner({ children, user }) {
           color: var(--accent);
           letter-spacing: 0.3px;
         }
+
+        /* Universal exit arrow that floats over screens with their own header (the video feed). */
+        .vreedits-float-exit {
+          position: fixed; left: 12px; top: calc(var(--safe-t, env(safe-area-inset-top, 0px)) + 3px);
+          z-index: 35; width: 38px; height: 38px; border-radius: 11px;
+          border: 1px solid rgba(255,255,255,0.25); background: rgba(0,0,0,0.45);
+          color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer;
+          backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+        }
+
+        ${hideTopBar ? `/* The old small profile icon in the feed's top-left is replaced by the exit arrow. */
+        a[aria-label="My Profile"] { visibility: hidden; pointer-events: none; }` : ""}
 
         /* Communities | Messages switch under the top bar */
         .vreedits-netswitch {
@@ -337,6 +353,18 @@ function NavShellInner({ children, user }) {
             <ThemeToggle />
           </div>
         </div>
+      )}
+
+      {/* Same exit arrow for screens that hide the shared top bar (the video feed). */}
+      {hideTopBar && (
+        <button
+          type="button"
+          className="vreedits-float-exit tappable"
+          onClick={() => router.push("/dashboard")}
+          aria-label="Back to Home"
+        >
+          <ArrowLeft size={20} />
+        </button>
       )}
 
       {showNetworkSwitch && (
