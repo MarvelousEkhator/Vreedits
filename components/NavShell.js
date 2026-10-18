@@ -80,7 +80,6 @@ function NavShellInner({ children, user }) {
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
-  const [canGoBack, setCanGoBack] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
   const menuRef = useRef(null);
@@ -105,12 +104,6 @@ function NavShellInner({ children, user }) {
 
   const showBack = !isTabRoot(pathname) && !EXTRA_TAB_ROOTS.includes(pathname);
   const backHref = getBackFallback(pathname);
-
-  // Home has nowhere "up" to go, so its exit arrow steps back through
-  // history, and only shows when there is somewhere to go back to.
-  useEffect(() => {
-    setCanGoBack(typeof window !== "undefined" && window.history.length > 1);
-  }, [pathname]);
 
   useEffect(() => {
     function handleClick(e) {
@@ -337,8 +330,8 @@ function NavShellInner({ children, user }) {
             </button>
           ) : (
             <div className="vreedits-topbar-left">
-              {/* Exit arrow on every main screen. From Home it steps back through history. */}
-              {pathname !== "/dashboard" ? (
+              {/* Exit arrow on every main screen: always goes Home. Home itself has none. */}
+              {pathname !== "/dashboard" && (
                 <button
                   className="vreedits-hamburger tappable"
                   onClick={() => router.push("/dashboard")}
@@ -346,15 +339,7 @@ function NavShellInner({ children, user }) {
                 >
                   <ArrowLeft size={20} />
                 </button>
-              ) : canGoBack ? (
-                <button
-                  className="vreedits-hamburger tappable"
-                  onClick={() => router.back()}
-                  aria-label="Go back"
-                >
-                  <ArrowLeft size={20} />
-                </button>
-              ) : null}
+              )}
               <button ref={hamburgerRef} className="vreedits-hamburger tappable" onClick={toggleMenu} aria-label="Open menu">
                 <Menu size={20} />
               </button>
