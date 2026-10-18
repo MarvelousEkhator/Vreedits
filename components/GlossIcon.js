@@ -1,8 +1,8 @@
 "use client";
-import spriteImg from "./sprite.png";
+import spriteData from "./spriteData";
 
-// Glassy purple icons for the whole app. Every icon comes from components/sprite.png
-// (a 5 x 5 grid of 128px cells). Use it like: <GlossIcon name="mind-gym" size={30} />
+// Glassy purple icons for the whole app. Every icon comes from one sprite stored in
+// components/spriteData.js (a 5 x 5 grid of 128px cells). Use it like: <GlossIcon name="mind-gym" size={30} />
 
 const COLS = 5;
 const ROWS = 5;
@@ -44,7 +44,7 @@ function Gem({ size, Fallback }) {
 
 export default function GlossIcon({ name, size = 36, fallback: Fallback }) {
   const pos = POS[ALIAS[name] || name];
-  const src = spriteImg && (spriteImg.src || spriteImg);
+  const src = spriteData;
 
   // Only shows the old purple tile if the icon name is unknown.
   if (!pos || !src) return <Gem size={size} Fallback={Fallback} />;
