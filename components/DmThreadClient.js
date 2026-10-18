@@ -1,7 +1,100 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Send, Loader2, MoreVertical, Flag, Ban, BellOff, Bell, Trash2, X as XIcon } from "lucide-react";
+import {
+  Send, Loader2, MoreVertical, Flag, Ban, BellOff, Bell, Trash2, X as XIcon,
+  Smile, ImagePlus, Pin, PinOff, Copy,
+} from "lucide-react";
+import EmojiPicker from "@/components/EmojiPicker";
+
+const QUICK_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
+const LONG_PRESS_MS = 420;
+
+// Pictures, reactions and the pin are stored together in message.attachments.
+function extras(m) {
+  const a = m && m.attachments;
+  if (!a || Array.isArray(a) || typeof a !== "object") return { images: [], reactions: {}, pinned: false };
+  return {
+    images: Array.isArray(a.images) ? a.images : [],
+    reactions: a.reactions && typeof a.reactions === "object" ? a.reactions : {},
+    pinned: !!a.pinned,
+  };
+}
+
+// Shrinks a photo before sending so chats stay fast.
+function shrinkImage(file, maxSide = 1280, quality = 0.82) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("read"));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("decode"));
+      img.onload = () => {
+        const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+        const w = Math.max(1, Math.round(img.width * scale));
+        const h = Math.max(1, Math.round(img.height * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// The menu that opens when you press and hold a message.
+function MessageSheet({ message, mine, onClose, onReact, onPin, onCopy, onDelete }) {
+  const [moreEmoji, setMoreEmoji] = useState(false);
+  const ex = extras(message);
+  const hasText = message.content && !(ex.images.length && message.content === "\u{1F4F7} Photo");
+  const row = { padding: "12px 10px", background: "none", border: "none", color: "var(--text)", fontSize: 14.5, fontWeight: 600, textAlign: "left" };
+
+  return (
+    <>
+      <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 200 }} />
+      <div className="card" style={{ position: "fixed", left: 12, right: 12, bottom: 12, zIndex: 201, padding: 8, maxWidth: 420, margin: "0 auto", maxHeight: "80vh", overflowY: "auto" }}>
+        {moreEmoji ? (
+          <EmojiPicker height={280} onPickUnicode={(ch) => { onReact(ch); onClose(); }} />
+        ) : (
+          <>
+            <div style={{ display: "flex", justifyContent: "space-around", alignItems: "center", padding: "8px 4px 10px" }}>
+              {QUICK_EMOJIS.map((e) => (
+                <button key={e} onClick={() => { onReact(e); onClose(); }} aria-label={`React ${e}`} style={{ fontSize: 27, background: "none", border: "none", padding: 4 }}>
+                  {e}
+                </button>
+              ))}
+              <button onClick={() => setMoreEmoji(true)} aria-label="More emojis" style={{ width: 34, height: 34, borderRadius: "50%", background: "var(--surface-2)", color: "var(--text-muted)", border: "none", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <Smile size={18} />
+              </button>
+            </div>
+            <div style={{ borderTop: "1px solid var(--border)", paddingTop: 4 }}>
+              <button onClick={() => { onPin(); onClose(); }} className="flex items-center gap-3 w-full" style={row}>
+                {ex.pinned ? <PinOff size={17} /> : <Pin size={17} />}
+                {ex.pinned ? "Unpin message" : "Pin message"}
+              </button>
+              {hasText && (
+                <button onClick={() => { onCopy(); onClose(); }} className="flex items-center gap-3 w-full" style={row}>
+                  <Copy size={17} /> Copy text
+                </button>
+              )}
+              {mine && (
+                <button onClick={() => { onDelete(); onClose(); }} className="flex items-center gap-3 w-full" style={{ ...row, color: "var(--danger)" }}>
+                  <Trash2 size={17} /> Delete message
+                </button>
+              )}
+              <button onClick={onClose} className="flex items-center gap-3 w-full" style={{ ...row, color: "var(--text-muted)", fontWeight: 500 }}>
+                <XIcon size={17} /> Cancel
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </>
+  );
+}
 
 function Avatar({ user, size = 32 }) {
   if (user?.avatarDataUrl) {
@@ -144,6 +237,13 @@ export default function DmThreadClient({ currentUserId, otherUsername }) {
   const [blocking, setBlocking] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const scrollRef = useRef(null);
+  const fileRef = useRef(null);
+  const pressRef = useRef({ timer: null, x: 0, y: 0 });
+  const [sheetMsg, setSheetMsg] = useState(null);
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  const [pending, setPending] = useState([]); // photos waiting to be sent
+  const [photoError, setPhotoError] = useState("");
+  const [viewer, setViewer] = useState(null); // full-screen photo
 
   const isSelf = otherUser?.id === currentUserId;
 
@@ -185,24 +285,134 @@ export default function DmThreadClient({ currentUserId, otherUsername }) {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages]);
+  }, [messages.length, pending.length]);
+
+  // Quietly pick up new messages, reactions and pins from the other person.
+  useEffect(() => {
+    const id = setInterval(async () => {
+      if (document.visibilityState !== "visible" || sheetMsg) return;
+      try {
+        const res = await fetch(`/api/dm/${otherUsername}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (Array.isArray(data.messages)) setMessages(data.messages);
+      } catch {}
+    }, 6000);
+    return () => clearInterval(id);
+  }, [otherUsername, sheetMsg]);
 
   async function handleSend(e) {
     e.preventDefault();
     const content = draft.trim();
-    if (!content) return;
+    if (!content && pending.length === 0) return;
     setSending(true);
+    setEmojiOpen(false);
+    const images = pending;
     setDraft("");
+    setPending([]);
     const res = await fetch(`/api/dm/${otherUsername}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({ content, images }),
     });
     const data = await res.json();
     setSending(false);
     if (res.ok) {
       setMessages((prev) => [...prev, data.message]);
+    } else {
+      // Put it back so nothing is lost.
+      setDraft(content);
+      setPending(images);
+      setPhotoError(data.error || "Could not send.");
     }
+  }
+
+  async function handlePhotos(e) {
+    const files = Array.from(e.target.files || []).slice(0, 4 - pending.length);
+    e.target.value = "";
+    if (files.length === 0) return;
+    setPhotoError("");
+    try {
+      const shrunk = [];
+      for (const f of files) {
+        if (!f.type.startsWith("image/")) continue;
+        shrunk.push(await shrinkImage(f));
+      }
+      setPending((p) => [...p, ...shrunk].slice(0, 4));
+    } catch {
+      setPhotoError("Could not read that photo.");
+    }
+  }
+
+  function insertEmoji(ch) {
+    setDraft((d) => d + ch);
+  }
+
+  // Press and hold a message (or right-click on a computer).
+  function pressStart(m, ev) {
+    const t = ev.touches ? ev.touches[0] : ev;
+    pressRef.current.x = t.clientX;
+    pressRef.current.y = t.clientY;
+    clearTimeout(pressRef.current.timer);
+    pressRef.current.timer = setTimeout(() => {
+      try { navigator.vibrate && navigator.vibrate(12); } catch {}
+      setSheetMsg(m);
+    }, LONG_PRESS_MS);
+  }
+  function pressMove(ev) {
+    const t = ev.touches ? ev.touches[0] : ev;
+    if (Math.abs(t.clientX - pressRef.current.x) > 10 || Math.abs(t.clientY - pressRef.current.y) > 10) {
+      clearTimeout(pressRef.current.timer);
+    }
+  }
+  function pressEnd() {
+    clearTimeout(pressRef.current.timer);
+  }
+
+  async function reactTo(m, emoji) {
+    // Show it straight away, then let the server confirm.
+    setMessages((prev) => prev.map((x) => {
+      if (x.id !== m.id) return x;
+      const ex = extras(x);
+      const list = Array.isArray(ex.reactions[emoji]) ? [...ex.reactions[emoji]] : [];
+      const at = list.indexOf(currentUserId);
+      if (at >= 0) list.splice(at, 1); else list.push(currentUserId);
+      const reactions = { ...ex.reactions };
+      if (list.length) reactions[emoji] = list; else delete reactions[emoji];
+      return { ...x, attachments: { ...ex, reactions } };
+    }));
+    const res = await fetch(`/api/dm/${otherUsername}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messageId: m.id, action: "react", emoji }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.message) setMessages((prev) => prev.map((x) => (x.id === m.id ? data.message : x)));
+  }
+
+  async function togglePin(m) {
+    const res = await fetch(`/api/dm/${otherUsername}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messageId: m.id, action: "pin" }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.message) setMessages((prev) => prev.map((x) => (x.id === m.id ? data.message : x)));
+  }
+
+  async function deleteMessage(m) {
+    if (!window.confirm("Delete this message for both of you?")) return;
+    const res = await fetch(`/api/dm/${otherUsername}?messageId=${m.id}`, { method: "DELETE" });
+    if (res.ok) setMessages((prev) => prev.filter((x) => x.id !== m.id));
+  }
+
+  function copyText(m) {
+    try { navigator.clipboard && navigator.clipboard.writeText(m.content || ""); } catch {}
+  }
+
+  function jumpTo(id) {
+    const el = scrollRef.current && scrollRef.current.querySelector(`[data-mid="${id}"]`);
+    if (el) el.scrollIntoView({ block: "center", behavior: "smooth" });
   }
 
   async function handleReport(reason) {
@@ -290,6 +500,23 @@ export default function DmThreadClient({ currentUserId, otherUsername }) {
         </button>
       </div>
 
+      {(() => {
+        const pins = messages.filter((m) => extras(m).pinned);
+        if (pins.length === 0) return null;
+        const last = pins[pins.length - 1];
+        const label = last.content === "\u{1F4F7} Photo" ? "\u{1F4F7} Photo" : last.content;
+        return (
+          <button
+            onClick={() => jumpTo(last.id)}
+            style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "8px 14px", background: "var(--surface-2)", border: "none", borderBottom: "1px solid var(--border)", color: "var(--text)", textAlign: "left", flexShrink: 0 }}
+          >
+            <Pin size={14} style={{ color: "var(--accent)", flexShrink: 0 }} />
+            <span style={{ fontSize: 12.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{label}</span>
+            {pins.length > 1 && <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{pins.length} pinned</span>}
+          </button>
+        );
+      })()}
+
       <div ref={scrollRef} style={{ flex: 1, overflowY: "auto" }} className="p-3">
         {messages.length === 0 && (
           <p className="text-sm text-center py-8" style={{ color: "var(--text-muted)" }}>
@@ -301,28 +528,124 @@ export default function DmThreadClient({ currentUserId, otherUsername }) {
           const prev = messages[i - 1];
           const grouped = prev && prev.senderId === m.senderId &&
             (new Date(m.createdAt) - new Date(prev.createdAt)) < 5 * 60 * 1000;
+          const ex = extras(m);
+          const photoOnly = ex.images.length > 0 && m.content === "\u{1F4F7} Photo";
+          const mineSide = !isSelf && isMine;
+          const reactionEntries = Object.entries(ex.reactions).filter(([, ids]) => Array.isArray(ids) && ids.length);
           return (
-            <div key={m.id} style={{ display: "flex", justifyContent: isSelf ? "flex-start" : (isMine ? "flex-end" : "flex-start"), marginTop: grouped ? 2 : 10 }}>
+            <div key={m.id} data-mid={m.id} style={{ display: "flex", flexDirection: "column", alignItems: isSelf ? "flex-start" : (isMine ? "flex-end" : "flex-start"), marginTop: grouped ? 2 : 10 }}>
               <div
+                onTouchStart={(ev) => pressStart(m, ev)}
+                onTouchMove={pressMove}
+                onTouchEnd={pressEnd}
+                onTouchCancel={pressEnd}
+                onContextMenu={(ev) => { ev.preventDefault(); pressEnd(); setSheetMsg(m); }}
                 style={{
                   maxWidth: "75%",
-                  padding: "8px 12px",
+                  padding: photoOnly ? 4 : "8px 12px",
                   borderRadius: 16,
                   background: isSelf ? "var(--surface-2)" : (isMine ? "var(--accent)" : "var(--surface-2)"),
                   color: isSelf ? "var(--text)" : (isMine ? "white" : "var(--text)"),
+                  WebkitTouchCallout: "none",
+                  WebkitUserSelect: "none",
+                  userSelect: "none",
+                  outline: ex.pinned ? "1.5px solid var(--accent)" : "none",
+                  outlineOffset: 1,
                 }}
               >
-                <p className="text-sm" style={{ overflowWrap: "anywhere", lineHeight: 1.4 }}>{m.content}</p>
+                {ex.pinned && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10.5, fontWeight: 700, opacity: 0.85, marginBottom: 3, paddingLeft: photoOnly ? 6 : 0 }}>
+                    <Pin size={10} /> Pinned
+                  </div>
+                )}
+                {ex.images.length > 0 && (
+                  <div style={{ display: "grid", gridTemplateColumns: ex.images.length > 1 ? "1fr 1fr" : "1fr", gap: 3 }}>
+                    {ex.images.map((src, k) => (
+                      <img
+                        key={k}
+                        src={src}
+                        alt="Photo"
+                        onClick={() => setViewer(src)}
+                        style={{ width: "100%", maxHeight: 260, objectFit: "cover", borderRadius: 12, display: "block" }}
+                      />
+                    ))}
+                  </div>
+                )}
+                {!photoOnly && m.content && (
+                  <p className="text-sm" style={{ overflowWrap: "anywhere", lineHeight: 1.4, marginTop: ex.images.length ? 6 : 0 }}>{m.content}</p>
+                )}
               </div>
+              {reactionEntries.length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 3, justifyContent: mineSide ? "flex-end" : "flex-start", maxWidth: "75%" }}>
+                  {reactionEntries.map(([emoji, ids]) => {
+                    const me = ids.includes(currentUserId);
+                    return (
+                      <button
+                        key={emoji}
+                        onClick={() => reactTo(m, emoji)}
+                        style={{
+                          display: "flex", alignItems: "center", gap: 4, padding: "1px 8px", borderRadius: 12, fontSize: 13,
+                          border: me ? "1px solid var(--accent)" : "1px solid var(--border)",
+                          background: me ? "var(--accent-soft)" : "var(--surface-2)", color: "var(--text)",
+                        }}
+                      >
+                        <span>{emoji}</span><span style={{ fontSize: 11.5 }}>{ids.length}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           );
         })}
       </div>
 
-      <form onSubmit={handleSend} className="flex items-center gap-2 p-3" style={{ borderTop: "1px solid var(--border)", flexShrink: 0 }}>
+      {emojiOpen && (
+        <div style={{ flexShrink: 0, borderTop: "1px solid var(--border)" }}>
+          <EmojiPicker height={250} onPickUnicode={insertEmoji} />
+        </div>
+      )}
+
+      {pending.length > 0 && (
+        <div style={{ display: "flex", gap: 8, padding: "8px 12px 0", flexShrink: 0, overflowX: "auto" }}>
+          {pending.map((src, k) => (
+            <div key={k} style={{ position: "relative", flexShrink: 0 }}>
+              <img src={src} alt="" style={{ width: 64, height: 64, objectFit: "cover", borderRadius: 12, display: "block" }} />
+              <button
+                type="button"
+                onClick={() => setPending((p) => p.filter((_, j) => j !== k))}
+                aria-label="Remove photo"
+                style={{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: "50%", background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text)", display: "flex", alignItems: "center", justifyContent: "center" }}
+              >
+                <XIcon size={12} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      {photoError && <p style={{ fontSize: 12, color: "var(--danger, #e55)", padding: "6px 14px 0", flexShrink: 0 }}>{photoError}</p>}
+
+      <form onSubmit={handleSend} className="flex items-center gap-2 p-3" style={{ borderTop: pending.length || emojiOpen ? "none" : "1px solid var(--border)", flexShrink: 0 }}>
+        <input ref={fileRef} type="file" accept="image/*" multiple onChange={handlePhotos} style={{ display: "none" }} />
+        <button
+          type="button"
+          onClick={() => fileRef.current && fileRef.current.click()}
+          aria-label="Send a photo"
+          style={{ width: 40, height: 40, borderRadius: "50%", flexShrink: 0, background: "var(--surface-2)", color: "var(--text-muted)", border: "none", display: "flex", alignItems: "center", justifyContent: "center" }}
+        >
+          <ImagePlus size={18} />
+        </button>
+        <button
+          type="button"
+          onClick={() => setEmojiOpen((v) => !v)}
+          aria-label="Emojis"
+          style={{ width: 40, height: 40, borderRadius: "50%", flexShrink: 0, background: emojiOpen ? "var(--accent-soft)" : "var(--surface-2)", color: emojiOpen ? "var(--accent)" : "var(--text-muted)", border: "none", display: "flex", alignItems: "center", justifyContent: "center" }}
+        >
+          <Smile size={19} />
+        </button>
         <input
           className="input pl-4"
-          style={{ flex: 1, borderRadius: 999, height: 46, background: "var(--surface-2)", border: "1px solid var(--border)" }}
+          style={{ flex: 1, minWidth: 0, borderRadius: 999, height: 46, background: "var(--surface-2)", border: "1px solid var(--border)" }}
           placeholder={isSelf ? "Write a note to yourself…" : `Message @${otherUser.username}`}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
@@ -330,17 +653,38 @@ export default function DmThreadClient({ currentUserId, otherUsername }) {
         <button
           type="submit"
           aria-label="Send"
-          disabled={sending || !draft.trim()}
+          disabled={sending || (!draft.trim() && pending.length === 0)}
           style={{
             width: 46, height: 46, borderRadius: "50%", flexShrink: 0,
             background: "var(--accent)", color: "white", border: "none",
             display: "flex", alignItems: "center", justifyContent: "center",
-            opacity: sending || !draft.trim() ? 0.5 : 1,
+            opacity: sending || (!draft.trim() && pending.length === 0) ? 0.5 : 1,
           }}
         >
           {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
         </button>
       </form>
+
+      {sheetMsg && (
+        <MessageSheet
+          message={sheetMsg}
+          mine={sheetMsg.senderId === currentUserId}
+          onClose={() => setSheetMsg(null)}
+          onReact={(emoji) => reactTo(sheetMsg, emoji)}
+          onPin={() => togglePin(sheetMsg)}
+          onCopy={() => copyText(sheetMsg)}
+          onDelete={() => deleteMessage(sheetMsg)}
+        />
+      )}
+
+      {viewer && (
+        <div onClick={() => setViewer(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.92)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 12 }}>
+          <img src={viewer} alt="Photo" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", borderRadius: 8 }} />
+          <button onClick={() => setViewer(null)} aria-label="Close" style={{ position: "absolute", top: 14, right: 14, width: 40, height: 40, borderRadius: "50%", background: "rgba(255,255,255,0.15)", color: "#fff", border: "none", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <XIcon size={20} />
+          </button>
+        </div>
+      )}
 
       <ThreadMenu
         otherUser={otherUser}
