@@ -13,7 +13,7 @@ import { ArrowLeft } from "lucide-react";
 // Pass `onClick` instead of relying on navigation when the arrow should
 // just close a panel within the same screen (e.g. leaving Settings but
 // staying inside a community) rather than change the URL.
-export default function BackButton({ fallbackHref = "/feed", onClick, size = 22, label = "Back", variant = "plain" }) {
+export default function BackButton({ fallbackHref = "/dashboard", onClick, size = 22, label = "Back", variant = "plain" }) {
   const router = useRouter();
 
   function handleClick() {
@@ -21,7 +21,8 @@ export default function BackButton({ fallbackHref = "/feed", onClick, size = 22,
       onClick();
       return;
     }
-    router.push(fallbackHref);
+    // Home is /dashboard now. Anything still pointing at the old home (/feed) lands there.
+    router.push(fallbackHref === "/feed" ? "/dashboard" : fallbackHref);
   }
 
   const style =
