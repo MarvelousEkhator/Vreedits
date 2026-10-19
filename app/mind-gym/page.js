@@ -2,14 +2,18 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { ArrowLeft, Eraser, Pencil, Pause, Play } from "lucide-react";
 import GlossIcon from "@/components/GlossIcon";
+import {
+  GAMES, CATEGORIES, GameArt, ArtDefs, GamesStyle, gameMeta, inProgressIds,
+  loadStore, updateStore, markPlayedToday,
+} from "./games";
 
 /* ═══════════════════════════════════════════════════════════════
-   MIND GYM — Quick Math Sprint + Daily Sudoku
-   One file on purpose. Progress is kept on this device for now;
-   rewards and server-side validation arrive with the wallet.
+   MIND GYM — hub, Quick Math Sprint and Daily Sudoku.
+   The other ten games live in ./games.js, which also holds the shared
+   progress store. Progress is kept on this device for now; rewards and
+   server-side validation arrive with the wallet.
    ═══════════════════════════════════════════════════════════════ */
 
-const STORE_KEY = "vreedits.mindgym.v1";
 const PROGRESS_PREFIX = "vreedits.sudoku.progress.";
 
 // Tweak the game here — nothing else needs to change.
@@ -204,30 +208,7 @@ function findConflicts(vals) {
 }
 // ==LOGIC-END==
 
-/* ───────── Local progress (this device only) ───────── */
-const EMPTY_STORE = { playedDays: [], math: { best: 0, plays: 0 }, sudoku: { done: {}, partial: {} } };
-
-function loadStore() {
-  try {
-    const raw = localStorage.getItem(STORE_KEY);
-    if (raw) {
-      const s = JSON.parse(raw);
-      return {
-        playedDays: Array.isArray(s.playedDays) ? s.playedDays : [],
-        math: { ...EMPTY_STORE.math, ...(s.math || {}) },
-        sudoku: { done: (s.sudoku && s.sudoku.done) || {}, partial: (s.sudoku && s.sudoku.partial) || {} },
-      };
-    }
-  } catch {}
-  return { playedDays: [], math: { best: 0, plays: 0 }, sudoku: { done: {}, partial: {} } };
-}
-function updateStore(fn) {
-  const next = fn(loadStore());
-  next.playedDays = Array.from(new Set(next.playedDays)).sort().slice(-90);
-  try { localStorage.setItem(STORE_KEY, JSON.stringify(next)); } catch {}
-  return next;
-}
-function markPlayedToday(s) { s.playedDays = [...s.playedDays, localDayKey()]; return s; }/* ═══════════════ QUICK MATH ═══════════════ */
+/* ═══════════════ QUICK MATH ═══════════════ */
 // Saves a round (finished, or quit part-way) to this device.
 function recordMathRound(final) {
   updateStore((s) => {
@@ -729,14 +710,29 @@ function Sudoku({ onExit }) {
   );
 }/* ═══════════════ HUB ═══════════════ */
 
+function Card({ title, desc, meta, art, resume, onClick }) {
+  return (
+    <button className="mg-card" onClick={onClick}>
+      {resume ? <span className="mg-resume">RESUME</span> : null}
+      <div className="mg-art2">{art}</div>
+      <b>{title}</b>
+      <span>{desc}</span>
+      <em>{meta}</em>
+    </button>
+  );
+}
+
 function Hub({ onOpen }) {
   const store = loadStore();
   const today = localDayKey();
   const utcToday = utcDayKey();
   const played = new Set(store.playedDays);
   const streak = streakFromDays(store.playedDays, today);
-  const solvedToday = ["easy", "medium", "hard"].filter((d) => store.sudoku.done[`${utcToday}:${d}`]).length;
-  const inProgress = ["easy", "medium", "hard"].filter((d) => !store.sudoku.done[`${utcToday}:${d}`] && store.sudoku.partial[`${utcToday}:${d}`]).length;
+  const levels = ["easy", "medium", "hard"];
+  const solvedToday = levels.filter((d) => store.sudoku.done[`${utcToday}:${d}`]).length;
+  const sudokuOpen = levels.some((d) => !store.sudoku.done[`${utcToday}:${d}`] && store.sudoku.partial[`${utcToday}:${d}`]);
+  const resumeIds = inProgressIds();
+  if (sudokuOpen) resumeIds.push("sudoku");
 
   const week = [];
   for (let i = 6; i >= 0; i--) {
@@ -745,8 +741,32 @@ function Hub({ onOpen }) {
     week.push({ key, letter: new Date(y, m - 1, d).toLocaleDateString(undefined, { weekday: "narrow" }), done: played.has(key), isToday: i === 0 });
   }
 
+  const titleOf = (id) => (id === "sudoku" ? "Sudoku" : (GAMES.find((g) => g.id === id) || {}).title || id);
+  const mathCard = (
+    <Card
+      key="math"
+      title="Quick Math"
+      desc="Beat the clock and climb from sums to algebra."
+      meta={store.math.best > 0 ? `Best: ${store.math.best}` : "No score yet"}
+      art={<GlossIcon name="math" size={58} />}
+      onClick={() => onOpen("math")}
+    />
+  );
+  const sudokuCard = (
+    <Card
+      key="sudoku"
+      title="Daily Sudoku"
+      desc="A fresh puzzle every day. Three levels."
+      meta={`${solvedToday} of 3 solved today`}
+      art={<GlossIcon name="sudoku" size={60} />}
+      resume={sudokuOpen}
+      onClick={() => onOpen("sudoku")}
+    />
+  );
+
   return (
     <div className="mg">
+      <ArtDefs />
       <div className="mg-eyebrow">{new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })}</div>
       <h1 className="mg-title">Mind Gym</h1>
       <p className="mg-sub">A few minutes of sharp thinking before you open the books.</p>
@@ -766,25 +786,40 @@ function Hub({ onOpen }) {
         </div>
       </div>
 
-      <button className="mg-game" onClick={() => onOpen("math")}>
-        <div className="mg-art math"><GlossIcon name="math" size={62} /><span>60 sec</span></div>
-        <div className="mg-game-body">
-          <div className="mg-game-title">Quick Math</div>
-          <div className="mg-game-desc">Beat the clock and climb from sums to algebra.</div>
-          <div className="mg-game-meta">{store.math.best > 0 ? `Best: ${store.math.best}` : "No score yet"}</div>
-        </div>
-      </button>
+      {resumeIds.length > 0 && (
+        <>
+          <div className="mg-cat" style={{ marginTop: 6 }}>Pick up where you left off</div>
+          <div className="mg-tools" style={{ justifyContent: "flex-start", marginTop: 0 }}>
+            {resumeIds.map((id) => (
+              <button key={id} className="mg-tool on" onClick={() => onOpen(id)}>
+                <Play size={14} /> {titleOf(id)}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
 
-      <button className="mg-game" onClick={() => onOpen("sudoku")}>
-        <div className="mg-art sudoku" aria-hidden="true"><GlossIcon name="sudoku" size={66} /></div>
-        <div className="mg-game-body">
-          <div className="mg-game-title">Daily Sudoku</div>
-          <div className="mg-game-desc">A fresh puzzle every day at 00:00 UTC. Three levels.</div>
-          <div className="mg-game-meta">{solvedToday} of 3 solved today{inProgress ? ` · ${inProgress} in progress` : ""}</div>
-        </div>
-      </button>
+      {CATEGORIES.map((cat) => (
+        <section key={cat.id}>
+          <div className="mg-cat">{cat.title}</div>
+          <div className="mg-cards">
+            {cat.id === "numbers" ? [mathCard, sudokuCard] : null}
+            {GAMES.filter((g) => g.cat === cat.id).map((g) => (
+              <Card
+                key={g.id}
+                title={g.title}
+                desc={g.desc}
+                meta={gameMeta(g.id)}
+                art={<GameArt id={g.id} />}
+                resume={resumeIds.includes(g.id)}
+                onClick={() => onOpen(g.id)}
+              />
+            ))}
+          </div>
+        </section>
+      ))}
 
-      <p className="mg-meta" style={{ marginTop: 18 }}>Logic puzzles and pattern games are next. Neuron rewards arrive with the wallet.</p>
+      <p className="mg-meta" style={{ marginTop: 22 }}>Every game saves where you stopped and counts toward your streak. Neuron rewards arrive with the wallet.</p>
     </div>
   );
 }
@@ -795,13 +830,22 @@ export default function MindGymPage() {
   const [view, setView] = useState("hub");
   useEffect(() => { setMounted(true); }, []);
 
+  const open = useCallback((v) => {
+    setView(v);
+    try { window.scrollTo(0, 0); } catch {}
+  }, []);
+  const exit = useCallback(() => open("hub"), [open]);
+  const game = GAMES.find((g) => g.id === view);
+
   return (
     <>
       <style>{CSS}</style>
+      <GamesStyle />
       {!mounted ? <div className="mg" style={{ minHeight: "60vh" }} /> : (
-        view === "math" ? <QuickMath onExit={() => setView("hub")} /> :
-        view === "sudoku" ? <Sudoku onExit={() => setView("hub")} /> :
-        <Hub onOpen={setView} />
+        view === "math" ? <QuickMath onExit={exit} /> :
+        view === "sudoku" ? <Sudoku onExit={exit} /> :
+        game ? <game.Comp onExit={exit} /> :
+        <Hub onOpen={open} />
       )}
     </>
   );
