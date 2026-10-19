@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { ArrowLeft, Play, Eraser, Pencil, RotateCcw, RotateCw, Crown } from "lucide-react";
+import { GameNotes } from "./NotesQuiz";
 
 /* ═══════════════════════════════════════════════════════════════
    MIND GYM — the games (everything except Quick Math and Sudoku,
@@ -751,9 +752,7 @@ export function GameQueens({ onExit }) {
       <QueensBoard key={n} n={n} onExit={onExit} />
     </GameFrame>
   );
-}
-
-/* ═══════════════════════════ TOWER OF HANOI ═══════════════════════════ */
+}/* ═══════════════════════════ TOWER OF HANOI ═══════════════════════════ */
 // ==LOGIC-START==
 function hanoiStart(n) {
   return [Array.from({ length: n }, (_, i) => n - i), [], []];
@@ -1373,9 +1372,7 @@ export function GameKenKen({ onExit }) {
       {seeds ? <KenKenPlay key={`${n}-${seeds[n]}`} n={n} seed={seeds[n]} onNew={fresh} /> : null}
     </GameFrame>
   );
-}
-
-/* ═══════════════════════════ NONOGRAMS ═══════════════════════════ */
+}/* ═══════════════════════════ NONOGRAMS ═══════════════════════════ */
 // ==LOGIC-START==
 function nonoRuns(line) {
   const out = [];
@@ -2026,10 +2023,7 @@ export function GameCheckers({ onExit }) {
       <CheckersPlay key={level} level={level} />
     </GameFrame>
   );
-}
-
-
-/* ═══════════════════════════ CHESS ═══════════════════════════ */
+}/* ═══════════════════════════ CHESS ═══════════════════════════ */
 // ==LOGIC-START==
 // Board: 64 cells, row * 8 + column, row 0 is the computer's back rank.
 // 1 pawn, 2 knight, 3 bishop, 4 rook, 5 queen, 6 king. Positive = you (white), negative = computer.
@@ -2934,9 +2928,7 @@ export function GameTangram({ onExit }) {
       {seeds ? <TangramPlay key={`${level}-${seeds[level]}`} level={level} seed={seeds[level]} onNew={fresh} /> : null}
     </GameFrame>
   );
-}
-
-/* ═══════════════════════════ LOGIC GRID ═══════════════════════════ */
+}/* ═══════════════════════════ LOGIC GRID ═══════════════════════════ */
 // ==LOGIC-START==
 // Category 0 is an ordered one (days or times). An item's "group" is its position in that order,
 // so every group is one row of the finished table: one item from each category.
@@ -3566,6 +3558,7 @@ export function GameSequences({ onExit }) {
 
 /* ═══════════════════════════ REGISTRY, HUB ART, SAVED-GAME LOOKUP ═══════════════════════════ */
 export const CATEGORIES = [
+  { id: "school", title: "From your notes" },
   { id: "numbers", title: "Numbers" },
   { id: "logic", title: "Logic and deduction" },
   { id: "strategy", title: "Strategy and planning" },
@@ -3573,6 +3566,7 @@ export const CATEGORIES = [
 ];
 
 export const GAMES = [
+  { id: "notes", cat: "school", title: "Notes Challenge", desc: "Questions made from your own school notes.", Comp: GameNotes },
   { id: "2048", cat: "numbers", title: "2048", desc: "Slide and merge tiles. Plan three moves ahead.", Comp: Game2048 },
   { id: "kenken", cat: "numbers", title: "KenKen", desc: "Sudoku with arithmetic cages.", Comp: GameKenKen },
   { id: "sequences", cat: "numbers", title: "Sequences", desc: "Spot the rule and predict what comes next.", Comp: GameSequences },
@@ -3664,6 +3658,16 @@ function Tile({ x, y, g, t }) {
 export function GameArt({ id }) {
   let body = null;
   switch (id) {
+    case "notes":
+      body = (
+        <>
+          <rect x="12" y="8" width="40" height="48" rx="7" fill="url(#mga-b)" {...W} />
+          <path d="M20 22h24M20 31h24M20 40h14" stroke="#fff" strokeWidth="3" strokeLinecap="round" />
+          <circle cx="46" cy="46" r="10" fill="url(#mga-g)" {...W} />
+          <text x="46" y="51" textAnchor="middle" fontSize="13" fontWeight="800" fill="#fff">?</text>
+        </>
+      );
+      break;
     case "2048":
       body = <><Tile x={5} y={5} g="p" t="2" /><Tile x={34} y={5} g="k" t="4" /><Tile x={5} y={34} g="b" t="8" /><Tile x={34} y={34} g="g" t="16" /></>;
       break;
