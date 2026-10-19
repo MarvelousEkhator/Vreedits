@@ -170,7 +170,7 @@ function useOnLeave(fn) {
 function GameFrame({ eyebrow, title, onExit, children }) {
   return (
     <div className="mg">
-      <button className="mg-back" onClick={onExit}><ArrowLeft size={16} /> Mind Gym</button>
+      <button className="mg-back" onClick={onExit}><ArrowLeft size={20} /> Mind Gym</button>
       {eyebrow ? <div className="mg-eyebrow">{eyebrow}</div> : null}
       <h1 className="mg-title">{title}</h1>
       {children}
@@ -2028,6 +2028,511 @@ export function GameCheckers({ onExit }) {
   );
 }
 
+
+/* ═══════════════════════════ CHESS ═══════════════════════════ */
+// ==LOGIC-START==
+// Board: 64 cells, row * 8 + column, row 0 is the computer's back rank.
+// 1 pawn, 2 knight, 3 bishop, 4 rook, 5 queen, 6 king. Positive = you (white), negative = computer.
+const CH_N = [[-2, -1], [-2, 1], [-1, -2], [-1, 2], [1, -2], [1, 2], [2, -1], [2, 1]];
+const CH_K = [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 1], [1, -1], [1, 0], [1, 1]];
+const CH_B = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
+const CH_R = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+const CH_VAL = [0, 100, 320, 330, 500, 900, 0];
+
+function chStart() {
+  const b = new Array(64).fill(0);
+  const back = [4, 2, 3, 5, 6, 3, 2, 4];
+  for (let c = 0; c < 8; c++) {
+    b[c] = -back[c];
+    b[8 + c] = -1;
+    b[48 + c] = 1;
+    b[56 + c] = back[c];
+  }
+  return { b, turn: 1, cas: [true, true, true, true], ep: -1, half: 0 };
+}
+
+function chAttacked(b, sq, by) {
+  const r = (sq / 8) | 0, c = sq % 8;
+  const pr = r + by;
+  if (pr >= 0 && pr < 8) {
+    if (c > 0 && b[pr * 8 + c - 1] === by) return true;
+    if (c < 7 && b[pr * 8 + c + 1] === by) return true;
+  }
+  for (const [dr, dc] of CH_N) {
+    const rr = r + dr, cc = c + dc;
+    if (rr >= 0 && rr < 8 && cc >= 0 && cc < 8 && b[rr * 8 + cc] === 2 * by) return true;
+  }
+  for (const [dr, dc] of CH_K) {
+    const rr = r + dr, cc = c + dc;
+    if (rr >= 0 && rr < 8 && cc >= 0 && cc < 8 && b[rr * 8 + cc] === 6 * by) return true;
+  }
+  for (const [dr, dc] of CH_B) {
+    let rr = r + dr, cc = c + dc;
+    while (rr >= 0 && rr < 8 && cc >= 0 && cc < 8) {
+      const v = b[rr * 8 + cc];
+      if (v) { if (v === 3 * by || v === 5 * by) return true; break; }
+      rr += dr; cc += dc;
+    }
+  }
+  for (const [dr, dc] of CH_R) {
+    let rr = r + dr, cc = c + dc;
+    while (rr >= 0 && rr < 8 && cc >= 0 && cc < 8) {
+      const v = b[rr * 8 + cc];
+      if (v) { if (v === 4 * by || v === 5 * by) return true; break; }
+      rr += dr; cc += dc;
+    }
+  }
+  return false;
+}
+
+function chKingSq(b, side) { return b.indexOf(6 * side); }
+function chInCheck(b, side) { return chAttacked(b, chKingSq(b, side), -side); }
+
+function chPseudo(st) {
+  const { b, turn: side, cas, ep } = st;
+  const out = [];
+  const add = (from, to, flag, promo) => out.push({ from, to, flag: flag || "", promo: promo || 0 });
+  for (let i = 0; i < 64; i++) {
+    const p = b[i];
+    if (!p || (p > 0) !== (side > 0)) continue;
+    const t = Math.abs(p), r = (i / 8) | 0, c = i % 8;
+    if (t === 1) {
+      const dir = side > 0 ? -1 : 1, start = side > 0 ? 6 : 1, last = side > 0 ? 0 : 7;
+      const nr = r + dir;
+      if (nr < 0 || nr > 7) continue;
+      if (!b[nr * 8 + c]) {
+        if (nr === last) for (const pr of [5, 4, 3, 2]) add(i, nr * 8 + c, "", pr);
+        else {
+          add(i, nr * 8 + c);
+          if (r === start && !b[(r + 2 * dir) * 8 + c]) add(i, (r + 2 * dir) * 8 + c, "dbl");
+        }
+      }
+      for (const dc of [-1, 1]) {
+        const cc = c + dc;
+        if (cc < 0 || cc > 7) continue;
+        const to = nr * 8 + cc, v = b[to];
+        if (v && (v > 0) !== (side > 0)) {
+          if (nr === last) for (const pr of [5, 4, 3, 2]) add(i, to, "", pr);
+          else add(i, to);
+        } else if (!v && to === ep) add(i, to, "ep");
+      }
+    } else if (t === 2 || t === 6) {
+      for (const [dr, dc] of t === 2 ? CH_N : CH_K) {
+        const rr = r + dr, cc = c + dc;
+        if (rr < 0 || rr > 7 || cc < 0 || cc > 7) continue;
+        const v = b[rr * 8 + cc];
+        if (!v || (v > 0) !== (side > 0)) add(i, rr * 8 + cc);
+      }
+      if (t === 6) {
+        const home = side > 0 ? 60 : 4;
+        if (i === home && !chAttacked(b, i, -side)) {
+          const k = side > 0 ? 0 : 2;
+          if (cas[k] && !b[i + 1] && !b[i + 2] && b[i + 3] === 4 * side && !chAttacked(b, i + 1, -side)) add(i, i + 2, "ck");
+          if (cas[k + 1] && !b[i - 1] && !b[i - 2] && !b[i - 3] && b[i - 4] === 4 * side && !chAttacked(b, i - 1, -side)) add(i, i - 2, "cq");
+        }
+      }
+    } else {
+      const dirs = t === 3 ? CH_B : t === 4 ? CH_R : CH_B.concat(CH_R);
+      for (const [dr, dc] of dirs) {
+        let rr = r + dr, cc = c + dc;
+        while (rr >= 0 && rr < 8 && cc >= 0 && cc < 8) {
+          const v = b[rr * 8 + cc];
+          if (!v) add(i, rr * 8 + cc);
+          else { if ((v > 0) !== (side > 0)) add(i, rr * 8 + cc); break; }
+          rr += dr; cc += dc;
+        }
+      }
+    }
+  }
+  return out;
+}
+
+function chApply(st, m) {
+  const b = st.b.slice();
+  const p = b[m.from];
+  const side = p > 0 ? 1 : -1;
+  const cap = b[m.to];
+  b[m.to] = m.promo ? side * m.promo : p;
+  b[m.from] = 0;
+  if (m.flag === "ep") b[((m.from / 8) | 0) * 8 + (m.to % 8)] = 0;
+  else if (m.flag === "ck") { b[m.to - 1] = b[m.to + 1]; b[m.to + 1] = 0; }
+  else if (m.flag === "cq") { b[m.to + 1] = b[m.to - 2]; b[m.to - 2] = 0; }
+  const cas = st.cas.slice();
+  if (Math.abs(p) === 6) { if (side > 0) { cas[0] = false; cas[1] = false; } else { cas[2] = false; cas[3] = false; } }
+  for (const sq of [m.from, m.to]) {
+    if (sq === 63) cas[0] = false;
+    else if (sq === 56) cas[1] = false;
+    else if (sq === 7) cas[2] = false;
+    else if (sq === 0) cas[3] = false;
+  }
+  return {
+    b,
+    turn: -st.turn,
+    cas,
+    ep: m.flag === "dbl" ? (m.from + m.to) / 2 : -1,
+    half: Math.abs(p) === 1 || cap ? 0 : st.half + 1,
+  };
+}
+
+function chLegal(st) {
+  const side = st.turn;
+  const out = [];
+  for (const m of chPseudo(st)) {
+    const nx = chApply(st, m);
+    if (!chInCheck(nx.b, side)) out.push(m);
+  }
+  return out;
+}
+
+function chKey(st) { return st.b.join(",") + "|" + st.turn + st.cas.map((x) => (x ? 1 : 0)).join("") + st.ep; }
+
+function chInsufficient(b) {
+  const minors = [];
+  for (const v of b) {
+    const t = Math.abs(v);
+    if (!t || t === 6) continue;
+    if (t === 2 || t === 3) minors.push(t);
+    else return false;
+  }
+  return minors.length <= 1;
+}
+
+// keys: positions since the last pawn move or capture, including the current one.
+function chStatus(st, legal, keys) {
+  const check = chInCheck(st.b, st.turn);
+  if (!legal.length) return check ? "mate" : "stalemate";
+  if (st.half >= 100) return "draw50";
+  if (chInsufficient(st.b)) return "insufficient";
+  if (keys) {
+    const k = chKey(st);
+    let n = 0;
+    for (const x of keys) if (x === k) n++;
+    if (n >= 3) return "repeat";
+  }
+  return check ? "check" : "ok";
+}
+
+function chEval(b) {
+  let s = 0;
+  for (let i = 0; i < 64; i++) {
+    const v = b[i];
+    if (!v) continue;
+    const t = Math.abs(v), r = (i / 8) | 0, c = i % 8, side = v > 0 ? 1 : -1;
+    let val = CH_VAL[t];
+    const centre = 7 - (Math.abs(r - 3.5) + Math.abs(c - 3.5));
+    if (t === 1) val += (side > 0 ? 6 - r : r - 1) * 7 + (c > 1 && c < 6 ? 4 : 0);
+    else if (t === 2 || t === 3) val += centre * 5;
+    else if (t === 5) val += centre * 1.5;
+    s += side * val;
+  }
+  return s;
+}
+
+function chOrder(b, moves) {
+  return moves
+    .map((m) => ({ m, k: (b[m.to] ? 10 * Math.abs(b[m.to]) - Math.abs(b[m.from]) : 0) + (m.promo ? 8 : 0) }))
+    .sort((x, y) => y.k - x.k)
+    .map((x) => x.m);
+}
+
+function chQuiesce(st, alpha, beta, depth) {
+  const stand = st.turn * chEval(st.b);
+  if (depth <= 0) return stand;
+  if (stand >= beta) return stand;
+  if (stand > alpha) alpha = stand;
+  const caps = chOrder(st.b, chPseudo(st).filter((m) => st.b[m.to] || m.flag === "ep"));
+  for (const m of caps) {
+    const nx = chApply(st, m);
+    if (chInCheck(nx.b, st.turn)) continue;
+    const sc = -chQuiesce(nx, -beta, -alpha, depth - 1);
+    if (sc >= beta) return sc;
+    if (sc > alpha) alpha = sc;
+  }
+  return alpha;
+}
+
+function chSearch(st, depth, alpha, beta, ply) {
+  if (depth <= 0) return chQuiesce(st, alpha, beta, 4);
+  const moves = chLegal(st);
+  if (!moves.length) return chInCheck(st.b, st.turn) ? -99000 + ply : 0;
+  let best = -Infinity;
+  for (const m of chOrder(st.b, moves)) {
+    const sc = -chSearch(chApply(st, m), depth - 1, -beta, -alpha, ply + 1);
+    if (sc > best) best = sc;
+    if (best > alpha) alpha = best;
+    if (alpha >= beta) break;
+  }
+  return best;
+}
+
+function chBest(st, depth, rng, sloppy) {
+  const moves = shuffle(chLegal(st), rng);
+  if (!moves.length) return null;
+  if (sloppy && rng() < sloppy) return moves[0];
+  let best = moves[0], bs = -Infinity;
+  for (const m of chOrder(st.b, moves)) {
+    const sc = -chSearch(chApply(st, m), depth - 1, -Infinity, -bs, 1);
+    if (sc > bs) { bs = sc; best = m; }
+  }
+  return best;
+}
+
+function chPerft(st, depth) {
+  if (depth === 0) return 1;
+  let n = 0;
+  for (const m of chLegal(st)) n += chPerft(chApply(st, m), depth - 1);
+  return n;
+}
+// ==LOGIC-END==
+
+const CH_ART = {
+  1: "<circle cx='22.5' cy='13.5' r='5.2'/><path d='M22.5 19.5c-4 0-6.6 3-6.6 6.4 0 3 1.6 5 2.9 6.6h-5.3c-1.4 0-2.5 1.1-2.5 2.5V38h23v-2c0-1.4-1.1-2.5-2.5-2.5h-5.3c1.3-1.6 2.9-3.6 2.9-6.6 0-3.4-2.6-6.4-6.6-6.4z'/>",
+  4: "<path d='M11 38h23v-4.5H11z'/><path d='M14 33.5l1.2-15h14.6l1.2 15z'/><path d='M12.5 18.5V8.5h5v3h3.3v-3h3.4v3h3.3v-3h5v10z'/>",
+  3: "<circle cx='22.5' cy='8.6' r='2.8'/><path d='M22.5 12.5c-6.2 3.8-9 8.6-9 13.2 0 2.6 1.2 4.6 3 6.2h12c1.8-1.6 3-3.6 3-6.2 0-4.6-2.8-9.4-9-13.2z'/><path d='M12 33.5h21V38H12z'/>",
+  5: "<path d='M9.5 14l4.8 15.5 3.6-14.8 4.6 14.8 4.6-14.8 3.6 14.8L35.5 14l-2.4 22h-20.7z'/><circle cx='9.5' cy='12.5' r='2.3'/><circle cx='16.8' cy='9.5' r='2.3'/><circle cx='22.5' cy='8.3' r='2.3'/><circle cx='28.2' cy='9.5' r='2.3'/><circle cx='35.5' cy='12.5' r='2.3'/><path d='M11.5 36h22v3h-22z'/>",
+  6: "<path d='M21 3.5h3V7h3.5v3H24v3.5h-3V10h-3.5V7H21z'/><path d='M22.5 14c-7.5 0-12.5 5-10.4 13.4.8 3 2.4 5 4 6.6h12.8c1.6-1.6 3.2-3.6 4-6.6C35 19 30 14 22.5 14z'/><path d='M11 35h23v4H11z'/>",
+  2: "<path d='M12.5 38c0-9.5 3.8-12.6 6.6-16-2.6.6-5 2.6-6.6 5.4-1.4-.4-3-1.6-3.4-3.8 1.4-3.8 5-8.4 8.4-11.4 1.2-1.2 2.2-2.2 2.2-4.4 1.4.6 2.6 1.6 3.2 2.8 6 .6 12.2 5.2 13.2 15.2.5 5.6-.4 10.4-.4 14.2z'/><circle cx='20.5' cy='14.5' r='1.3' fill='#1a0838' stroke='none'/>",
+};
+
+const CH_LEVELS = {
+  easy: { depth: 2, sloppy: 0.35, label: "Easy" },
+  medium: { depth: 3, sloppy: 0, label: "Medium" },
+  hard: { depth: 4, sloppy: 0, label: "Hard" },
+  two: { depth: 0, sloppy: 0, label: "2 players" },
+};
+const CH_NAMES = { 2: "Knight", 3: "Bishop", 4: "Rook", 5: "Queen" };
+
+function ChessDefs() {
+  return (
+    <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true" focusable="false">
+      <defs>
+        <linearGradient id="mgc-w" x1="0" y1="0" x2="0.7" y2="1">
+          <stop offset="0" stopColor="#ffffff" />
+          <stop offset="1" stopColor="#b98cf0" />
+        </linearGradient>
+        <linearGradient id="mgc-b" x1="0" y1="0" x2="0.7" y2="1">
+          <stop offset="0" stopColor="#a283d4" />
+          <stop offset="1" stopColor="#2a1250" />
+        </linearGradient>
+      </defs>
+    </svg>
+  );
+}
+
+function ChessPiece({ v }) {
+  const white = v > 0;
+  const t = Math.abs(v);
+  const inner = white ? CH_ART[t] : CH_ART[t].replace("#1a0838", "#ffffff");
+  return (
+    <svg viewBox="0 0 45 45" className="mg-cp" aria-hidden="true">
+      <g
+        fill={white ? "url(#mgc-w)" : "url(#mgc-b)"}
+        stroke={white ? "#3a1a66" : "#12002e"}
+        strokeWidth="1.3"
+        strokeLinejoin="round"
+        dangerouslySetInnerHTML={{ __html: inner }}
+      />
+    </svg>
+  );
+}
+
+function ChessPlay({ level }) {
+  const saveKey = `chess-${level}`;
+  const two = level === "two"; // two people on one phone
+  const saved = useMemo(() => {
+    const s = readSave(saveKey);
+    return s && s.st && Array.isArray(s.st.b) && s.st.b.length === 64 ? s : null;
+  }, [saveKey]);
+  const [st, setSt] = useState(saved ? saved.st : chStart());
+  const [keys, setKeys] = useState(saved && Array.isArray(saved.keys) ? saved.keys : [chKey(chStart())]);
+  const [hist, setHist] = useState(saved && Array.isArray(saved.hist) ? saved.hist : []);
+  const [last, setLast] = useState(saved && Array.isArray(saved.last) ? saved.last : []);
+  const [plies, setPlies] = useState(saved ? saved.plies || 0 : 0);
+  const [sel, setSel] = useState(-1);
+  const [promo, setPromo] = useState(null);
+  const [paused, setPaused] = useState(false);
+  const [thinking, setThinking] = useState(false);
+  const [flip, setFlip] = useState(false);
+  const recRef = useRef(false);
+  const pliesRef = useRef(plies);
+  pliesRef.current = plies;
+  usePauseOnHide(setPaused);
+
+  const legal = useMemo(() => chLegal(st), [st]);
+  const status = useMemo(() => chStatus(st, legal, keys), [st, legal, keys]);
+  const over = status === "mate" || status === "stalemate" || status === "draw50" || status === "insufficient" || status === "repeat";
+  const inCheck = status === "check" || status === "mate";
+  const kingAt = inCheck ? chKingSq(st.b, st.turn) : -1;
+
+  useEffect(() => {
+    if (!over) writeSave(saveKey, { st, keys: keys.slice(-120), hist: hist.slice(-10), last, plies });
+  }, [st, keys, hist, last, plies, over, saveKey]);
+
+  useEffect(() => {
+    if (!over || recRef.current) return;
+    recRef.current = true;
+    clearSave(saveKey);
+    const won = !two && status === "mate" && st.turn === -1;
+    recordGame("chess", (g) => {
+      g.plays = (g.plays || 0) + 1;
+      if (won) { g.wins = (g.wins || 0) + 1; g.done[level] = true; }
+    });
+  }, [over]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useOnLeave(() => { if (!recRef.current && pliesRef.current > 0) touchToday(); });
+
+  function play(m, record) {
+    const nx = chApply(st, m);
+    if (record) setHist((h) => [...h, { st, keys, last, plies }]);
+    setKeys(nx.half === 0 ? [chKey(nx)] : [...keys, chKey(nx)]);
+    setSt(nx);
+    setLast([m.from, m.to]);
+    setPlies((p) => p + 1);
+    setSel(-1);
+    setPromo(null);
+  }
+
+  // The computer's turn.
+  useEffect(() => {
+    if (two || st.turn !== -1 || over || paused) return undefined;
+    setThinking(true);
+    const t = setTimeout(() => {
+      const cfg = CH_LEVELS[level];
+      const m = chBest(st, cfg.depth, Math.random, cfg.sloppy);
+      setThinking(false);
+      if (m) play(m, false);
+    }, 450);
+    return () => { clearTimeout(t); setThinking(false); };
+  }, [st, over, paused, level, two]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const targets = useMemo(() => {
+    const set = new Set();
+    if (sel >= 0) for (const m of legal) if (m.from === sel) set.add(m.to);
+    return set;
+  }, [sel, legal]);
+
+  function tap(i) {
+    if (paused || over || (!two && st.turn !== 1) || thinking || promo) return;
+    const v = st.b[i];
+    if (sel >= 0 && targets.has(i)) {
+      const ms = legal.filter((m) => m.from === sel && m.to === i);
+      if (ms.length > 1) setPromo(ms);
+      else play(ms[0], true);
+      return;
+    }
+    if (v && (v > 0) === (st.turn > 0) && legal.some((m) => m.from === i)) setSel(i === sel ? -1 : i);
+    else setSel(-1);
+  }
+
+  function undo() {
+    if (!hist.length || thinking || over) return;
+    const h = hist[hist.length - 1];
+    setSt(h.st);
+    setKeys(h.keys);
+    setLast(h.last);
+    setPlies(h.plies);
+    setHist((x) => x.slice(0, -1));
+    setSel(-1);
+    setPromo(null);
+  }
+
+  function restart() {
+    recRef.current = false;
+    const s0 = chStart();
+    setSt(s0);
+    setKeys([chKey(s0)]);
+    setHist([]);
+    setLast([]);
+    setPlies(0);
+    setSel(-1);
+    setPromo(null);
+  }
+
+  const headline =
+    status === "mate" ? (two ? (st.turn === -1 ? "Checkmate. White wins." : "Checkmate. Black wins.") : st.turn === -1 ? "Checkmate. You win." : "Checkmate. The computer wins.") :
+    status === "stalemate" ? "Stalemate. It is a draw." :
+    status === "draw50" ? "Draw by the fifty-move rule." :
+    status === "insufficient" ? "Draw. Neither side can checkmate." :
+    status === "repeat" ? "Draw by repeating the position." : "";
+
+  return (
+    <>
+      <ChessDefs />
+      <div className="mg-scorebar">
+        <div><span>{thinking ? "Thinking…" : two ? "Turn" : st.turn === 1 ? "Your move" : "Computer"}</span><b>{two ? (st.turn === 1 ? "White" : "Black") : CH_LEVELS[level].label}</b></div>
+        <div><span>Status</span><b>{inCheck && !over ? "Check" : over ? "Over" : "Playing"}</b></div>
+      </div>
+      <div className="mg-boardwrap">
+        <div className="mg-ck chs" style={{ visibility: paused ? "hidden" : "visible" }} role="grid" aria-label="Chess board">
+          {(flip ? st.b.map((_, k) => 63 - k) : st.b.map((_, k) => k)).map((i) => {
+            const v = st.b[i];
+            const r = (i / 8) | 0, c = i % 8;
+            const vr = flip ? 7 - r : r, vc = flip ? 7 - c : c; // where the square is drawn
+            const dark = (vr + vc) % 2 === 1;
+            return (
+              <button
+                key={i}
+                role="gridcell"
+                className={`mg-ckc ${dark ? "dk" : "lt"} ${last.includes(i) ? "last" : ""} ${sel === i ? "pick" : ""} ${kingAt === i ? "chk" : ""}`}
+                onClick={() => tap(i)}
+                aria-label={`${"abcdefgh"[c]}${8 - r}${v ? (v > 0 ? ", your " : ", computer ") + (CH_NAMES[Math.abs(v)] || (Math.abs(v) === 1 ? "Pawn" : "King")) : ""}`}
+              >
+                {v ? <ChessPiece v={v} /> : null}
+                {targets.has(i) ? <span className={v ? "mg-ring" : "mg-dot"} /> : null}
+              </button>
+            );
+          })}
+        </div>
+        {promo && (
+          <div className="mg-pause" role="dialog" aria-label="Choose a piece">
+            <div className="mg-pause-card">
+              <h2>Promote to</h2>
+              <div className="mg-tools" style={{ marginTop: 0 }}>
+                {[5, 4, 3, 2].map((p) => (
+                  <button key={p} className="mg-tool" onClick={() => play(promo.find((m) => m.promo === p), true)}>{CH_NAMES[p]}</button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+        {paused && !over && <PauseCover onResume={() => setPaused(false)} text="The board is hidden while paused." />}
+      </div>
+
+      {over ? (
+        <>
+          <SolvedBanner title={headline} text={two ? "Play again, or switch sides by starting a new game." : status === "mate" && st.turn === -1 ? "Try the next level up." : "Take back a move or start over."} />
+          <ToolRow>
+            <ToolBtn onClick={restart} label="Play again"><RotateCw size={15} /> Play again</ToolBtn>
+          </ToolRow>
+        </>
+      ) : (
+        <>
+          <ToolRow>
+            <ToolBtn onClick={undo} disabled={!hist.length || thinking} label="Take back your last move"><RotateCcw size={15} /> Take back</ToolBtn>
+            {two ? <ToolBtn onClick={() => setFlip((f) => !f)} on={flip} label="Turn the board around">Turn board</ToolBtn> : null}
+            <ToolBtn onClick={() => setPaused(true)} label="Pause">Pause</ToolBtn>
+            <ToolBtn onClick={() => { if (plies === 0 || window.confirm("Start a new game? This one will be lost.")) restart(); }} label="New game">New game</ToolBtn>
+          </ToolRow>
+          <p className="mg-meta">{two ? "Two players, one phone. White moves first, then pass the phone. Use Turn board to see it from Black's side." : "You play the light pieces and move first. Tap a piece, then a marked square. Knights jump in an L shape. Trap the computer's king to win."}</p>
+        </>
+      )}
+    </>
+  );
+}
+
+export function GameChess({ onExit }) {
+  const [level, setLevel] = useState("easy");
+  const rec = gameRecord("chess");
+  const marks = {};
+  Object.keys(CH_LEVELS).forEach((k) => { if (rec.done && rec.done[k]) marks[k] = "✓"; });
+  return (
+    <GameFrame eyebrow="Think ahead" title="Chess" onExit={onExit}>
+      <Segs value={level} onChange={setLevel} options={Object.keys(CH_LEVELS).map((k) => ({ id: k, label: CH_LEVELS[k].label }))} marks={marks} />
+      <ChessPlay key={level} level={level} />
+    </GameFrame>
+  );
+}
+
 /* ═══════════════════════════ TANGRAM ═══════════════════════════ */
 // ==LOGIC-START==
 const TG_R2 = Math.SQRT2;
@@ -3074,6 +3579,7 @@ export const GAMES = [
   { id: "mastermind", cat: "logic", title: "Mastermind", desc: "Crack the colour code by elimination.", Comp: GameMastermind },
   { id: "logicgrid", cat: "logic", title: "Logic Grid", desc: "Use the clues to work out who goes with what.", Comp: GameLogicGrid },
   { id: "queens", cat: "logic", title: "N-Queens", desc: "Place queens so none can attack another.", Comp: GameQueens },
+  { id: "chess", cat: "strategy", title: "Chess", desc: "The classic. Knights, castling and checkmate.", Comp: GameChess },
   { id: "checkers", cat: "strategy", title: "Checkers", desc: "Outplay the computer. Three levels.", Comp: GameCheckers },
   { id: "hanoi", cat: "strategy", title: "Tower of Hanoi", desc: "Move the tower in as few moves as you can.", Comp: GameHanoi },
   { id: "tangram", cat: "spatial", title: "Tangram", desc: "Fill the shape with seven classic pieces.", Comp: GameTangram },
@@ -3100,12 +3606,13 @@ export function inProgressIds() {
     kenken: (s) => Array.isArray(s.vals) && s.vals.some(Boolean),
     nono: (s) => Array.isArray(s.marks) && s.marks.some(Boolean),
     checkers: (s) => s.plies > 0,
+    chess: (s) => s.plies > 0,
     tangram: (s) => Array.isArray(s.pieces),
     logicgrid: (s) => !!s.marks && Object.values(s.marks).some((arr) => Array.isArray(arr) && arr.some(Boolean)),
     sequences: (s) => Array.isArray(s.answers) && s.answers.length > 0,
     "2048": (s) => s.moves > 0 && !s.over,
   };
-  const idOf = { queens: "queens", hanoi: "hanoi", mastermind: "mastermind", kenken: "kenken", nono: "nonogram", checkers: "checkers", tangram: "tangram", logicgrid: "logicgrid", sequences: "sequences", "2048": "2048" };
+  const idOf = { queens: "queens", hanoi: "hanoi", mastermind: "mastermind", kenken: "kenken", nono: "nonogram", checkers: "checkers", chess: "chess", tangram: "tangram", logicgrid: "logicgrid", sequences: "sequences", "2048": "2048" };
   try {
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
@@ -3212,6 +3719,14 @@ export function GameArt({ id }) {
       );
       break;
     }
+    case "chess":
+      body = (
+        <g transform="translate(-3 1) scale(1.46)">
+          <path d="M12.5 38c0-9.5 3.8-12.6 6.6-16-2.6.6-5 2.6-6.6 5.4-1.4-.4-3-1.6-3.4-3.8 1.4-3.8 5-8.4 8.4-11.4 1.2-1.2 2.2-2.2 2.2-4.4 1.4.6 2.6 1.6 3.2 2.8 6 .6 12.2 5.2 13.2 15.2.5 5.6-.4 10.4-.4 14.2z" fill="url(#mga-p)" stroke="rgba(255,255,255,.85)" strokeWidth=".7" strokeLinejoin="round" />
+          <circle cx="20.5" cy="14.5" r="1.3" fill="#2a1250" />
+        </g>
+      );
+      break;
     case "checkers":
       body = (
         <>
@@ -3270,6 +3785,8 @@ export function GameArt({ id }) {
 
 /* ═══════════════════════════ STYLES FOR THE GAMES ═══════════════════════════ */
 const GAMES_CSS = `
+.mg-back { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px 0 12px; margin: 0 0 12px; border-radius: 99px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 2px 0 var(--border); color: var(--text); font-size: 14px; font-weight: 700; cursor: pointer; }
+.mg-back:active { transform: translateY(2px); box-shadow: none; }
 .mg-tools { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 12px 0 0; }
 .mg-tool { display: inline-flex; align-items: center; gap: 6px; height: 38px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 13.5px; font-weight: 600; cursor: pointer; touch-action: manipulation; }
 .mg-tool.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
@@ -3362,8 +3879,13 @@ const GAMES_CSS = `
 .mg-ckc { position: relative; border: 0; padding: 0; display: flex; align-items: center; justify-content: center; touch-action: manipulation; }
 .mg-ckc.lt { background: var(--surface); }
 .mg-ckc.dk { background: #3a2a63; cursor: pointer; }
+.mg-ck.chs .mg-ckc.dk { background: #8f78c4; }
+.mg-ck.chs .mg-ckc.lt { background: #f3ecfd; }
 .mg-ckc.last { box-shadow: inset 0 0 0 3px rgba(255, 214, 102, .85); }
 .mg-ckc.pick { box-shadow: inset 0 0 0 3px #fff; }
+.mg-ckc.chk { box-shadow: inset 0 0 0 100px rgba(255, 70, 100, .5); }
+.mg-cp { width: 88%; height: 88%; filter: drop-shadow(0 2px 1.5px rgba(10, 0, 30, .45)); pointer-events: none; }
+.mg-ring { position: absolute; inset: 6%; border-radius: 50%; border: 3px solid rgba(255, 255, 255, .8); pointer-events: none; }
 .mg-chk { width: 78%; height: 78%; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; }
 .mg-chk.me { background: radial-gradient(circle at 32% 28%, #fff 0, #e3c8ff 24%, #a56ae8 72%, #6a2fc0 100%); box-shadow: 0 3px 0 rgba(20, 0, 50, .6), inset 0 -3px 5px rgba(0,0,0,.2); color: #4a1a8a; }
 .mg-chk.cpu { background: radial-gradient(circle at 32% 28%, #fff 0, #ffd2de 22%, #e8587c 70%, #9c1d44 100%); box-shadow: 0 3px 0 rgba(20, 0, 50, .6), inset 0 -3px 5px rgba(0,0,0,.25); }
