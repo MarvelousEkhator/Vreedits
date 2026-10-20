@@ -7,6 +7,7 @@ import { generateCode, CODE_TTL_MS } from "@/lib/security";
 import { ageFromDob, tierForAge, hashPin, isValidPin } from "@/lib/userSettings";
 import { signSession, setSessionCookie } from "@/lib/auth";
 import { maskEmail, makeConfirmCode, sendConfirmEmail } from "@/lib/guardianEmail";
+import { cleanCountry, cleanGender, cleanText } from "@/lib/education";
 
 const MIN_AGE = 13;
 const MAX_AGE = 120;
@@ -70,6 +71,10 @@ export async function POST(req) {
   if (!body.termsAccepted) {
     return err("You must accept the Terms and Privacy Policy.");
   }
+
+  if (!cleanGender(body.gender)) return err("Please choose your gender (or Prefer not to say).");
+  if (!cleanCountry(body.country)) return err("Please choose your country.");
+  if (!cleanText(body.classLevel, 40)) return err("Please choose your class or level.");
 
   const dob = parseDob(body.dateOfBirth);
   const age = dob ? ageFromDob(dob) : null;
@@ -186,6 +191,11 @@ export async function POST(req) {
     dateOfBirth: dob,
     termsAcceptedAt: new Date(),
     verified: true,
+    // About the student. Gender, country and class are asked at sign-up; school is optional.
+    gender: cleanGender(body.gender),
+    country: cleanCountry(body.country),
+    classLevel: cleanText(body.classLevel, 40),
+    school: cleanText(body.school, 120),
     ...(SKIP_EMAIL_VERIFICATION
       ? { emailVerified: true, verificationCode: null, verificationExpires: null }
       : {
