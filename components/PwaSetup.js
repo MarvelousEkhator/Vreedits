@@ -76,7 +76,7 @@ export default function PwaSetup() {
         maxWidth: 520, margin: "0 auto",
       }}
     >
-      <img src="/icons/icon-192.png" alt="" style={{ width: 40, height: 40, borderRadius: 10, flexShrink: 0 }} />
+      <img src="/icon-192.png" alt="" style={{ width: 40, height: 40, borderRadius: 10, flexShrink: 0 }} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 14, fontWeight: 600 }}>Install Vreedits</div>
         {deferred ? (
