@@ -1,20 +1,27 @@
 "use client";
 import { useState, useRef, useEffect, useCallback, Suspense } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
-  ArrowLeft, Send, Loader2, AlertCircle,
+  ArrowLeft, Send, AlertCircle,
   History, Plus, Trash2, X, MessageSquare, Paperclip, Camera, ImageIcon,
   File as FileIcon, Copy, Check, ThumbsUp, ThumbsDown, Share2, Home, Pin, Pencil,
-  Download,
+  Download, Globe, Loader2,
 } from "lucide-react";
 import MarkdownText from "@/components/MarkdownText";
 import GlossIcon from "@/components/GlossIcon";
 import { useLanguage } from "@/components/LanguageProvider";
 
+// Thinking orb animation by Jakub Antalik (MIT license). Loaded in the browser only.
+const ThinkingOrb = dynamic(() => import("thinking-orbs").then((m) => m.ThinkingOrb), { ssr: false });
+
 const MAX_ATTACHMENT_BYTES = 4_000_000;
 const MAX_ATTACHMENTS = 3; // bump this (and the matching constant in route.js) to allow more
 const MAX_TEXTAREA_HEIGHT = 160;
+
+// What Syna is doing -> which orb animation to show.
+const STATUS_ORB = { thinking: "working", searching: "searching", writing: "composing" };
 
 function relativeTime(dateStr, lang = "en") {
   const diffMs = Date.now() - new Date(dateStr).getTime();
@@ -117,6 +124,35 @@ function downloadDataUrl(dataUrl, name) {
   a.remove();
 }
 
+// Reads Syna's live status updates. The last "final" event is her answer.
+async function readSynaStream(res, onStatus) {
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let final = null;
+  let streamError = null;
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let idx;
+    while ((idx = buffer.indexOf("\n")) >= 0) {
+      const line = buffer.slice(0, idx).trim();
+      buffer = buffer.slice(idx + 1);
+      if (!line) continue;
+      let evt;
+      try { evt = JSON.parse(line); } catch { continue; }
+      if (evt.type === "status") onStatus(evt.state);
+      else if (evt.type === "final") final = evt.reply;
+      else if (evt.type === "error") streamError = evt.error;
+    }
+  }
+
+  return { final, error: streamError };
+}
+
 function AttachmentGrid({ attachments, bubbleText, onImageClick }) {
   if (attachments.length === 0) return null;
 
@@ -179,6 +215,32 @@ function AttachmentGrid({ attachments, bubbleText, onImageClick }) {
           </div>
         )
       )}
+    </div>
+  );
+}
+
+// Links to the web pages Syna used when she researched an answer.
+function SourceChips({ sources }) {
+  if (!Array.isArray(sources) || sources.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-2" style={{ marginTop: 10 }}>
+      {sources.map((s, i) => (
+        <a
+          key={i}
+          href={s.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1.5"
+          style={{
+            background: "var(--surface-2)", border: "1px solid var(--border)", color: "var(--text-muted)",
+            borderRadius: 14, padding: "4px 10px", fontSize: 11.5, textDecoration: "none",
+            maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+          }}
+        >
+          <Globe size={11} style={{ flexShrink: 0 }} />
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{s.title}</span>
+        </a>
+      ))}
     </div>
   );
 }
@@ -315,6 +377,8 @@ function SynaChatInner() {
   const [input, setInput] = useState("");
   const [pendingAttachments, setPendingAttachments] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState("thinking");
+  const [researchOn, setResearchOn] = useState(false);
   const [error, setError] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
@@ -335,9 +399,21 @@ function SynaChatInner() {
   const fileInputRef = useRef(null);
   const textareaRef = useRef(null);
 
+  // Falls back to plain English when a translation key doesn't exist yet.
+  function tr(key, fallback) {
+    const v = t(key);
+    return v && v !== key ? v : fallback;
+  }
+
+  const statusLabel = {
+    thinking: tr("chat.thinking", "Thinking…"),
+    searching: tr("chat.researching", "Researching the web…"),
+    writing: tr("chat.writing", "Writing your answer…"),
+  };
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, loading]);
+  }, [messages, loading, status]);
 
   useEffect(() => {
     const el = textareaRef.current;
@@ -517,6 +593,7 @@ function SynaChatInner() {
     setMessages(nextMessages);
     setInput("");
     setPendingAttachments([]);
+    setStatus("thinking");
     setLoading(true);
 
     try {
@@ -524,25 +601,45 @@ function SynaChatInner() {
       const res = await fetch("/api/ai/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: nextMessages, clientDateTime, language: lang }),
+        body: JSON.stringify({
+          messages: nextMessages,
+          clientDateTime,
+          language: lang,
+          stream: true,
+          research: researchOn,
+        }),
       });
 
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || t("chat.err.generic"));
-        setLoading(false);
-        return;
+      // Normal answers stream live status updates; quick replies and errors
+      // still come back as plain JSON.
+      let reply;
+      if ((res.headers.get("content-type") || "").includes("ndjson")) {
+        const out = await readSynaStream(res, (s) => setStatus(s));
+        if (!out.final) {
+          setError(out.error || t("chat.err.generic"));
+          setLoading(false);
+          return;
+        }
+        reply = out.final;
+      } else {
+        const data = await res.json();
+        if (!res.ok) {
+          setError(data.error || t("chat.err.generic"));
+          setLoading(false);
+          return;
+        }
+        reply = data.reply;
       }
 
-      setFallbackActive(!!data.reply?.usedFallback);
+      setFallbackActive(!!reply?.usedFallback);
 
       // NOTE: the API returns `reply` as a full message object
-      // ({ role, text, attachment? }), not a plain string — so it
+      // ({ role, text, attachment?, sources? }), not a plain string — so it
       // gets spread in directly rather than wrapped in a new object.
       // Wrapping it (e.g. `{ role: "assistant", text: data.reply }`)
       // put the whole object into `text`, which crashed ReactMarkdown
       // when it tried to render a non-string child.
-      const finalMessages = [...nextMessages, data.reply];
+      const finalMessages = [...nextMessages, reply];
       setMessages(finalMessages);
       persist(finalMessages);
     } catch {
@@ -738,6 +835,7 @@ function SynaChatInner() {
               {m.text && (
                 <>
                   <MarkdownText text={m.text} />
+                  <SourceChips sources={m.sources} />
                   <MessageActions text={m.text} />
                 </>
               )}
@@ -751,12 +849,13 @@ function SynaChatInner() {
               alignSelf: "flex-start",
               display: "flex",
               alignItems: "center",
-              gap: 8,
+              gap: 12,
               fontSize: 13,
               color: "var(--text-muted)",
             }}
           >
-            <Loader2 size={14} className="animate-spin" /> {t("chat.thinking")}
+            <ThinkingOrb state={STATUS_ORB[status] || "working"} size={64} />
+            <span>{statusLabel[status] || statusLabel.thinking}</span>
           </div>
         )}
 
@@ -852,6 +951,22 @@ function SynaChatInner() {
             <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" onChange={handleFilePicked} style={{ display: "none" }} />
             <input ref={fileInputRef} type="file" accept="image/*,application/pdf,.doc,.docx,.txt" multiple onChange={handleFilePicked} style={{ display: "none" }} />
           </div>
+
+          <button
+            type="button"
+            onClick={() => setResearchOn((v) => !v)}
+            className="w-11 h-11 rounded-full flex items-center justify-center flex-shrink-0"
+            style={{
+              background: researchOn ? "var(--accent-soft)" : "var(--surface-2)",
+              color: researchOn ? "var(--accent)" : "var(--text-muted)",
+              border: researchOn ? "1.5px solid var(--accent)" : "1.5px solid transparent",
+            }}
+            aria-label={tr("chat.research", "Research the web")}
+            aria-pressed={researchOn}
+            title={researchOn ? tr("chat.researchOn", "Research is on") : tr("chat.researchOff", "Research is off")}
+          >
+            <Globe size={18} />
+          </button>
 
           <textarea
             ref={textareaRef}
