@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "node server.js",
-    "build": "prisma generate && next build",
+    "build": "node scripts/build-changelog.mjs && prisma generate && next build",
     "start": "node server.js",
     "postinstall": "prisma generate"
   },
