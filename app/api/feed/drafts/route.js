@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser, guestBlockedResponse } from "@/lib/requireUser";
 import { extractHashtags } from "@/lib/hashtags";
 import { releaseSoundForPost } from "@/lib/sounds";
+import { moderatePost, postingPauseMessage, addStrike } from "@/lib/schoolScore";
 
 const LITE_AUTHOR_SELECT = { id: true, username: true, displayName: true, avatarDataUrl: true };
 
@@ -74,7 +75,7 @@ export async function PATCH(req) {
 
   const existing = await prisma.feedPost.findFirst({
     where: { id, authorId: user.id, isDraft: true },
-    select: { id: true, caption: true, mediaUrl: true },
+    select: { id: true, caption: true, mediaUrl: true, mediaUrls: true, mediaType: true, isPrivate: true },
   });
   if (!existing) return NextResponse.json({ error: "Draft not found." }, { status: 404 });
 
@@ -91,6 +92,28 @@ export async function PATCH(req) {
     const finalCaption = "caption" in data ? data.caption : existing.caption;
     if (!finalCaption && !existing.mediaUrl) {
       return NextResponse.json({ error: "Add a caption or media before publishing." }, { status: 400 });
+    }
+    // Syna checks the draft before it goes public. Private drafts skip the check.
+    const goesPublic = "isPrivate" in data ? !data.isPrivate : !existing.isPrivate;
+    if (goesPublic) {
+      const paused = await postingPauseMessage(user.id);
+      if (paused) return NextResponse.json({ error: paused, blocked: true }, { status: 403 });
+      const tagsNow = "tags" in data ? data.tags : extractHashtags(finalCaption || "");
+      const v = await moderatePost({
+        caption: finalCaption || "",
+        tags: tagsNow,
+        mediaType: existing.mediaType,
+        mediaUrl: existing.mediaUrl,
+        mediaUrls: existing.mediaUrls,
+      });
+      if (!v.ok) {
+        let message = v.message;
+        if (v.verdict === "unsafe") message += await addStrike(user.id);
+        return NextResponse.json({ error: message, rejected: true, verdict: v.verdict }, { status: 422 });
+      }
+      data.schoolScore = v.score;
+      data.schoolTopic = v.topic;
+      data.scoredAt = new Date();
     }
     data.isDraft = false;
     data.createdAt = new Date();
