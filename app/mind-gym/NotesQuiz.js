@@ -9,6 +9,30 @@ const QUIZ_ENDPOINT = "/api/mind-gym/notes-quiz";
 const STORE_KEY = "vreedits.mindgym.v1";
 const ROUND = 8;
 
+// Notes in School are saved as a list of blocks ({ type, text, ... }), not plain
+// text. This turns either shape into plain text the quiz can read.
+function toText(c) {
+  if (typeof c === "string") return c;
+  if (!Array.isArray(c)) return "";
+  const out = [];
+  for (const b of c) {
+    if (!b || typeof b !== "object") continue;
+    if (b.type === "image" || b.type === "file" || b.type === "divider") continue;
+    if (b.type === "table" && Array.isArray(b.rows)) {
+      for (const row of b.rows) {
+        const line = (Array.isArray(row) ? row : []).map((x) => String(x || "").trim()).filter(Boolean).join(", ");
+        if (line) out.push(line + ".");
+      }
+      continue;
+    }
+    const t = typeof b.text === "string" ? b.text.trim() : "";
+    if (!t) continue;
+    // Make sure each block ends like a sentence so questions can be built from it.
+    out.push(/[.!?]$/.test(t) ? t : t + ".");
+  }
+  return out.join(" ");
+}
+
 function shuffle(arr) {
   const a = arr.slice();
   for (let i = a.length - 1; i > 0; i--) {
@@ -110,7 +134,7 @@ export function GameNotes({ onExit }) {
           .map((n, i) => ({
             id: n.id ?? i,
             title: String(n.title || "Untitled note"),
-            content: String(n.content ?? n.body ?? n.text ?? ""),
+            content: toText(n.content ?? n.body ?? n.text ?? ""),
           }))
           .filter((n) => n.content.trim().length >= 60);
         if (!alive) return;
@@ -151,6 +175,17 @@ export function GameNotes({ onExit }) {
     recorded.current = false;
     setPhase("playing");
   }
+
+  // First time in: pick one of your notes and start the questions straight away.
+  // "New round" afterwards lets you choose a note yourself.
+  const auto = useRef(false);
+  useEffect(() => {
+    if (phase === "pick" && !auto.current && notes.length) {
+      auto.current = true;
+      start(notes[Math.floor(Math.random() * notes.length)]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, notes]);
 
   function choose(i) {
     if (picked !== -1) return;
