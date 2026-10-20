@@ -6,7 +6,7 @@ import { extractHashtags } from "@/lib/hashtags";
 import { ensureSound, resolveSound } from "@/lib/sounds";
 import { getSettings } from "@/lib/userSettings";
 import { localTime, buildStatus } from "@/lib/screenTime";
-import { scoreInBackground, sweepUnscored, resetScores } from "@/lib/schoolScore";
+import { scoreInBackground, sweepUnscored, resetScores, moderatePost, postingPauseMessage, addStrike } from "@/lib/schoolScore";
 import { isFeedbackAdmin } from "@/lib/feedbackAdmin";
 
 // Videos are stored inside the database as base64 text, so keep a ceiling
@@ -656,6 +656,32 @@ export async function POST(req) {
   const finalType = isCarousel ? "image" : mediaType === "video" ? "video" : "image";
   const tags = extractHashtags(caption || "");
 
+  // Syna checks a public post BEFORE it is saved. Only school posts and
+  // "how my weekend is going" posts get through. Drafts and private posts are
+  // checked later, when they are published.
+  let verdictInfo = null;
+  if (!isDraft && !isPrivate) {
+    const paused = await postingPauseMessage(user.id);
+    if (paused) {
+      return NextResponse.json({ error: paused, blocked: true }, { status: 403 });
+    }
+    verdictInfo = await moderatePost({
+      caption: caption || "",
+      tags,
+      mediaType: finalType,
+      mediaUrl: mediaUrl || null,
+      mediaUrls: isCarousel ? photoList : [],
+    });
+    if (!verdictInfo.ok) {
+      let message = verdictInfo.message;
+      if (verdictInfo.verdict === "unsafe") message += await addStrike(user.id);
+      return NextResponse.json(
+        { error: message, rejected: true, verdict: verdictInfo.verdict },
+        { status: 422 }
+      );
+    }
+  }
+
   let soundRoot = null;
   if (soundId && finalType === "video") {
     soundRoot = await resolveSound(soundId, user.id);
@@ -678,6 +704,9 @@ export async function POST(req) {
       isDraft: !!isDraft,
       soundId: finalSoundId,
       tags,
+      ...(verdictInfo
+        ? { schoolScore: verdictInfo.score, schoolTopic: verdictInfo.topic, scoredAt: new Date() }
+        : {}),
     },
     include: {
       author: { select: FEED_AUTHOR_SELECT },
