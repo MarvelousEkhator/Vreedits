@@ -6,6 +6,9 @@ import Link from "next/link";
 import { Mail, Lock, User, Eye, EyeOff, Loader2, AlertCircle, ChevronLeft, X } from "lucide-react";
 import { PasswordRequirement, UsernameStatus } from "@/components/AuthWidgets";
 import { LanguageProvider, useLanguage } from "@/components/LanguageProvider";
+import {
+  GENDERS, COUNTRY_CODES, countryName, curriculumFor, detectCountry, CURRICULA,
+} from "@/lib/education";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -38,6 +41,10 @@ function RegisterInner() {
     displayName: "",
     username: "",
     dateOfBirth: "",
+    gender: "",
+    country: "",
+    classLevel: "",
+    school: "",
     guardianPin: "",
     guardianPin2: "",
     guardianEmail: "",
@@ -71,13 +78,28 @@ function RegisterInner() {
     return () => clearTimeout(handle);
   }, [form.username]);
 
+  // Work out the country from the phone's language and time zone. They can change it.
+  const [detected, setDetected] = useState("");
+  useEffect(() => {
+    const c = detectCountry();
+    if (c) {
+      setDetected(c);
+      setForm((f) => (f.country ? f : { ...f, country: c }));
+    }
+  }, []);
+
+  const curriculum = curriculumFor(form.country);
+  const countryOptions = [...COUNTRY_CODES]
+    .map((c) => [c, countryName(c)])
+    .sort((a, b) => a[1].localeCompare(b[1]));
+
   // Under 18 gets an extra step for a parent or guardian.
   const age = ageFromDobString(form.dateOfBirth);
   const minor = age !== null && age >= 13 && age < 18;
   const under16 = age !== null && age >= 13 && age < 16;
   const steps = minor
-    ? ["account", "identity", "birthday", "parent", "terms"]
-    : ["account", "identity", "birthday", "terms"];
+    ? ["account", "identity", "birthday", "school", "parent", "terms"]
+    : ["account", "identity", "birthday", "school", "terms"];
 
   const readAll = !REQUIRE_OPENING_DOCS || (opened.terms && opened.privacy);
 
@@ -121,6 +143,12 @@ function RegisterInner() {
     if (current === "birthday") {
       if (!form.dateOfBirth) return "Date of birth is required.";
       if (!isOldEnoughClientSide(form.dateOfBirth)) return "You must be at least 13 years old to sign up.";
+    }
+
+    if (current === "school") {
+      if (!form.gender) return "Please choose your gender, or Prefer not to say.";
+      if (!form.country) return "Please choose your country.";
+      if (!form.classLevel) return "Please choose your class or level.";
     }
 
     if (current === "parent") {
@@ -199,6 +227,10 @@ function RegisterInner() {
         password: form.password,
         dateOfBirth: form.dateOfBirth,
         termsAccepted: form.termsAccepted,
+        gender: form.gender,
+        country: form.country,
+        classLevel: form.classLevel,
+        school: form.school.trim(),
       };
       if (minor) {
         if (form.guardianPin) payload.guardianPin = form.guardianPin;
@@ -398,6 +430,121 @@ function RegisterInner() {
                 {t("auth.ageRequirement")}
               </p>
             </div>
+          )}
+
+          {current === "school" && (
+            <>
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--text-muted)" }}>
+                  Gender
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {GENDERS.map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => updateField("gender", key)}
+                      className="text-sm"
+                      style={{
+                        padding: "8px 14px", borderRadius: 999, cursor: "pointer",
+                        border: "1px solid " + (form.gender === key ? "var(--accent)" : "var(--border)"),
+                        background: form.gender === key ? "var(--accent-soft)" : "var(--surface-2)",
+                        color: "var(--text)", fontWeight: form.gender === key ? 600 : 400,
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--text-muted)" }}>
+                  Country
+                </label>
+                <select
+                  className="input"
+                  value={form.country}
+                  onChange={(e) => setForm((f) => ({ ...f, country: e.target.value, classLevel: "", school: "" }))}
+                >
+                  <option value="">Choose your country</option>
+                  {countryOptions.map(([code, name]) => (
+                    <option key={code} value={code}>{name}</option>
+                  ))}
+                </select>
+                {detected && form.country === detected && (
+                  <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
+                    We guessed {countryName(detected)} from your phone. Change it if that's wrong.
+                  </p>
+                )}
+                {form.country && (
+                  <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
+                    {CURRICULA[form.country]
+                      ? `Syna will teach with the ${curriculum.system}.`
+                      : "Syna will use a general school system. You can still tell Syna your exams in chat."}
+                  </p>
+                )}
+              </div>
+
+              {form.country && (
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--text-muted)" }}>
+                    Class or level
+                  </label>
+                  <select
+                    className="input"
+                    value={form.classLevel}
+                    onChange={(e) => updateField("classLevel", e.target.value)}
+                  >
+                    <option value="">Choose your class</option>
+                    {curriculum.levels.map(([group, items]) => (
+                      <optgroup key={group} label={group}>
+                        {items.map((it) => (
+                          <option key={group + it} value={it}>{it}</option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                  {curriculum.exams.length > 0 && (
+                    <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
+                      Exams in {countryName(form.country)}: {curriculum.exams.join(", ")}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {form.country && (
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--text-muted)" }}>
+                    School (optional)
+                  </label>
+                  <input
+                    className="input"
+                    list="school-options"
+                    value={form.school}
+                    onChange={(e) => updateField("school", e.target.value)}
+                    placeholder="Pick one or type yours"
+                    maxLength={120}
+                    autoComplete="off"
+                  />
+                  <datalist id="school-options">
+                    {curriculum.schools.map((n) => (<option key={n} value={n} />))}
+                  </datalist>
+                  <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
+                    Can't see your school? Just type its name. Or skip this and leave it empty.
+                  </p>
+                  {form.school && (
+                    <button
+                      type="button"
+                      className="btn-text text-xs mt-1"
+                      onClick={() => updateField("school", "")}
+                    >
+                      Clear school
+                    </button>
+                  )}
+                </div>
+              )}
+            </>
           )}
 
           {current === "parent" && (
