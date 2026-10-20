@@ -149,31 +149,45 @@ export function GameNotes({ onExit }) {
     };
   }, []);
 
-  async function start(note) {
+  // Takes one note, or a list of notes (a "mix"), and builds one round of questions.
+  async function start(sel) {
+    const chosen = Array.isArray(sel) ? sel : [sel];
     setPhase("making");
-    let list = [];
-    try {
-      const res = await fetch(QUIZ_ENDPOINT, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: note.title, content: note.content }),
-      });
-      if (res.ok) {
-        const d = await res.json();
-        if (Array.isArray(d.questions)) list = d.questions;
-      }
-    } catch {}
-    if (list.length < 4) list = localQuestions(note.content);
-    if (list.length < 3) {
+    const per = chosen.length > 1 ? Math.ceil(ROUND / chosen.length) + 1 : ROUND;
+    const parts = await Promise.all(
+      chosen.map(async (note) => {
+        let list = [];
+        try {
+          const res = await fetch(QUIZ_ENDPOINT, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ title: note.title, content: note.content }),
+          });
+          if (res.ok) {
+            const d = await res.json();
+            if (Array.isArray(d.questions)) list = d.questions;
+          }
+        } catch {}
+        if (list.length < 4) list = localQuestions(note.content);
+        return list.slice(0, per).map((q) => ({ ...q, from: note.title }));
+      })
+    );
+    const all = chosen.length > 1 ? shuffle(parts.flat()) : parts[0];
+    if (all.length < 3) {
       setPhase("short");
       return;
     }
-    setQs(prepare(list).slice(0, ROUND));
+    setQs(prepare(all).slice(0, ROUND));
     setIdx(0);
     setPicked(-1);
     setScore(0);
     recorded.current = false;
     setPhase("playing");
+  }
+
+  // A mix of up to 3 different notes, so one round covers more than one topic.
+  function mixOf() {
+    return shuffle(notes).slice(0, 3);
   }
 
   // First time in: pick one of your notes and start the questions straight away.
@@ -182,7 +196,7 @@ export function GameNotes({ onExit }) {
   useEffect(() => {
     if (phase === "pick" && !auto.current && notes.length) {
       auto.current = true;
-      start(notes[Math.floor(Math.random() * notes.length)]);
+      start(mixOf());
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, notes]);
@@ -248,21 +262,36 @@ export function GameNotes({ onExit }) {
 
       {phase === "pick" ? (
         <>
-          <p className="mg-meta">Pick a note to be quizzed on, or let it choose.</p>
+          <p className="mg-meta">
+            You have {notes.length} note{notes.length === 1 ? "" : "s"} to be quizzed on.
+          </p>
           <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 12 }}>
-            <button className="mg-cta" onClick={() => start(notes[Math.floor(Math.random() * notes.length)])}>
-              Surprise me
-            </button>
-            {notes.slice(0, 8).map((n) => (
-              <button
-                key={n.id}
-                className="mg-tool"
-                style={{ width: "100%", justifyContent: "flex-start", height: 46 }}
-                onClick={() => start(n)}
-              >
-                {n.title}
+            {notes.length > 1 ? (
+              <button className="mg-cta" onClick={() => start(mixOf())}>
+                Mix of my notes
               </button>
-            ))}
+            ) : null}
+            <button
+              className={notes.length > 1 ? "mg-tool" : "mg-cta"}
+              style={notes.length > 1 ? { width: "100%", justifyContent: "center", height: 46 } : undefined}
+              onClick={() => start(notes[Math.floor(Math.random() * notes.length)])}
+            >
+              {notes.length > 1 ? "One random note" : "Start"}
+            </button>
+            {notes.length > 1 ? (
+              <p className="mg-meta" style={{ margin: "6px 0 0" }}>Or pick one:</p>
+            ) : null}
+            {notes.length > 1 &&
+              notes.slice(0, 30).map((n) => (
+                <button
+                  key={n.id}
+                  className="mg-tool"
+                  style={{ width: "100%", justifyContent: "flex-start", height: 46 }}
+                  onClick={() => start(n)}
+                >
+                  {n.title}
+                </button>
+              ))}
           </div>
         </>
       ) : null}
@@ -274,6 +303,9 @@ export function GameNotes({ onExit }) {
             <span className="mg-meta" style={{ margin: 0 }}>{score} right</span>
           </div>
           <div className="mg-boardwrap">
+            {q.from && notes.length > 1 ? (
+              <div className="mg-meta" style={{ margin: "0 2px 4px" }}>From: {q.from}</div>
+            ) : null}
             <p style={{ fontSize: 17, lineHeight: 1.45, fontWeight: 600, margin: "6px 2px 16px" }}>{q.q}</p>
             <div className="mg-sq-opts" style={{ gridTemplateColumns: "1fr" }}>
               {q.options.map((o, i) => (
