@@ -22,6 +22,10 @@ model User {
   allowDownloads Boolean @default(true)
   country       String?
   school        String?
+  gender        String?
+  classLevel    String?
+  feedWarnings  Int       @default(0)
+  feedBannedUntil DateTime?
   language      String   @default("English")
   isPublic      Boolean  @default(true)
   allowComments   String  @default("everyone") // "everyone" | "friends" | "none"
