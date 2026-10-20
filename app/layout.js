@@ -1,6 +1,7 @@
 import "./globals.css";
 import "../vreedits-layout.css";
 import Tracker from "../components/Tracker";
+import PwaSetup from "../components/PwaSetup";
 
 export const metadata = {
   title: "Vreedits",
@@ -43,6 +44,7 @@ export default function RootLayout({ children }) {
       <body>
         <Tracker />
         {children}
+        <PwaSetup />
       </body>
     </html>
   );
