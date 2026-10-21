@@ -1175,3 +1175,31 @@ model ScreenTimeDay {
   @@unique([userId, day])
   @@index([userId])
 }
+// ─────────────────────────────────────────────
+// ACTIVE — Wallet (Neurons earned, Gems purchased, V-Coins internal)
+// ─────────────────────────────────────────────
+
+model Wallet {
+  userId    String   @id
+  neurons   Int      @default(0)
+  gems      Int      @default(0)
+  vcoins    Int      @default(0) // 1 USD = 100 V-Coins
+  updatedAt DateTime @updatedAt
+}
+
+model WalletTransaction {
+  id             String   @id @default(uuid())
+  userId         String
+  currency       String   // "neurons" | "gems" | "vcoins"
+  amount         Int      // signed: + credit, - debit
+  balanceAfter   Int
+  type           String   // "earn" | "purchase" | "spend" | "transfer_in" | "transfer_out"
+  reason         String?
+  refType        String?
+  refId          String?
+  idempotencyKey String?  @unique
+  createdAt      DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([userId, currency, type, createdAt])
+}
