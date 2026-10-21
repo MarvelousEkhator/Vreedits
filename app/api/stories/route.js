@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser, guestBlockedResponse } from "@/lib/requireUser";
-import { checkImages } from "@/lib/imageSafety";
-import { postingPauseMessage, addStrike } from "@/lib/schoolScore";
+import { extractHashtags } from "@/lib/hashtags";
+import { moderatePost, postingPauseMessage, addStrike } from "@/lib/schoolScore";
 import { ageGroupFromDob, isCrossAgeContact } from "@/lib/minorSafety";
 
 const STORY_LIFESPAN_MS = 24 * 60 * 60 * 1000;
-const MAX_IMAGE_CHARS = 7_000_000;
+// Same limit Syna uses for photos, so a photo that passes this can be checked.
+const MAX_IMAGE_CHARS = 4_000_000;
 const MAX_CAPTION_CHARS = 200;
 const MAX_STORIES_PER_DAY = 10;
 
@@ -22,7 +23,7 @@ export async function POST(req) {
   if (!mediaUrl.trim()) {
     return NextResponse.json({ error: "A photo is required." }, { status: 400 });
   }
-  // Photos only for now: videos can't be checked yet.
+  // Photos only for now.
   if (!mediaUrl.startsWith("data:image/")) {
     return NextResponse.json({ error: "Stories are photos only for now." }, { status: 400 });
   }
@@ -43,15 +44,20 @@ export async function POST(req) {
     return NextResponse.json({ error: paused, blocked: true }, { status: 403 });
   }
 
-  const scan = await checkImages([mediaUrl]);
-  if (!scan.ok) {
-    if (scan.code === "unsafe") {
-      const strike = await addStrike(user.id);
-      return NextResponse.json({ error: scan.message + strike, rejected: true }, { status: 422 });
-    }
+  // Same rules as the feed: only school posts and clean "my weekend" posts.
+  const verdict = await moderatePost({
+    caption,
+    tags: extractHashtags(caption),
+    mediaType: "image",
+    mediaUrl,
+    mediaUrls: [],
+  });
+  if (!verdict.ok) {
+    let message = verdict.message;
+    if (verdict.verdict === "unsafe") message += await addStrike(user.id);
     return NextResponse.json(
-      { error: scan.message },
-      { status: scan.code === "unavailable" ? 503 : 422 }
+      { error: message, rejected: true, verdict: verdict.verdict },
+      { status: verdict.verdict === "unchecked" ? 503 : 422 }
     );
   }
 
