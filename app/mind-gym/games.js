@@ -319,7 +319,7 @@ function tileStyle(v) {
   const c = TILE_COLORS[v] || ["#ffdd6a", "#e0a300", "#2b1200"];
   const digits = String(v).length;
   return {
-    background: `linear-gradient(160deg, ${c[0]},${c[1]})`,
+    background: `linear-gradient(160deg, ${c[0]}, ${c[1]})`,
     color: c[2],
     fontSize: digits >= 4 ? "clamp(15px, 5.2vw, 24px)" : digits === 3 ? "clamp(18px, 6.4vw, 30px)" : "clamp(22px, 8vw, 36px)",
     boxShadow: "inset 0 2px 0 rgba(255,255,255,.5), inset 0 -3px 0 rgba(0,0,0,.18), 0 2px 0 rgba(0,0,0,.25)",
@@ -697,7 +697,7 @@ function QueensBoard({ n, onExit }) {
           className="mg-qboard"
           style={{ gridTemplateColumns: `repeat(${n}, 1fr)`, visibility: paused ? "hidden" : "visible" }}
           role="grid"
-          aria-label={`${n} by${n} board`}
+          aria-label={`${n} by ${n} board`}
         >
           {Array.from({ length: n * n }, (_, i) => {
             const r = (i / n) | 0, c = i % n;
@@ -850,7 +850,7 @@ function HanoiPlay({ n }) {
               key={pi}
               className={`mg-peg ${sel === pi ? "sel" : ""} ${shake === pi ? "shake" : ""}`}
               onClick={() => tapPeg(pi)}
-              aria-label={`Peg ${pi + 1},${peg.length} disc${peg.length === 1 ? "" : "s"}${sel === pi ? ", picked up" : ""}`}
+              aria-label={`Peg ${pi + 1}, ${peg.length} disc${peg.length === 1 ? "" : "s"}${sel === pi ? ", picked up" : ""}`}
             >
               <span className="mg-pole" />
               <span className="mg-stack">
@@ -862,7 +862,7 @@ function HanoiPlay({ n }) {
                       className={`mg-disc ${top && sel === pi ? "lift" : ""}`}
                       style={{
                         width: `${28 + (d / n) * 66}%`,
-                        background: `linear-gradient(180deg, hsl(${discHue(d)} 85\% 78\%), hsl(${discHue(d)} 70% 52%))`,
+                        background: `linear-gradient(180deg, hsl(${discHue(d)} 85% 78%), hsl(${discHue(d)} 70% 52%))`,
                       }}
                     />
                   );
@@ -943,7 +943,7 @@ function Bead({ c, size = 34, empty, onClick, label, ring }) {
     : {
         width: size,
         height: size,
-        background: `radial-gradient(circle at 32% 28%, #fff 0, ${MM_HUES[c][0]} 28\%,${MM_HUES[c][1]} 100%)`,
+        background: `radial-gradient(circle at 32% 28%, #fff 0, ${MM_HUES[c][0]} 28%, ${MM_HUES[c][1]} 100%)`,
       };
   return (
     <button
@@ -1029,7 +1029,7 @@ export function GameMastermind({ onExit }) {
             <div className="mg-mm-row" key={i}>
               <span className="mg-mm-n">{i + 1}</span>
               <div className="mg-mm-beads">{r.guess.map((c, k) => <Bead key={k} c={c} size={30} />)}</div>
-              <div className="mg-mm-pegs" aria-label={`${r.exact} in the right place,${r.near} right colour in the wrong place`}>
+              <div className="mg-mm-pegs" aria-label={`${r.exact} in the right place, ${r.near} right colour in the wrong place`}>
                 {Array.from({ length: MM_SLOTS }, (_, k) => (
                   <i key={k} className={k < r.exact ? "ex" : k < r.exact + r.near ? "nr" : ""} />
                 ))}
@@ -1372,7 +1372,8 @@ export function GameKenKen({ onExit }) {
       {seeds ? <KenKenPlay key={`${n}-${seeds[n]}`} n={n} seed={seeds[n]} onNew={fresh} /> : null}
     </GameFrame>
   );
-}/* ═══════════════════════════ NONOGRAMS ═══════════════════════════ */
+}
+/* ═══════════════════════════ NONOGRAMS ═══════════════════════════ */
 // ==LOGIC-START==
 function nonoRuns(line) {
   const out = [];
@@ -2774,7 +2775,6 @@ const TG_FILL = {
   Q: ["#ffe08a", "#e0841a"],
   P: ["#b9f0cf", "#1f9d6a"],
 };
-const TG_POOL = ["L", "L", "M", "S", "S", "Q", "P"];
 const TG_SLOTS = [[2.4, 12.2], [7.4, 12.2], [11.6, 12.2], [14.4, 12.6], [2.2, 16], [6, 16], [11, 16]];
 
 function pts(poly) { return poly.map((p) => `${p[0].toFixed(3)},${p[1].toFixed(3)}`).join(" "); }
@@ -2993,7 +2993,8 @@ export function GameTangram({ onExit }) {
       {seeds ? <TangramPlay key={`${level}-${seeds[level]}`} level={level} seed={seeds[level]} onNew={fresh} /> : null}
     </GameFrame>
   );
-}/* ═══════════════════════════ LOGIC GRID ═══════════════════════════ */
+}
+/* ═══════════════════════════ LOGIC GRID ═══════════════════════════ */
 // ==LOGIC-START==
 // Category 0 is an ordered one (days or times). An item's "group" is its position in that order,
 // so every group is one row of the finished table: one item from each category.
@@ -3425,7 +3426,7 @@ const SQ_MAKERS = {
     },
     () => ({ seq: [2, 3, 5, 7, 11, 13, 17, 19], rule: "Prime numbers." }),
     (rng) => {
-      const a = ri(rng, 1, 3), b = ri(rng, 1, 3);
+      const a = ri(rng, 1, 3), b = ri(rng, 2, 4), c = ri(rng, 2, 5);
       const seq = [a];
       for (let i = 0; i < 7; i++) seq.push(i % 2 === 0 ? seq[i] * b : seq[i] + c);
       return { seq, rule: `Multiply by ${b}, then add ${c}, and repeat.` };
