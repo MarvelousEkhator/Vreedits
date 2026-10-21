@@ -232,12 +232,7 @@ body::before {
   }
   .cd-hide-mobile { display: block !important; }
 }
-/* Mind Gym chess and checkers board: lock the 8x8 grid so empty rows can't collapse */
-.mg .mg-ck {
-  grid-template-columns: repeat(8, minmax(0, 1fr));
-  grid-template-rows: repeat(8, minmax(0, 1fr));
-}
-.mg .mg-ckc {
-  min-width: 0;
-  min-height: 0;
-}
+/* Mind Gym boards: lock row sizes so empty rows can't collapse */
+.mg .mg-ck, .mg .mg-qboard, .mg .mg-kk { grid-auto-rows: minmax(0, 1fr); }
+.mg .mg-ck { grid-template-columns: repeat(8, minmax(0, 1fr)); grid-template-rows: repeat(8, minmax(0, 1fr)); }
+.mg .mg-ckc, .mg .mg-qcell, .mg .mg-kkc { min-width: 0; min-height: 0; }
