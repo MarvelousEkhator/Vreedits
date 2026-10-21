@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { getSessionUserId } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { canViewChannel, canSendInChannel } from "@/lib/channelAccess";
+import { checkImages } from "@/lib/imageSafety";
+
+const MAX_IMAGE_CHARS = 7_000_000;
 
 const authorSelect = {
   id: true,
@@ -98,6 +101,11 @@ export async function POST(request, { params }) {
     return NextResponse.json({ error: "Message can't be empty." }, { status: 400 });
   }
 
+  // Images must be real image data URLs of a sensible size.
+  if (hasImage && (!imageUrl.startsWith("data:image/") || imageUrl.length > MAX_IMAGE_CHARS)) {
+    return NextResponse.json({ error: "That image isn't valid or is too large." }, { status: 400 });
+  }
+
   try {
     const community = await prisma.community.findUnique({ where: { id: params.id } });
     if (!community) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -131,6 +139,18 @@ export async function POST(request, { params }) {
       const replyTarget = await prisma.post.findUnique({ where: { id: replyToId } });
       if (!replyTarget || replyTarget.communityId !== params.id) {
         return NextResponse.json({ error: "The message you're replying to no longer exists." }, { status: 400 });
+      }
+    }
+
+    // The image is checked last, after all the cheap permission checks,
+    // so blocked requests never cost a scan.
+    if (hasImage) {
+      const scan = await checkImages([imageUrl]);
+      if (!scan.ok) {
+        return NextResponse.json(
+          { error: scan.message },
+          { status: scan.code === "unavailable" ? 503 : 422 }
+        );
       }
     }
 
