@@ -319,7 +319,7 @@ function tileStyle(v) {
   const c = TILE_COLORS[v] || ["#ffdd6a", "#e0a300", "#2b1200"];
   const digits = String(v).length;
   return {
-    background: `linear-gradient(160deg, ${c[0]}, ${c[1]})`,
+    background: `linear-gradient(160deg, ${c[0]},${c[1]})`,
     color: c[2],
     fontSize: digits >= 4 ? "clamp(15px, 5.2vw, 24px)" : digits === 3 ? "clamp(18px, 6.4vw, 30px)" : "clamp(22px, 8vw, 36px)",
     boxShadow: "inset 0 2px 0 rgba(255,255,255,.5), inset 0 -3px 0 rgba(0,0,0,.18), 0 2px 0 rgba(0,0,0,.25)",
@@ -697,7 +697,7 @@ function QueensBoard({ n, onExit }) {
           className="mg-qboard"
           style={{ gridTemplateColumns: `repeat(${n}, 1fr)`, visibility: paused ? "hidden" : "visible" }}
           role="grid"
-          aria-label={`${n} by ${n} board`}
+          aria-label={`${n} by${n} board`}
         >
           {Array.from({ length: n * n }, (_, i) => {
             const r = (i / n) | 0, c = i % n;
@@ -850,7 +850,7 @@ function HanoiPlay({ n }) {
               key={pi}
               className={`mg-peg ${sel === pi ? "sel" : ""} ${shake === pi ? "shake" : ""}`}
               onClick={() => tapPeg(pi)}
-              aria-label={`Peg ${pi + 1}, ${peg.length} disc${peg.length === 1 ? "" : "s"}${sel === pi ? ", picked up" : ""}`}
+              aria-label={`Peg ${pi + 1},${peg.length} disc${peg.length === 1 ? "" : "s"}${sel === pi ? ", picked up" : ""}`}
             >
               <span className="mg-pole" />
               <span className="mg-stack">
@@ -862,7 +862,7 @@ function HanoiPlay({ n }) {
                       className={`mg-disc ${top && sel === pi ? "lift" : ""}`}
                       style={{
                         width: `${28 + (d / n) * 66}%`,
-                        background: `linear-gradient(180deg, hsl(${discHue(d)} 85% 78%), hsl(${discHue(d)} 70% 52%))`,
+                        background: `linear-gradient(180deg, hsl(${discHue(d)} 85\% 78\%), hsl(${discHue(d)} 70% 52%))`,
                       }}
                     />
                   );
@@ -943,7 +943,7 @@ function Bead({ c, size = 34, empty, onClick, label, ring }) {
     : {
         width: size,
         height: size,
-        background: `radial-gradient(circle at 32% 28%, #fff 0, ${MM_HUES[c][0]} 28%, ${MM_HUES[c][1]} 100%)`,
+        background: `radial-gradient(circle at 32% 28%, #fff 0, ${MM_HUES[c][0]} 28\%,${MM_HUES[c][1]} 100%)`,
       };
   return (
     <button
@@ -1029,7 +1029,7 @@ export function GameMastermind({ onExit }) {
             <div className="mg-mm-row" key={i}>
               <span className="mg-mm-n">{i + 1}</span>
               <div className="mg-mm-beads">{r.guess.map((c, k) => <Bead key={k} c={c} size={30} />)}</div>
-              <div className="mg-mm-pegs" aria-label={`${r.exact} in the right place, ${r.near} right colour in the wrong place`}>
+              <div className="mg-mm-pegs" aria-label={`${r.exact} in the right place,${r.near} right colour in the wrong place`}>
                 {Array.from({ length: MM_SLOTS }, (_, k) => (
                   <i key={k} className={k < r.exact ? "ex" : k < r.exact + r.near ? "nr" : ""} />
                 ))}
@@ -1824,6 +1824,7 @@ function CheckersPlay({ level }) {
   const [paused, setPaused] = useState(false);
   const [thinking, setThinking] = useState(false);
   const [plies, setPlies] = useState(saved ? saved.plies || 0 : 0);
+  const [note, setNote] = useState("");
   const recRef = useRef(false);
   const pliesRef = useRef(plies);
   pliesRef.current = plies;
@@ -1890,13 +1891,16 @@ function CheckersPlay({ level }) {
   function tap(i) {
     if (paused || over || turn !== 1 || thinking) return;
     if (from < 0 || (prefix.length === 0 && movable.has(i))) {
-      if (movable.has(i)) { setFrom(i === from ? -1 : i); setPrefix([]); }
+      if (movable.has(i)) { setFrom(i === from ? -1 : i); setPrefix([]); setNote(""); }
+      else if (board[i] > 0) setNote(mustJump ? "A capture is compulsory. Pick a piece that can jump." : "That piece can't move right now.");
       return;
     }
     if (!targets.has(i)) {
+      setNote(prefix.length ? "Keep jumping: tap the next highlighted square." : "Tap a highlighted square to move there.");
       if (prefix.length === 0) setFrom(-1);
       return;
     }
+    setNote("");
     const nextPrefix = [...prefix, i];
     const full = myMoves.filter((m) => {
       if (m.path[0] !== from) return false;
@@ -1930,10 +1934,12 @@ function CheckersPlay({ level }) {
     setTurn(1);
     setFrom(-1);
     setPrefix([]);
+    setNote("");
   }
 
   function restart() {
     recRef.current = false;
+    setNote("");
     setBoard(ckStart());
     setTurn(1);
     setQuiet(0);
@@ -1952,7 +1958,7 @@ function CheckersPlay({ level }) {
     <>
       <div className="mg-scorebar">
         <div><span>You</span><b>{mine}</b></div>
-        <div><span>{thinking ? "Thinking…" : turn === 1 ? "Your move" : "Computer"}</span><b>{CK_LEVELS[level].label}</b></div>
+        <div><span>Turn</span><b>{over ? "Game over" : thinking ? "Thinking…" : turn === 1 ? "Your move" : "Computer"}</b></div>
         <div><span>Computer</span><b>{theirs}</b></div>
       </div>
       <div className="mg-boardwrap">
@@ -1988,11 +1994,10 @@ function CheckersPlay({ level }) {
         <>
           <SolvedBanner
             title={over === "win" ? "You win." : over === "loss" ? "The computer wins this one." : "A draw."}
-            text={over === "win" ? "Try the next level up." : over === "loss" ? "Take back a move or start over." : "Neither side could make progress."}
+            text={over === "win" ? "Try the next level up." : over === "loss" ? "Start a new game to try again." : "Neither side could make progress."}
           />
           <ToolRow>
             <ToolBtn onClick={restart} label="Play again"><RotateCw size={15} /> Play again</ToolBtn>
-            {over === "loss" && hist.length ? <ToolBtn onClick={() => { recRef.current = false; undo(); }} label="Take back"><RotateCcw size={15} /> Take back</ToolBtn> : null}
           </ToolRow>
         </>
       ) : (
@@ -2003,8 +2008,12 @@ function CheckersPlay({ level }) {
             <ToolBtn onClick={() => { if (plies === 0 || window.confirm("Start a new game? This one will be lost.")) restart(); }} label="New game">New game</ToolBtn>
           </ToolRow>
           <p className="mg-meta">
-            {mustJump ? "You must capture this turn. " : ""}
-            Tap a piece, then a highlighted square. Jump over a computer piece to capture it. Reach the far row to make a king.
+            {note ? note : (
+              <>
+                {mustJump ? "You must capture this turn. " : ""}
+                Tap a piece, then a highlighted square. Jump over a computer piece to capture it. Reach the far row to make a king.
+              </>
+            )}
           </p>
         </>
       )}
@@ -2230,6 +2239,7 @@ function chOrder(b, moves) {
 }
 
 function chQuiesce(st, alpha, beta, depth) {
+  if (chTimeUp()) return 0;
   const stand = st.turn * chEval(st.b);
   if (depth <= 0) return stand;
   if (stand >= beta) return stand;
@@ -2245,13 +2255,27 @@ function chQuiesce(st, alpha, beta, depth) {
   return alpha;
 }
 
+// Thinking-time limit, so the computer never freezes a slow phone. When time runs out it
+// plays the best move from the last depth it finished. It still follows the same rules and
+// sees exactly the same board as you.
+let chDeadline = 0;
+let chAborted = false;
+let chNodes = 0;
+function chTimeUp() {
+  if (chAborted) return true;
+  if (chDeadline && (++chNodes & 1023) === 0 && Date.now() > chDeadline) chAborted = true;
+  return chAborted;
+}
+
 function chSearch(st, depth, alpha, beta, ply) {
+  if (chTimeUp()) return 0;
   if (depth <= 0) return chQuiesce(st, alpha, beta, 4);
   const moves = chLegal(st);
   if (!moves.length) return chInCheck(st.b, st.turn) ? -99000 + ply : 0;
   let best = -Infinity;
   for (const m of chOrder(st.b, moves)) {
     const sc = -chSearch(chApply(st, m), depth - 1, -beta, -alpha, ply + 1);
+    if (chAborted) return 0;
     if (sc > best) best = sc;
     if (best > alpha) alpha = best;
     if (alpha >= beta) break;
@@ -2259,15 +2283,30 @@ function chSearch(st, depth, alpha, beta, ply) {
   return best;
 }
 
-function chBest(st, depth, rng, sloppy) {
+function chBest(st, depth, rng, sloppy, maxMs) {
   const moves = shuffle(chLegal(st), rng);
   if (!moves.length) return null;
   if (sloppy && rng() < sloppy) return moves[0];
-  let best = moves[0], bs = -Infinity;
-  for (const m of chOrder(st.b, moves)) {
-    const sc = -chSearch(chApply(st, m), depth - 1, -Infinity, -bs, 1);
-    if (sc > bs) { bs = sc; best = m; }
+  let best = moves[0];
+  let ordered = chOrder(st.b, moves);
+  chDeadline = maxMs ? Date.now() + maxMs : 0;
+  chAborted = false;
+  chNodes = 0;
+  for (let d = 1; d <= depth; d++) {
+    let roundBest = ordered[0], bs = -Infinity;
+    const scored = [];
+    for (const m of ordered) {
+      const sc = -chSearch(chApply(st, m), d - 1, -Infinity, -bs, 1);
+      if (chAborted) break;
+      scored.push({ m, sc });
+      if (sc > bs) { bs = sc; roundBest = m; }
+    }
+    if (chAborted) break; // keep the move from the last depth that finished
+    best = roundBest;
+    ordered = scored.sort((a, b) => b.sc - a.sc).map((x) => x.m);
   }
+  chDeadline = 0;
+  chAborted = false;
   return best;
 }
 
@@ -2289,10 +2328,10 @@ const CH_ART = {
 };
 
 const CH_LEVELS = {
-  easy: { depth: 2, sloppy: 0.35, label: "Easy" },
-  medium: { depth: 3, sloppy: 0, label: "Medium" },
-  hard: { depth: 4, sloppy: 0, label: "Hard" },
-  two: { depth: 0, sloppy: 0, label: "2 players" },
+  easy: { depth: 2, sloppy: 0.35, ms: 1000, label: "Easy" },
+  medium: { depth: 3, sloppy: 0, ms: 1800, label: "Medium" },
+  hard: { depth: 4, sloppy: 0, ms: 2500, label: "Hard" },
+  two: { depth: 0, sloppy: 0, ms: 0, label: "2 players" },
 };
 const CH_NAMES = { 2: "Knight", 3: "Bishop", 4: "Rook", 5: "Queen" };
 
@@ -2347,6 +2386,7 @@ function ChessPlay({ level }) {
   const [paused, setPaused] = useState(false);
   const [thinking, setThinking] = useState(false);
   const [flip, setFlip] = useState(false);
+  const [note, setNote] = useState("");
   const recRef = useRef(false);
   const pliesRef = useRef(plies);
   pliesRef.current = plies;
@@ -2384,6 +2424,7 @@ function ChessPlay({ level }) {
     setPlies((p) => p + 1);
     setSel(-1);
     setPromo(null);
+    setNote("");
   }
 
   // The computer's turn.
@@ -2392,7 +2433,7 @@ function ChessPlay({ level }) {
     setThinking(true);
     const t = setTimeout(() => {
       const cfg = CH_LEVELS[level];
-      const m = chBest(st, cfg.depth, Math.random, cfg.sloppy);
+      const m = chBest(st, cfg.depth, Math.random, cfg.sloppy, cfg.ms);
       setThinking(false);
       if (m) play(m, false);
     }, 450);
@@ -2414,8 +2455,18 @@ function ChessPlay({ level }) {
       else play(ms[0], true);
       return;
     }
-    if (v && (v > 0) === (st.turn > 0) && legal.some((m) => m.from === i)) setSel(i === sel ? -1 : i);
-    else setSel(-1);
+    if (v && (v > 0) === (st.turn > 0)) {
+      if (legal.some((m) => m.from === i)) { setSel(i === sel ? -1 : i); setNote(""); }
+      else {
+        setSel(-1);
+        setNote(inCheck
+          ? "You are in check. Move your king, block the attack, or capture the checking piece."
+          : "That piece has no legal move right now. It may be blocked, or moving it would expose your king.");
+      }
+      return;
+    }
+    if (sel >= 0) setNote("You can't move there. Tap a marked square, or pick another piece.");
+    setSel(-1);
   }
 
   function undo() {
@@ -2428,6 +2479,7 @@ function ChessPlay({ level }) {
     setHist((x) => x.slice(0, -1));
     setSel(-1);
     setPromo(null);
+    setNote("");
   }
 
   function restart() {
@@ -2440,6 +2492,7 @@ function ChessPlay({ level }) {
     setPlies(0);
     setSel(-1);
     setPromo(null);
+    setNote("");
   }
 
   const headline =
@@ -2453,8 +2506,11 @@ function ChessPlay({ level }) {
     <>
       <ChessDefs />
       <div className="mg-scorebar">
-        <div><span>{thinking ? "Thinking…" : two ? "Turn" : st.turn === 1 ? "Your move" : "Computer"}</span><b>{two ? (st.turn === 1 ? "White" : "Black") : CH_LEVELS[level].label}</b></div>
-        <div><span>Status</span><b>{inCheck && !over ? "Check" : over ? "Over" : "Playing"}</b></div>
+        <div>
+          <span>Turn</span>
+          <b>{over ? "Game over" : two ? (st.turn === 1 ? "White" : "Black") : thinking ? "Thinking…" : st.turn === 1 ? "Your move" : "Computer"}</b>
+        </div>
+        <div><span>Status</span><b>{inCheck && !over ? "Check!" : over ? "Over" : "Playing"}</b></div>
       </div>
       <div className="mg-boardwrap">
         <div className="mg-ck chs" style={{ visibility: paused ? "hidden" : "visible" }} role="grid" aria-label="Chess board">
@@ -2494,7 +2550,7 @@ function ChessPlay({ level }) {
 
       {over ? (
         <>
-          <SolvedBanner title={headline} text={two ? "Play again, or switch sides by starting a new game." : status === "mate" && st.turn === -1 ? "Try the next level up." : "Take back a move or start over."} />
+          <SolvedBanner title={headline} text={two ? "Play again, or switch sides by starting a new game." : status === "mate" && st.turn === -1 ? "Try the next level up." : status === "mate" ? "Start a new game to try again." : "Start a new game to play again."} />
           <ToolRow>
             <ToolBtn onClick={restart} label="Play again"><RotateCw size={15} /> Play again</ToolBtn>
           </ToolRow>
@@ -2507,7 +2563,15 @@ function ChessPlay({ level }) {
             <ToolBtn onClick={() => setPaused(true)} label="Pause">Pause</ToolBtn>
             <ToolBtn onClick={() => { if (plies === 0 || window.confirm("Start a new game? This one will be lost.")) restart(); }} label="New game">New game</ToolBtn>
           </ToolRow>
-          <p className="mg-meta">{two ? "Two players, one phone. White moves first, then pass the phone. Use Turn board to see it from Black's side." : "You play the light pieces and move first. Tap a piece, then a marked square. Knights jump in an L shape. Trap the computer's king to win."}</p>
+          <p className="mg-meta">
+            {note
+              ? note
+              : inCheck
+                ? (two ? "Check! The king must get out of check: move it, block the attack, or capture the checking piece." : st.turn === 1 ? "You are in check. Move your king, block the attack, or capture the checking piece." : "The computer is in check.")
+                : two
+                  ? "Two players, one phone. White moves first, then pass the phone. Use Turn board to see it from Black's side."
+                  : "You play the light pieces and move first. Tap a piece, then a marked square. Knights jump in an L shape. Checkmate the king to win."}
+          </p>
         </>
       )}
     </>
@@ -2710,6 +2774,7 @@ const TG_FILL = {
   Q: ["#ffe08a", "#e0841a"],
   P: ["#b9f0cf", "#1f9d6a"],
 };
+const TG_POOL = ["L", "L", "M", "S", "S", "Q", "P"];
 const TG_SLOTS = [[2.4, 12.2], [7.4, 12.2], [11.6, 12.2], [14.4, 12.6], [2.2, 16], [6, 16], [11, 16]];
 
 function pts(poly) { return poly.map((p) => `${p[0].toFixed(3)},${p[1].toFixed(3)}`).join(" "); }
@@ -3360,7 +3425,7 @@ const SQ_MAKERS = {
     },
     () => ({ seq: [2, 3, 5, 7, 11, 13, 17, 19], rule: "Prime numbers." }),
     (rng) => {
-      const a = ri(rng, 1, 3), b = ri(rng, 2, 4), c = ri(rng, 2, 5);
+      const a = ri(rng, 1, 3), b = ri(rng, 1, 3);
       const seq = [a];
       for (let i = 0; i < 7; i++) seq.push(i % 2 === 0 ? seq[i] * b : seq[i] + c);
       return { seq, rule: `Multiply by ${b}, then add ${c}, and repeat.` };
