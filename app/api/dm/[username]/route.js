@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
 import { getSessionUserId } from "@/lib/auth";
-
-const prisma = new PrismaClient();
+import { checkDmAllowed } from "@/lib/minorSafety";
 
 const MAX_IMAGES = 6;
 const MAX_IMAGE_CHARS = 2_500_000;
@@ -85,6 +84,15 @@ export async function POST(req, { params }) {
   const check = await requireFriend(userId, params.username);
   if (check.error) {
     return NextResponse.json({ error: check.error }, { status: check.status });
+  }
+
+  // Minor safety + the receiver's "who can message" setting.
+  // Notes-to-self skip this check.
+  if (check.other.id !== userId) {
+    const allowed = await checkDmAllowed(userId, check.other.id);
+    if (!allowed.ok) {
+      return NextResponse.json({ error: allowed.error }, { status: allowed.status });
+    }
   }
 
   const body = await req.json();
