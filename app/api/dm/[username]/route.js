@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSessionUserId } from "@/lib/auth";
 import { checkDmAllowed } from "@/lib/minorSafety";
+import { checkImages } from "@/lib/imageSafety";
 
 const MAX_IMAGES = 6;
 const MAX_IMAGE_CHARS = 2_500_000;
@@ -102,6 +103,18 @@ export async function POST(req, { params }) {
     : [];
   if (!text && images.length === 0) {
     return NextResponse.json({ error: "Empty message" }, { status: 400 });
+  }
+
+  // Photos sent to other people are checked before they are saved.
+  // Notes-to-self are private, so they skip the check.
+  if (images.length > 0 && check.other.id !== userId) {
+    const scan = await checkImages(images);
+    if (!scan.ok) {
+      return NextResponse.json(
+        { error: scan.message },
+        { status: scan.code === "unavailable" ? 503 : 422 }
+      );
+    }
   }
 
   // Pictures, reactions and the pin all live in "attachments" (no database change needed):
