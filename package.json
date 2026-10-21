@@ -28,6 +28,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-markdown": "^9.0.1",
+    "thinking-orbs": "0.3.2",
     "ws": "^8.18.0",
     "y-codemirror.next": "^0.3.5",
     "y-websocket": "^2.0.4",
