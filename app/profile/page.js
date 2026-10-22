@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { Loader2, AlertCircle, Zap, Gem, Coins } from "lucide-react";
+import { Loader2, AlertCircle, Zap, Gem } from "lucide-react";
 import NavShell from "@/components/NavShell";
 import ProfileClient from "@/components/ProfileClient";
 
@@ -15,7 +15,7 @@ function timeAgo(value) {
   return new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-const CURRENCY_LABEL = { neurons: "Neurons", gems: "Gems", vcoins: "V-Coins" };
+const CURRENCY_LABEL = { neurons: "Neurons", gems: "Gems" };
 
 // Your coins: balances plus the latest activity. Stays hidden if the wallet can't be loaded
 // (for example for guests), so it can never break the profile page.
@@ -39,14 +39,14 @@ function WalletCard() {
 
   if (!data) return null;
   const { balances, history = [] } = data;
-  const recent = history.slice(0, 6);
+  const recent = history.filter((tx) => tx.currency !== "vcoins").slice(0, 6);
 
   return (
     <div className="vw" id="wallet">
       <style>{`
         .vw { max-width: 520px; margin: 0 auto; padding: 16px 16px 0; }
         .vw-title { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); margin: 0 0 10px; }
-        .vw-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+        .vw-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
         .vw-tile {
           display: flex; flex-direction: column; gap: 2px; padding: 12px 12px 11px; border-radius: 16px;
           background: var(--surface); border: 1px solid var(--border); box-shadow: 0 3px 0 var(--border);
@@ -77,19 +77,13 @@ function WalletCard() {
           <span className="vw-ico"><Gem size={16} /></span>
           <span className="vw-num">{balances.gems}</span>
           <span className="vw-name">Gems</span>
-          <span className="vw-sub">Bought, not earned</span>
-        </div>
-        <div className="vw-tile">
-          <span className="vw-ico"><Coins size={16} /></span>
-          <span className="vw-num">{balances.vcoins}</span>
-          <span className="vw-name">V-Coins</span>
-          <span className="vw-sub">100 = 1 US dollar</span>
+          <span className="vw-sub">Premium currency</span>
         </div>
       </div>
 
       <div className="vw-list">
         {recent.length === 0 ? (
-          <div className="vw-empty">Nothing yet. Finish a Quick Math round or solve the daily Sudoku in Mind Gym to earn your first Neurons.</div>
+          <div className="vw-empty">Nothing yet. Play and win games in Mind Gym to earn your first Neurons.</div>
         ) : (
           recent.map((tx) => (
             <div key={tx.id} className="vw-row">
