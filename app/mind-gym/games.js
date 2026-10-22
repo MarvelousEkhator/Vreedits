@@ -85,7 +85,8 @@ export function updateStore(fn) {
   return next;
 }
 export function markPlayedToday(s) { s.playedDays = [...s.playedDays, localDayKey()]; return s; }
-`// Asks the server for Neurons after a win or a finished round. The server decides the amount and the limits.
+
+// Asks the server for Neurons after a win or a finished round. The server decides the amount and the limits.
 function showRewardToast(text) {
   try {
     const el = document.createElement("div");
@@ -138,34 +139,6 @@ function recordGame(id, fn) {
   });
   if (won) claimGameWin(id, level, "win");
   else if (played) claimGameWin(id, level, "played");
-}
-+${d.awarded} Neuron${d.awarded === 1 ? "" : "s"} for that win`);
-      try { window.dispatchEvent(new Event("vreedits:wallet-changed")); } catch {}
-    } else if (d.message) {
-      showRewardToast(d.message);
-    }
-  } catch {}
-}
-
-// Updates one game's record and counts the day toward the streak.
-// Every game records its wins through here, so a win also asks for Neurons.
-function recordGame(id, fn) {
-  let won = false;
-  let level = "";
-  updateStore((s) => {
-    const g = s.games[id] || (s.games[id] = { plays: 0, wins: 0, best: 0 });
-    if (!g.done) g.done = {};
-    if (!g.bestBy) g.bestBy = {};
-    const winsBefore = g.wins || 0;
-    // Notice which level the game marks as done, so harder levels can pay more.
-    const realDone = g.done;
-    g.done = new Proxy(realDone, { set(t, k, v) { level = String(k); t[k] = v; return true; } });
-    fn(g);
-    g.done = realDone;
-    if ((g.wins || 0) > winsBefore) won = true;
-    return markPlayedToday(s);
-  });
-  if (won) claimGameWin(id, level);
 }
 function touchToday() { updateStore((s) => markPlayedToday(s)); }
 function gameRecord(id) {
