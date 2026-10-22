@@ -21,6 +21,18 @@ export async function POST(request, { params }) {
       return NextResponse.json({ ok: true, alreadyMember: true });
     }
 
+    // Banned people can't rejoin.
+    const ban = await prisma.communityBan.findUnique({
+      where: { communityId_userId: { communityId: params.id, userId } },
+      select: { id: true },
+    });
+    if (ban) {
+      return NextResponse.json(
+        { error: "You can't join this community." },
+        { status: 403 }
+      );
+    }
+
     if (community.joinMode === "invite_only" && community.ownerId !== userId) {
       return NextResponse.json(
         { error: "This community is invite-only. Ask an existing member for an invite link." },
