@@ -1203,3 +1203,10 @@ model WalletTransaction {
   @@index([userId, createdAt])
   @@index([userId, currency, type, createdAt])
 }
+model MindGymDay {
+  userId    String
+  day       String
+  createdAt DateTime @default(now())
+
+  @@id([userId, day])
+}
