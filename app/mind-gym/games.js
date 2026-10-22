@@ -85,8 +85,7 @@ export function updateStore(fn) {
   return next;
 }
 export function markPlayedToday(s) { s.playedDays = [...s.playedDays, localDayKey()]; return s; }
-
-// Asks the server for Neurons after a win. The server decides the amount and the limits.
+`// Asks the server for Neurons after a win or a finished round. The server decides the amount and the limits.
 function showRewardToast(text) {
   try {
     const el = document.createElement("div");
@@ -97,18 +96,50 @@ function showRewardToast(text) {
     setTimeout(() => { try { el.remove(); } catch {} }, 3800);
   } catch {}
 }
-async function claimGameWin(gameId, level) {
+async function claimGameWin(gameId, level, outcome) {
   try {
     const claimId = Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
     const r = await fetch("/api/mindgym/reward", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ game: "play", gameId, level, claimId }),
+      body: JSON.stringify({ game: "play", gameId, level, claimId, outcome }),
     });
     if (r.status === 401 || r.status === 403) return; // signed out or guest: nothing to pay into
     const d = await r.json().catch(() => ({}));
     if (r.ok && d.awarded > 0) {
-      showRewardToast(`+${d.awarded} Neuron${d.awarded === 1 ? "" : "s"} for that win`);
+      showRewardToast(`+${d.awarded} Neuron${d.awarded === 1 ? "" : "s"} ${outcome === "played" ? "for finishing" : "for that win"}`);
+      try { window.dispatchEvent(new Event("vreedits:wallet-changed")); } catch {}
+    } else if (d.message || d.error) {
+      showRewardToast(d.message || d.error);
+    }
+  } catch {}
+}
+
+// Updates one game's record and counts the day toward the streak.
+// Every game records its rounds through here, so a win (or a finished round) also asks for Neurons.
+function recordGame(id, fn) {
+  let won = false;
+  let played = false;
+  let level = "";
+  updateStore((s) => {
+    const g = s.games[id] || (s.games[id] = { plays: 0, wins: 0, best: 0 });
+    if (!g.done) g.done = {};
+    if (!g.bestBy) g.bestBy = {};
+    const winsBefore = g.wins || 0;
+    const playsBefore = g.plays || 0;
+    // Notice which level the game marks as done, so harder levels can pay more.
+    const realDone = g.done;
+    g.done = new Proxy(realDone, { set(t, k, v) { level = String(k); t[k] = v; return true; } });
+    fn(g);
+    g.done = realDone;
+    if ((g.wins || 0) > winsBefore) won = true;
+    else if ((g.plays || 0) > playsBefore) played = true;
+    return markPlayedToday(s);
+  });
+  if (won) claimGameWin(id, level, "win");
+  else if (played) claimGameWin(id, level, "played");
+}
++${d.awarded} Neuron${d.awarded === 1 ? "" : "s"} for that win`);
       try { window.dispatchEvent(new Event("vreedits:wallet-changed")); } catch {}
     } else if (d.message) {
       showRewardToast(d.message);
