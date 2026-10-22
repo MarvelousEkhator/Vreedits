@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import PresenceHeartbeat from "@/components/PresenceHeartbeat";
@@ -14,8 +14,16 @@ import { isTabRoot, getBackFallback } from "@/lib/backRoutes";
 import {
   Menu, X, ArrowLeft, Home, Bot, GraduationCap, PenLine, Dumbbell,
   Users, Heart, History, Bell, Crown, Settings, User,
-  LogOut, Lock, MessageCircle, Film,
+  LogOut, Lock, MessageCircle, Film, Zap, Gem, Coins,
 } from "lucide-react";
+
+// 1234 -> "1.2k", so the coin pill stays small in the header.
+function shortCount(n) {
+  const v = Number(n) || 0;
+  if (v >= 1000000) return (v / 1000000).toFixed(1).replace(/\.0$/, "") + "m";
+  if (v >= 1000) return (v / 1000).toFixed(1).replace(/\.0$/, "") + "k";
+  return String(v);
+}
 
 // Side menu (opens from the hamburger). Business, Travel, Home Tools and
 // Collections have been moved out as Vreedits becomes a study app.
@@ -80,6 +88,8 @@ function NavShellInner({ children, user }) {
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  // Coin balances { neurons, gems, vcoins }. Stays null (nothing shown) for guests or if the wallet can't be reached.
+  const [wallet, setWallet] = useState(null);
   const router = useRouter();
   const pathname = usePathname();
   const menuRef = useRef(null);
@@ -126,6 +136,29 @@ function NavShellInner({ children, user }) {
     document.addEventListener("keydown", handleKey);
     return () => document.removeEventListener("keydown", handleKey);
   }, []);
+
+  const userId = user?.id;
+  const isGuest = !!user?.isGuest;
+  const loadWallet = useCallback(async () => {
+    if (!userId || isGuest) { setWallet(null); return; }
+    try {
+      const res = await fetch("/api/wallet", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data && data.balances) setWallet(data.balances);
+    } catch {}
+  }, [userId, isGuest]);
+
+  // Loads on every screen, and again whenever a game pays out or you come back to the app.
+  useEffect(() => {
+    loadWallet();
+    window.addEventListener("vreedits:wallet-changed", loadWallet);
+    window.addEventListener("focus", loadWallet);
+    return () => {
+      window.removeEventListener("vreedits:wallet-changed", loadWallet);
+      window.removeEventListener("focus", loadWallet);
+    };
+  }, [loadWallet]);
 
   // Lets a page that draws its own header open the side menu.
   useEffect(() => {
@@ -190,6 +223,21 @@ function NavShellInner({ children, user }) {
           background: var(--surface-2); display: flex; align-items: center; justify-content: center;
           cursor: pointer; color: var(--text);
         }
+        /* Neuron counter in the top bar (hidden on very narrow phones; the side menu shows all three balances). */
+        .vreedits-coins {
+          display: flex; align-items: center; gap: 5px; height: 38px; padding: 0 11px;
+          border-radius: 11px; border: 1px solid var(--border); background: var(--accent-soft);
+          color: var(--accent); font-size: 13.5px; font-weight: 700; text-decoration: none;
+          font-variant-numeric: tabular-nums;
+        }
+        @media (max-width: 359px) { .vreedits-coins { display: none; } }
+        .vreedits-wallet-row {
+          display: flex; align-items: center; gap: 12px; margin-top: 10px; padding: 8px 10px;
+          border-radius: 12px; border: 1px solid var(--border); background: var(--surface-2);
+          color: var(--text); text-decoration: none; font-size: 13px; font-weight: 700;
+          font-variant-numeric: tabular-nums;
+        }
+        .vreedits-wallet-row span { display: inline-flex; align-items: center; gap: 4px; }
         .vreedits-brand {
           font-family: var(--font-display);
           font-size: 24px;
@@ -316,9 +364,7 @@ function NavShellInner({ children, user }) {
           .vreedits-tabbar { justify-content: center; gap: 12px; }
           .vreedits-tab { flex: 0 0 auto; width: 104px; }
         }
-      `}</style>
-
-      {!hideTopBar && (
+      `}</style>      {!hideTopBar && (
         <div className="vreedits-topbar">
           {showBack ? (
             <button
@@ -347,6 +393,11 @@ function NavShellInner({ children, user }) {
           )}
           <span className="vreedits-brand">Vreedits</span>
           <div className="vreedits-topbar-right">
+            {wallet && (
+              <Link href="/profile#wallet" className="vreedits-coins tappable" aria-label={`${wallet.neurons} Neurons. Open wallet`}>
+                <Zap size={15} /> {shortCount(wallet.neurons)}
+              </Link>
+            )}
             <Link href="/notifications" className="vreedits-hamburger tappable" aria-label="Notifications">
               <GlossIcon name="notifications" size={26} />
             </Link>
@@ -411,6 +462,13 @@ function NavShellInner({ children, user }) {
             <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 3 }}>
               {user?.online ? t("common.online") : t("common.offline")}
             </div>
+            {wallet && (
+              <Link href="/profile#wallet" className="vreedits-wallet-row" onClick={() => setMenuOpen(false)} aria-label="Open wallet">
+                <span title="Neurons"><Zap size={14} /> {shortCount(wallet.neurons)}</span>
+                <span title="Gems"><Gem size={14} /> {shortCount(wallet.gems)}</span>
+                <span title="V-Coins"><Coins size={14} /> {shortCount(wallet.vcoins)}</span>
+              </Link>
+            )}
 
             <div className={`vreedits-popover-panel ${profileMenuOpen ? "open" : ""}`}>
               <Link href="/profile" className="vreedits-popover-item" onClick={() => setProfileMenuOpen(false)}>
