@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { ChevronRight, Loader2 } from "lucide-react";
+import { ChevronRight, Loader2, Zap, Gem } from "lucide-react";
 import { useLanguage } from "@/components/LanguageProvider";
 import GlossIcon from "@/components/GlossIcon";
 
@@ -43,6 +43,8 @@ function relativeTime(dateStr) {
   return new Date(dateStr).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+const CURRENCY_LABEL = { neurons: "Neurons", gems: "Gems" };
+
 function greetingFor(hour) {
   if (hour < 5) return "Up late";
   if (hour < 12) return "Good morning";
@@ -65,13 +67,50 @@ export default function DashboardClient({ user }) {
   const [loadingChats, setLoadingChats] = useState(true);
   const [communities, setCommunities] = useState([]);
   const [gym, setGym] = useState(null);
+  const [wallet, setWallet] = useState(null);
   const [greeting, setGreeting] = useState("");
 
   const name = user.displayName || user.username;
 
   useEffect(() => {
     setGreeting(greetingFor(new Date().getHours()));
-    setGym(loadGym());
+    let removeWalletListeners = null;
+    const local = loadGym();
+    setGym(local);
+
+    // Saves your played days to your account and merges them back, so the streak is the same on every browser
+    // and survives clearing site data. Guests (and signed-out visitors) just keep the local days.
+    if (!user.isGuest) {
+      fetch("/api/mindgym/reward", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ game: "days", days: Array.isArray(local.playedDays) ? local.playedDays.slice(-120) : [] }),
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          if (!d || !Array.isArray(d.days)) return;
+          setGym((g) => {
+            const base = g || {};
+            const merged = Array.from(new Set([...(base.playedDays || []), ...d.days])).sort();
+            return { ...base, playedDays: merged };
+          });
+        })
+        .catch(() => {});
+
+      // Your wallet lives on Home. Stays hidden if it can't be loaded.
+      const loadWallet = () =>
+        fetch("/api/wallet", { cache: "no-store" })
+          .then((r) => (r.ok ? r.json() : null))
+          .then((d) => { if (d && d.balances) setWallet(d); })
+          .catch(() => {});
+      loadWallet();
+      window.addEventListener("vreedits:wallet-changed", loadWallet);
+      window.addEventListener("focus", loadWallet);
+      removeWalletListeners = () => {
+        window.removeEventListener("vreedits:wallet-changed", loadWallet);
+        window.removeEventListener("focus", loadWallet);
+      };
+    }
 
     fetch("/api/ai/conversations")
       .then((r) => r.json())
@@ -88,6 +127,8 @@ export default function DashboardClient({ user }) {
         if (Array.isArray(list)) setCommunities(list.slice(0, 3));
       })
       .catch(() => {});
+
+    return () => { if (removeWalletListeners) removeWalletListeners(); };
   }, []);
 
   // Last seven days, oldest first, for the streak strip.
@@ -105,6 +146,8 @@ export default function DashboardClient({ user }) {
     });
   }
   const streak = gym ? streakFromDays((gym.playedDays || []), today) : 0;
+  const weekCount = week.filter((d) => d.done).length;
+  const recentTx = wallet ? (wallet.history || []).filter((tx) => tx.currency !== "vcoins").slice(0, 4) : [];
   const utcToday = new Date().toISOString().slice(0, 10);
   const sudokuDone = gym && gym.sudoku && gym.sudoku.done
     ? Object.keys(gym.sudoku.done).filter((k) => k.startsWith(utcToday + ":")).length
@@ -139,6 +182,13 @@ export default function DashboardClient({ user }) {
         .dh-dot.done { background: var(--accent); border-color: var(--accent); }
         .dh-dot.today { border-color: var(--accent); }
 
+        .dh-wallet { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .dh-wtile { display: flex; flex-direction: column; gap: 2px; padding: 12px; border-radius: 16px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 3px 0 var(--border); }
+        .dh-wico { width: 30px; height: 30px; border-radius: 9px; display: flex; align-items: center; justify-content: center; background: var(--accent-soft); color: var(--accent); margin-bottom: 6px; }
+        .dh-wnum { font-size: 24px; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
+        .dh-wname { font-size: 12.5px; font-weight: 700; }
+        .dh-wsub { font-size: 11px; color: var(--text-muted); line-height: 1.3; }
+        .dh-wamt { font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; flex-shrink: 0; color: var(--success); }
         .dh-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
         .dh-tile {
           display: flex; flex-direction: column; gap: 8px; padding: 13px; border-radius: 16px; text-decoration: none; color: var(--text);
@@ -162,9 +212,7 @@ export default function DashboardClient({ user }) {
         .dh-gym { display: flex; gap: 10px; }
         .dh-gym > a { flex: 1; }
         @media (min-width: 1024px) { .dh { max-width: 720px; padding-top: 28px; } .dh-grid { grid-template-columns: repeat(3, 1fr); } }
-      `}</style>
-
-      <div className="dh-hello">
+      `}</style>      <div className="dh-hello">
         {user.avatarDataUrl ? (
           <img className="dh-avatar" src={user.avatarDataUrl} alt="Profile" />
         ) : (
@@ -184,6 +232,7 @@ export default function DashboardClient({ user }) {
               ? `day${streak === 1 ? "" : "s"} in a row in Mind Gym`
               : "Play one Mind Gym round today to start a streak"}
           </div>
+          {weekCount > 0 ? <div className="dh-streak-cap">{weekCount} of the last 7 days played</div> : null}
         </div>
         <div className="dh-week" aria-hidden="true">
           {week.map((d) => (
@@ -194,6 +243,39 @@ export default function DashboardClient({ user }) {
           ))}
         </div>
       </Link>
+
+      {wallet && (
+        <>
+          <div className="dh-label"><span>Your wallet</span></div>
+          <div className="dh-wallet">
+            <div className="dh-wtile">
+              <span className="dh-wico"><Zap size={16} /></span>
+              <span className="dh-wnum">{wallet.balances.neurons}</span>
+              <span className="dh-wname">Neurons</span>
+              <span className="dh-wsub">Earned in Mind Gym</span>
+            </div>
+            <div className="dh-wtile">
+              <span className="dh-wico"><Gem size={16} /></span>
+              <span className="dh-wnum">{wallet.balances.gems}</span>
+              <span className="dh-wname">Gems</span>
+              <span className="dh-wsub">Premium currency</span>
+            </div>
+          </div>
+          {recentTx.length > 0 && (
+            <div className="dh-list" style={{ marginTop: 10 }}>
+              {recentTx.map((tx) => (
+                <div key={tx.id} className="dh-row">
+                  <div style={{ minWidth: 0 }}>
+                    <div className="dh-row-title">{tx.reason || (CURRENCY_LABEL[tx.currency] || "Wallet") + " " + tx.type}</div>
+                    <div className="dh-row-sub">{relativeTime(tx.createdAt)}</div>
+                  </div>
+                  <span className="dh-wamt">{tx.amount > 0 ? "+" : ""}{tx.amount}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
 
       <div className="dh-label"><span>Jump back in</span></div>
       <div className="dh-grid">
