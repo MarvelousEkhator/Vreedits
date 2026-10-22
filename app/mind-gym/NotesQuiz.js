@@ -48,6 +48,34 @@ function dayKey() {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
+// Asks the server for Neurons for a finished round. The server decides the amount and the limits.
+async function claimNotesReward(won) {
+  try {
+    const claimId = Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+    const r = await fetch("/api/mindgym/reward", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ game: "play", gameId: "notes", claimId, outcome: won ? "win" : "played" }),
+    });
+    if (r.status === 401 || r.status === 403) return;
+    const d = await r.json().catch(() => ({}));
+    let text = "";
+    if (r.ok && d.awarded > 0) {
+      text = `+${d.awarded} Neuron${d.awarded === 1 ? "" : "s"} ${won ? "for that win" : "for finishing"}`;
+      try { window.dispatchEvent(new Event("vreedits:wallet-changed")); } catch {}
+    } else if (d.message || d.error) {
+      text = d.message || d.error;
+    }
+    if (!text) return;
+    const el = document.createElement("div");
+    el.textContent = text;
+    el.setAttribute("role", "status");
+    el.style.cssText = "position:fixed;left:50%;bottom:90px;transform:translateX(-50%);z-index:9999;max-width:88vw;padding:10px 16px;border-radius:14px;background:#5b21b6;color:#fff;font-weight:700;font-size:14px;line-height:1.3;box-shadow:0 6px 20px rgba(0,0,0,.35);text-align:center;pointer-events:none";
+    document.body.appendChild(el);
+    setTimeout(() => { try { el.remove(); } catch {} }, 3800);
+  } catch {}
+}
+
 // Counts the round and the day toward the Mind Gym streak.
 function recordPlay(score) {
   try {
@@ -64,6 +92,7 @@ function recordPlay(score) {
     s.games = games;
     localStorage.setItem(STORE_KEY, JSON.stringify(s));
   } catch {}
+  claimNotesReward(score >= 6);
 }
 
 const STOP = new Set([
