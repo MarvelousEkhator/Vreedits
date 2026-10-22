@@ -86,15 +86,55 @@ export function updateStore(fn) {
 }
 export function markPlayedToday(s) { s.playedDays = [...s.playedDays, localDayKey()]; return s; }
 
+// Asks the server for Neurons after a win. The server decides the amount and the limits.
+function showRewardToast(text) {
+  try {
+    const el = document.createElement("div");
+    el.textContent = text;
+    el.setAttribute("role", "status");
+    el.style.cssText = "position:fixed;left:50%;bottom:90px;transform:translateX(-50%);z-index:9999;max-width:88vw;padding:10px 16px;border-radius:14px;background:#5b21b6;color:#fff;font-weight:700;font-size:14px;line-height:1.3;box-shadow:0 6px 20px rgba(0,0,0,.35);text-align:center;pointer-events:none";
+    document.body.appendChild(el);
+    setTimeout(() => { try { el.remove(); } catch {} }, 3800);
+  } catch {}
+}
+async function claimGameWin(gameId, level) {
+  try {
+    const claimId = Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+    const r = await fetch("/api/mindgym/reward", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ game: "play", gameId, level, claimId }),
+    });
+    if (r.status === 401 || r.status === 403) return; // signed out or guest: nothing to pay into
+    const d = await r.json().catch(() => ({}));
+    if (r.ok && d.awarded > 0) {
+      showRewardToast(`+${d.awarded} Neuron${d.awarded === 1 ? "" : "s"} for that win`);
+      try { window.dispatchEvent(new Event("vreedits:wallet-changed")); } catch {}
+    } else if (d.message) {
+      showRewardToast(d.message);
+    }
+  } catch {}
+}
+
 // Updates one game's record and counts the day toward the streak.
+// Every game records its wins through here, so a win also asks for Neurons.
 function recordGame(id, fn) {
+  let won = false;
+  let level = "";
   updateStore((s) => {
     const g = s.games[id] || (s.games[id] = { plays: 0, wins: 0, best: 0 });
     if (!g.done) g.done = {};
     if (!g.bestBy) g.bestBy = {};
+    const winsBefore = g.wins || 0;
+    // Notice which level the game marks as done, so harder levels can pay more.
+    const realDone = g.done;
+    g.done = new Proxy(realDone, { set(t, k, v) { level = String(k); t[k] = v; return true; } });
     fn(g);
+    g.done = realDone;
+    if ((g.wins || 0) > winsBefore) won = true;
     return markPlayedToday(s);
   });
+  if (won) claimGameWin(id, level);
 }
 function touchToday() { updateStore((s) => markPlayedToday(s)); }
 function gameRecord(id) {
@@ -1372,8 +1412,7 @@ export function GameKenKen({ onExit }) {
       {seeds ? <KenKenPlay key={`${n}-${seeds[n]}`} n={n} seed={seeds[n]} onNew={fresh} /> : null}
     </GameFrame>
   );
-}
-/* ═══════════════════════════ NONOGRAMS ═══════════════════════════ */
+}/* ═══════════════════════════ NONOGRAMS ═══════════════════════════ */
 // ==LOGIC-START==
 function nonoRuns(line) {
   const out = [];
@@ -2033,7 +2072,8 @@ export function GameCheckers({ onExit }) {
       <CheckersPlay key={level} level={level} />
     </GameFrame>
   );
-}/* ═══════════════════════════ CHESS ═══════════════════════════ */
+}
+/* ═══════════════════════════ CHESS ═══════════════════════════ */
 // ==LOGIC-START==
 // Board: 64 cells, row * 8 + column, row 0 is the computer's back rank.
 // 1 pawn, 2 knight, 3 bishop, 4 rook, 5 queen, 6 king. Positive = you (white), negative = computer.
@@ -2993,8 +3033,7 @@ export function GameTangram({ onExit }) {
       {seeds ? <TangramPlay key={`${level}-${seeds[level]}`} level={level} seed={seeds[level]} onNew={fresh} /> : null}
     </GameFrame>
   );
-}
-/* ═══════════════════════════ LOGIC GRID ═══════════════════════════ */
+}/* ═══════════════════════════ LOGIC GRID ═══════════════════════════ */
 // ==LOGIC-START==
 // Category 0 is an ordered one (days or times). An item's "group" is its position in that order,
 // so every group is one row of the finished table: one item from each category.
