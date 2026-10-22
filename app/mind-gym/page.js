@@ -10,11 +10,43 @@ import {
 /* ═══════════════════════════════════════════════════════════════
    MIND GYM — hub, Quick Math Sprint and Daily Sudoku.
    The other ten games live in ./games.js, which also holds the shared
-   progress store. Progress is kept on this device for now; rewards and
-   server-side validation arrive with the wallet.
+   progress store. Progress is kept on this device. Quick Math and Sudoku
+   also earn Neurons: the server checks every claim (app/api/mindgym/reward).
    ═══════════════════════════════════════════════════════════════ */
 
 const PROGRESS_PREFIX = "vreedits.sudoku.progress.";
+
+// Asks the server for Neurons. The server re-checks everything, so the browser can't pay itself.
+async function claimReward(payload) {
+  try {
+    const r = await fetch("/api/mindgym/reward", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (r.status === 401) return { kind: "signin" };
+    if (r.status === 403) return { kind: "guest" };
+    if (!r.ok) return { kind: "error", message: d.error };
+    // Tells the header coin counter to refresh.
+    try { window.dispatchEvent(new Event("vreedits:wallet-changed")); } catch {}
+    return { kind: "ok", ...d };
+  } catch {
+    return { kind: "error" };
+  }
+}
+
+function rewardText(r) {
+  if (!r) return "";
+  if (r.kind === "pending") return "Adding your Neurons…";
+  if (r.kind === "signin") return "Sign in to earn Neurons.";
+  if (r.kind === "guest") return "Create a free account to earn Neurons.";
+  if (r.kind === "error") return r.message || "Couldn't reach your wallet. Your score is saved on this device.";
+  if (r.awarded > 0) return `+${r.awarded} Neuron${r.awarded === 1 ? "" : "s"} added to your wallet${r.capped ? " (today's limit reached)" : ""}.`;
+  if (r.duplicate) return "You already earned Neurons for this one.";
+  if (r.capped) return "You've reached today's Neuron limit. Come back tomorrow.";
+  return r.message || "";
+}
 
 // Tweak the game here — nothing else needs to change.
 const MATH_CONFIG = {
@@ -228,6 +260,8 @@ function QuickMath({ onExit }) {
   const [fb, setFb] = useState(null);
   const [newBest, setNewBest] = useState(false);
   const [paused, setPaused] = useState(false);
+  const [reward, setReward] = useState(null);
+  const roundIdRef = useRef("");
 
   const phaseRef = useRef("ready");
   const remainingRef = useRef(MATH_CONFIG.duration * 1000);
@@ -248,6 +282,8 @@ function QuickMath({ onExit }) {
     setInput("");
     setFb(null);
     setNewBest(false);
+    setReward(null);
+    roundIdRef.current = Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
     setTimeLeft(MATH_CONFIG.duration);
     setPaused(false);
     remainingRef.current = MATH_CONFIG.duration * 1000;
@@ -306,6 +342,18 @@ function QuickMath({ onExit }) {
     if (final.score > was && final.total > 0) setNewBest(true);
     recordMathRound(final);
     prevBestRef.current = Math.max(was, final.score);
+    // Neurons are paid for finished rounds only (not for quitting part-way).
+    if (final.total > 0) {
+      setReward({ kind: "pending" });
+      claimReward({
+        game: "math",
+        roundId: roundIdRef.current,
+        score: final.score,
+        total: final.total,
+        correct: final.correct,
+        maxTier: final.maxTier,
+      }).then(setReward);
+    }
   }, [phase]);
 
   const press = useCallback((d) => {
@@ -407,7 +455,8 @@ function QuickMath({ onExit }) {
           <div><b>{accuracy}%</b><span>accuracy</span></div>
           <div><b>{stats.maxTier}</b><span>top tier</span></div>
         </div>
-        <p className="mg-meta">Neuron rewards switch on when the wallet launches. This score is saved on this device.</p>
+        {stats.total > 0 && rewardText(reward) ? <div className="mg-reward">{rewardText(reward)}</div> : null}
+        <p className="mg-meta">Your score is saved on this device. A finished round earns Neurons: 1 for every 20 points, up to 25.</p>
         <button className="mg-cta" onClick={start}>Go again</button>
         <button className="mg-ghost" onClick={onExit}>Back to Mind Gym</button>
       </div>
@@ -427,8 +476,8 @@ function QuickMath({ onExit }) {
 
       <div key={fb ? fb.id : "q"} className={`mg-qcard ${fb ? (fb.ok ? "ok" : "bad mg-shake") : ""}`}>
         <div className="mg-q">{q && q.prompt}</div>
-        <div className="mg-qhint">{q && q.hint ? q.hint : " "}</div>
-        <div className="mg-fb">{fb ? (fb.ok ? "Right" : `It was ${fb.answer}`) : " "}</div>
+        <div className="mg-qhint">{q && q.hint ? q.hint : " "}</div>
+        <div className="mg-fb">{fb ? (fb.ok ? "Right" : `It was ${fb.answer}`) : " "}</div>
       </div>
 
       <div className={`mg-answer ${input ? "" : "empty"}`}>{input ? input.replace("-", MINUS) : "?"}</div>
@@ -455,9 +504,7 @@ function QuickMath({ onExit }) {
       )}
     </div>
   );
-}
-
-/* ═══════════════ SUDOKU ═══════════════ */
+}/* ═══════════════ SUDOKU ═══════════════ */
 function msUntilNextUtcMidnight() {
   const now = new Date();
   const next = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
@@ -487,6 +534,7 @@ function SudokuGame({ seedKey, puzzle, solution, onSolved }) {
   const [sel, setSel] = useState(null);
   const [noteMode, setNoteMode] = useState(false);
   const [paused, setPaused] = useState(false);
+  const [reward, setReward] = useState(null);
   const solvedRef = useRef(false);
 
   // Always holds the latest numbers so leaving the screen can save them.
@@ -551,6 +599,10 @@ function SudokuGame({ seedKey, puzzle, solution, onSolved }) {
       return markPlayedToday(s);
     });
     onSolved && onSolved();
+    // Ask the server for Neurons. It rebuilds today's puzzle itself and checks this grid against it.
+    // Opening a puzzle you already solved asks again, and the server simply says it was paid.
+    setReward({ kind: "pending" });
+    claimReward({ game: "sudoku", seedKey, vals }).then(setReward);
   }, [complete]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const place = useCallback((d) => {
@@ -670,6 +722,7 @@ function SudokuGame({ seedKey, puzzle, solution, onSolved }) {
       {complete ? (
         <div className="mg-solved">
           <b>Solved in {formatTime(seconds)}.</b>
+          {rewardText(reward) ? <span className="mg-reward">{rewardText(reward)}</span> : null}
           <span>Next puzzle in {untilText(msUntilNextUtcMidnight())} (00:00 UTC).</span>
         </div>
       ) : (
@@ -708,7 +761,9 @@ function Sudoku({ onExit }) {
       <SudokuGame key={seedKey} seedKey={seedKey} puzzle={puzzle} solution={solution} onSolved={() => setTick((t) => t + 1)} />
     </div>
   );
-}/* ═══════════════ HUB ═══════════════ */
+}
+
+/* ═══════════════ HUB ═══════════════ */
 
 function Card({ title, desc, meta, art, resume, onClick }) {
   return (
@@ -819,12 +874,10 @@ function Hub({ onOpen }) {
         </section>
       ))}
 
-      <p className="mg-meta" style={{ marginTop: 22 }}>Every game saves where you stopped and counts toward your streak. Neuron rewards arrive with the wallet.</p>
+      <p className="mg-meta" style={{ marginTop: 22 }}>Every game saves where you stopped and counts toward your streak. Finish a Quick Math round or solve the daily Sudoku to earn Neurons.</p>
     </div>
   );
-}
-
-/* ═══════════════ PAGE ═══════════════ */
+}/* ═══════════════ PAGE ═══════════════ */
 export default function MindGymPage() {
   const [mounted, setMounted] = useState(false);
   const [view, setView] = useState("hub");
@@ -970,5 +1023,7 @@ const CSS = `
 .mg-solved { width: min(100%, 440px); margin: 14px auto 0; padding: 14px 16px; border-radius: 16px; background: var(--success-soft); border: 1px solid var(--success); display: flex; flex-direction: column; gap: 2px; color: var(--text); }
 .mg-solved b { font-size: 16px; color: var(--success); }
 .mg-solved span { font-size: 13px; color: var(--text-muted); }
+.mg-reward { margin: 4px 0 2px; padding: 9px 12px; border-radius: 12px; background: var(--accent-soft); border: 1px solid var(--border); color: var(--accent); font-size: 13.5px; font-weight: 700; text-align: center; }
+.mg-solved .mg-reward { font-size: 13.5px; color: var(--accent); }
 @media (prefers-reduced-motion: reduce) { .mg-shake { animation: none; } .mg-timebar i { transition: none; } }
 `;
