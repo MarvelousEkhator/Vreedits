@@ -13,14 +13,24 @@ export const dynamic = "force-dynamic";
      sensible answer counts), one claim per round, at most one round a minute.
    • Sudoku: the submitted grid must equal today's real solution, which the
      server rebuilds itself from the date. One reward per puzzle per account.
+   • Other games: a fixed payout per win (harder levels pay more), at most 5 paid wins per
+     game per day, one every 20 seconds. The browser reports wins, so these are limited, not proven.
    • Everyone is also held to the daily Neuron limit in lib/wallet.js.
    ═══════════════════════════════════════════════════════════════ */
 
 // Tweak the payouts here.
 const SUDOKU_NEURONS = { easy: 10, medium: 20, hard: 30 };
-const MATH_POINTS_PER_NEURON = 20; // 20 game points = 1 Neuron
+const MATH_POINTS_PER_NEURON = 10; // 10 game points = 1 Neuron
 const MATH_MAX_NEURONS = 25;       // top payout for one round
 const MATH_MIN_GAP_MS = 50 * 1000; // at most one rewarded round a minute
+// Every other game: Neurons for a win. Harder levels pay more (multiplier below).
+const GAME_NEURONS = {
+  "2048": 8, kenken: 12, sequences: 8, mastermind: 10, logicgrid: 12, queens: 8,
+  chess: 25, checkers: 20, hanoi: 8, tangram: 12, nonogram: 12,
+};
+const LEVEL_MULT = { easy: 1, medium: 1.5, hard: 2 };
+const GAME_MAX_WINS_PER_DAY = 5;     // paid wins per game per UTC day
+const GAME_MIN_GAP_MS = 20 * 1000;   // at most one paid win every 20 seconds
 const SUDOKU_CLUES = { easy: 40, medium: 32, hard: 27 }; // must match app/mind-gym/page.js
 
 // ─── Sudoku engine: an exact copy of the one in app/mind-gym/page.js ───
@@ -131,9 +141,7 @@ function solutionFor(seedKey, difficulty) {
   if (solutionCache.size > 12) solutionCache.delete(solutionCache.keys().next().value);
   solutionCache.set(seedKey, solution);
   return solution;
-}
-
-function utcDay(offsetDays = 0) {
+}function utcDay(offsetDays = 0) {
   return new Date(Date.now() + offsetDays * 86400000).toISOString().slice(0, 10);
 }
 const isInt = (n) => Number.isInteger(n);
@@ -213,6 +221,42 @@ async function handleSudoku(user, body) {
   return reply(user.id, res);
 }
 
+// Wins in the other games are reported by the browser, so they're limited, not proven:
+// fixed payouts, one claim per win, a short gap, a daily limit per game and the overall daily cap.
+async function handleGame(user, body) {
+  const { gameId, level, claimId } = body;
+  const base = typeof gameId === "string" && Object.prototype.hasOwnProperty.call(GAME_NEURONS, gameId) ? GAME_NEURONS[gameId] : 0;
+  if (!base) return bad("Unknown game.");
+  if (typeof claimId !== "string" || claimId.length < 6 || claimId.length > 40) return bad("That win doesn't look right.");
+  const mult = LEVEL_MULT[level] || 1;
+
+  const key = `game:${user.id}:${gameId}:${claimId}`;
+  const already = await prisma.walletTransaction.findUnique({ where: { idempotencyKey: key } });
+  if (already) return reply(user.id, { duplicate: true });
+
+  const last = await prisma.walletTransaction.findFirst({
+    where: { userId: user.id, refType: { startsWith: "mindgym-game" } },
+    orderBy: { createdAt: "desc" },
+  });
+  if (last && Date.now() - new Date(last.createdAt).getTime() < GAME_MIN_GAP_MS) {
+    return reply(user.id, null, { message: "Slow down a little. Neurons are paid for real wins, one at a time." });
+  }
+  const startOfDay = new Date(utcDay() + "T00:00:00.000Z");
+  const today = await prisma.walletTransaction.count({
+    where: { userId: user.id, refType: `mindgym-game-${gameId}`, createdAt: { gte: startOfDay } },
+  });
+  if (today >= GAME_MAX_WINS_PER_DAY) {
+    return reply(user.id, null, { message: `You've earned the daily limit for this game (${GAME_MAX_WINS_PER_DAY} wins). Try another game or come back tomorrow.` });
+  }
+  const res = await awardNeurons(user.id, Math.round(base * mult), {
+    reason: `${gameId} win${LEVEL_MULT[level] ? " (" + level + ")" : ""}`,
+    refType: `mindgym-game-${gameId}`,
+    refId: claimId,
+    idempotencyKey: key,
+  });
+  return reply(user.id, res);
+}
+
 export async function POST(req) {
   const user = await requireUser();
   if (!user) return bad("Not signed in", 401);
@@ -225,6 +269,7 @@ export async function POST(req) {
   try {
     if (body.game === "math") return await handleMath(user, body);
     if (body.game === "sudoku") return await handleSudoku(user, body);
+    if (body.game === "play") return await handleGame(user, body);
     return bad("Unknown game.");
   } catch (err) {
     console.error("mindgym reward failed", err);
