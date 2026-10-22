@@ -13,8 +13,8 @@ export const dynamic = "force-dynamic";
      sensible answer counts), one claim per round, at most one round a minute.
    • Sudoku: the submitted grid must equal today's real solution, which the
      server rebuilds itself from the date. One reward per puzzle per account.
-   • Other games: a fixed payout per win (harder levels pay more), at most 5 paid wins per
-     game per day, one every 20 seconds. The browser reports wins, so these are limited, not proven.
+   • Other games: a fixed payout per win (harder levels pay more) and a smaller one for finishing a
+     round, at most 5 paid rounds per game per day, one every 20 seconds. The browser reports wins, so these are limited, not proven.
    • Everyone is also held to the daily Neuron limit in lib/wallet.js.
    ═══════════════════════════════════════════════════════════════ */
 
@@ -26,10 +26,11 @@ const MATH_MIN_GAP_MS = 50 * 1000; // at most one rewarded round a minute
 // Every other game: Neurons for a win. Harder levels pay more (multiplier below).
 const GAME_NEURONS = {
   "2048": 8, kenken: 12, sequences: 8, mastermind: 10, logicgrid: 12, queens: 8,
-  chess: 25, checkers: 20, hanoi: 8, tangram: 12, nonogram: 12,
+  chess: 25, checkers: 20, hanoi: 8, tangram: 12, nonogram: 12, notes: 10,
 };
 const LEVEL_MULT = { easy: 1, medium: 1.5, hard: 2 };
-const GAME_MAX_WINS_PER_DAY = 5;     // paid wins per game per UTC day
+const PLAY_SHARE = 0.25;             // finishing a round without winning pays a quarter of a win (at least 1)
+const GAME_MAX_WINS_PER_DAY = 5;     // paid rounds (wins or finished) per game per UTC day
 const GAME_MIN_GAP_MS = 20 * 1000;   // at most one paid win every 20 seconds
 const SUDOKU_CLUES = { easy: 40, medium: 32, hard: 27 }; // must match app/mind-gym/page.js
 
@@ -141,7 +142,9 @@ function solutionFor(seedKey, difficulty) {
   if (solutionCache.size > 12) solutionCache.delete(solutionCache.keys().next().value);
   solutionCache.set(seedKey, solution);
   return solution;
-}function utcDay(offsetDays = 0) {
+}
+
+function utcDay(offsetDays = 0) {
   return new Date(Date.now() + offsetDays * 86400000).toISOString().slice(0, 10);
 }
 const isInt = (n) => Number.isInteger(n);
@@ -225,10 +228,11 @@ async function handleSudoku(user, body) {
 // fixed payouts, one claim per win, a short gap, a daily limit per game and the overall daily cap.
 async function handleGame(user, body) {
   const { gameId, level, claimId } = body;
+  const won = body.outcome !== "played"; // "win" (default) or "played" (finished, didn't win)
   const base = typeof gameId === "string" && Object.prototype.hasOwnProperty.call(GAME_NEURONS, gameId) ? GAME_NEURONS[gameId] : 0;
   if (!base) return bad("Unknown game.");
   if (typeof claimId !== "string" || claimId.length < 6 || claimId.length > 40) return bad("That win doesn't look right.");
-  const mult = LEVEL_MULT[level] || 1;
+  const mult = won ? LEVEL_MULT[level] || 1 : 1;
 
   const key = `game:${user.id}:${gameId}:${claimId}`;
   const already = await prisma.walletTransaction.findUnique({ where: { idempotencyKey: key } });
@@ -246,10 +250,11 @@ async function handleGame(user, body) {
     where: { userId: user.id, refType: `mindgym-game-${gameId}`, createdAt: { gte: startOfDay } },
   });
   if (today >= GAME_MAX_WINS_PER_DAY) {
-    return reply(user.id, null, { message: `You've earned the daily limit for this game (${GAME_MAX_WINS_PER_DAY} wins). Try another game or come back tomorrow.` });
+    return reply(user.id, null, { message: `You've earned the daily limit for this game (${GAME_MAX_WINS_PER_DAY} paid rounds). Try another game or come back tomorrow.` });
   }
-  const res = await awardNeurons(user.id, Math.round(base * mult), {
-    reason: `${gameId} win${LEVEL_MULT[level] ? " (" + level + ")" : ""}`,
+  const amount = won ? Math.round(base * mult) : Math.max(1, Math.round(base * PLAY_SHARE));
+  const res = await awardNeurons(user.id, amount, {
+    reason: won ? `${gameId} win${LEVEL_MULT[level] ? " (" + level + ")" : ""}` : `${gameId} round played`,
     refType: `mindgym-game-${gameId}`,
     refId: claimId,
     idempotencyKey: key,
