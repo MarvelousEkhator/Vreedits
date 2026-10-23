@@ -1,6 +1,5 @@
 "use client";
 import { useState, useRef, useEffect, useCallback, Suspense } from "react";
-import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
@@ -13,15 +12,75 @@ import MarkdownText from "@/components/MarkdownText";
 import GlossIcon from "@/components/GlossIcon";
 import { useLanguage } from "@/components/LanguageProvider";
 
-// Thinking orb animation by Jakub Antalik (MIT license). Loaded in the browser only.
-const ThinkingOrb = dynamic(() => import("thinking-orbs").then((m) => m.ThinkingOrb), { ssr: false });
-
 const MAX_ATTACHMENT_BYTES = 4_000_000;
 const MAX_ATTACHMENTS = 3; // bump this (and the matching constant in route.js) to allow more
 const MAX_TEXTAREA_HEIGHT = 160;
 
-// What Syna is doing -> which orb animation to show.
-const STATUS_ORB = { thinking: "working", searching: "searching", writing: "composing" };
+// Syna's "alive" animation: a glowing orb with a spinning aurora ring, soft pulses and
+// (while researching) a little satellite. Pure CSS, no extra package needed.
+const SYNA_CSS = `
+.syna-think { align-self: flex-start; display: flex; align-items: center; gap: 16px; padding: 10px 18px 10px 12px;
+  border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border);
+  animation: synaRise .4s cubic-bezier(.22,1,.36,1) both; position: relative; overflow: hidden; }
+.syna-think::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(110deg, transparent 30%, rgba(255,255,255,.10) 50%, transparent 70%);
+  transform: translateX(-100%); animation: synaSweep 3.2s ease-in-out infinite; }
+.syna-orb { --spin: 2s; --beat: 2.6s; position: relative; width: 48px; height: 48px; flex-shrink: 0; }
+.syna-orb[data-state="searching"] { --spin: 1.2s; --beat: 2s; }
+.syna-orb[data-state="writing"] { --spin: .9s; --beat: 1.1s; }
+.syna-glow { position: absolute; inset: -12px; border-radius: 50%; filter: blur(12px); opacity: .45;
+  background: radial-gradient(circle, var(--accent) 0%, transparent 65%); animation: synaBeat var(--beat) ease-in-out infinite; }
+.syna-pulse { position: absolute; inset: 4px; border-radius: 50%; border: 1.5px solid var(--accent); opacity: 0;
+  animation: synaPulse 2.4s ease-out infinite; }
+.syna-pulse.p2 { animation-delay: 1.2s; }
+.syna-ring { position: absolute; inset: 0; border-radius: 50%; animation: synaSpin var(--spin) linear infinite;
+  background: conic-gradient(from 0deg, transparent 0%, var(--accent) 30%, #a78bfa 55%, #22d3ee 78%, transparent 100%);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2.5px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2.5px)); }
+.syna-core { position: absolute; inset: 7px; border-radius: 50%; animation: synaBeat var(--beat) ease-in-out infinite;
+  background: radial-gradient(circle at 30% 26%, rgba(255,255,255,.95) 0%, rgba(255,255,255,0) 36%),
+    radial-gradient(circle at 70% 78%, #22d3ee 0%, transparent 58%),
+    linear-gradient(135deg, var(--accent), #a78bfa);
+  box-shadow: inset 0 -5px 10px rgba(0,0,0,.25), 0 0 16px rgba(139,92,246,.45); }
+.syna-sat { position: absolute; inset: -6px; animation: synaSpin 1.6s linear infinite; display: none; }
+.syna-orb[data-state="searching"] .syna-sat { display: block; }
+.syna-sat::before { content: ""; position: absolute; top: 0; left: 50%; width: 7px; height: 7px; margin-left: -3.5px;
+  border-radius: 50%; background: #22d3ee; box-shadow: 0 0 10px #22d3ee; }
+.syna-label { font-size: 13.5px; font-weight: 600; letter-spacing: .1px; line-height: 1.3;
+  background: linear-gradient(90deg, var(--text-muted) 0%, var(--text) 45%, var(--text-muted) 90%);
+  background-size: 220% 100%; -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent; animation: synaShimmer 2.2s linear infinite; }
+.syna-sub { display: flex; align-items: center; gap: 5px; margin-top: 3px; font-size: 11px; color: var(--text-muted); }
+.syna-dots { display: inline-flex; gap: 3px; }
+.syna-dots i { width: 4px; height: 4px; border-radius: 50%; background: var(--accent); opacity: .3; animation: synaDot 1.2s ease-in-out infinite; }
+.syna-dots i:nth-child(2) { animation-delay: .15s; }
+.syna-dots i:nth-child(3) { animation-delay: .3s; }
+.syna-in { animation: synaRise .38s cubic-bezier(.22,1,.36,1) both; }
+@keyframes synaSpin { to { transform: rotate(360deg); } }
+@keyframes synaBeat { 0%,100% { transform: scale(.94); } 50% { transform: scale(1.06); } }
+@keyframes synaPulse { 0% { transform: scale(.9); opacity: .55; } 100% { transform: scale(2); opacity: 0; } }
+@keyframes synaShimmer { to { background-position: -220% 0; } }
+@keyframes synaSweep { 0% { transform: translateX(-100%); } 55%,100% { transform: translateX(100%); } }
+@keyframes synaDot { 0%,100% { opacity: .25; transform: translateY(0); } 50% { opacity: 1; transform: translateY(-3px); } }
+@keyframes synaRise { from { opacity: 0; transform: translateY(8px) scale(.985); filter: blur(3px); } to { opacity: 1; transform: none; filter: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .syna-think, .syna-think::after, .syna-glow, .syna-pulse, .syna-ring, .syna-core, .syna-sat, .syna-label, .syna-dots i, .syna-in { animation: none !important; }
+  .syna-label { -webkit-text-fill-color: var(--text); color: var(--text); }
+}
+`;
+
+function SynaOrb({ state }) {
+  return (
+    <div className="syna-orb" data-state={state} aria-hidden="true">
+      <span className="syna-glow" />
+      <span className="syna-pulse" />
+      <span className="syna-pulse p2" />
+      <span className="syna-ring" />
+      <span className="syna-core" />
+      <span className="syna-sat" />
+    </div>
+  );
+}
 
 function relativeTime(dateStr, lang = "en") {
   const diffMs = Date.now() - new Date(dateStr).getTime();
@@ -378,6 +437,7 @@ function SynaChatInner() {
   const [pendingAttachments, setPendingAttachments] = useState([]);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("thinking");
+  const [elapsed, setElapsed] = useState(0);
   const [researchOn, setResearchOn] = useState(false);
   const [error, setError] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -414,6 +474,14 @@ function SynaChatInner() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading, status]);
+
+  // Counts the seconds Syna has been working, so a long answer never feels frozen.
+  useEffect(() => {
+    if (!loading) { setElapsed(0); return; }
+    const started = Date.now();
+    const id = setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 1000);
+    return () => clearInterval(id);
+  }, [loading]);
 
   useEffect(() => {
     const el = textareaRef.current;
@@ -516,41 +584,40 @@ function SynaChatInner() {
   // is already pending.
   function handleFilePicked(e) {
     const files = Array.from(e.target.files || []);
+    const input = e.target;
     setAttachMenuOpen(false);
     if (files.length === 0) return;
     setError("");
 
-    setPendingAttachments((prev) => {
-      const room = MAX_ATTACHMENTS - prev.length;
-      if (room <= 0) {
-        setError(t("chat.err.max", { n: MAX_ATTACHMENTS }));
-        return prev;
+    const room = MAX_ATTACHMENTS - pendingAttachments.length;
+    if (room <= 0) {
+      setError(t("chat.err.max", { n: MAX_ATTACHMENTS }));
+      input.value = "";
+      return;
+    }
+
+    const toAdd = files.slice(0, room);
+    if (files.length > room) {
+      setError(t("chat.err.onlyAdded", { added: room, n: MAX_ATTACHMENTS }));
+    }
+
+    for (const file of toAdd) {
+      if (file.size > MAX_ATTACHMENT_BYTES) {
+        setError(t("chat.err.tooLarge"));
+        continue;
       }
+      const reader = new FileReader();
+      reader.onload = () => {
+        setPendingAttachments((current) =>
+          current.length >= MAX_ATTACHMENTS
+            ? current
+            : [...current, { dataUrl: reader.result, name: file.name, type: file.type }]
+        );
+      };
+      reader.readAsDataURL(file);
+    }
 
-      const toAdd = files.slice(0, room);
-      if (files.length > room) {
-        setError(t("chat.err.onlyAdded", { added: room, n: MAX_ATTACHMENTS }));
-      }
-
-      for (const file of toAdd) {
-        if (file.size > MAX_ATTACHMENT_BYTES) {
-          setError(t("chat.err.tooLarge"));
-          continue;
-        }
-        const reader = new FileReader();
-        reader.onload = () => {
-          setPendingAttachments((current) => [
-            ...current,
-            { dataUrl: reader.result, name: file.name, type: file.type },
-          ]);
-        };
-        reader.readAsDataURL(file);
-      }
-
-      return prev; // actual additions happen asynchronously above as each file loads
-    });
-
-    e.target.value = "";
+    input.value = "";
   }
 
   function removePendingAttachment(idx) {
@@ -726,6 +793,7 @@ function SynaChatInner() {
 
   return (
     <div style={{ position: "fixed", inset: 0, display: "flex", flexDirection: "column", background: "var(--surface)" }}>
+      <style>{SYNA_CSS}</style>
       <div className="px-4 pt-6 pb-3" style={{ flexShrink: 0, maxWidth: 720, margin: "0 auto", width: "100%" }}>
         <div className="flex items-center justify-between mb-3">
           <Link
@@ -800,6 +868,7 @@ function SynaChatInner() {
           m.role === "user" ? (
             <div
               key={i}
+              className="syna-in"
               style={{
                 alignSelf: "flex-end",
                 maxWidth: "85%",
@@ -822,6 +891,7 @@ function SynaChatInner() {
           ) : (
             <div
               key={i}
+              className="syna-in"
               style={{
                 alignSelf: "flex-start",
                 width: "100%",
@@ -844,18 +914,15 @@ function SynaChatInner() {
         )}
 
         {loading && (
-          <div
-            style={{
-              alignSelf: "flex-start",
-              display: "flex",
-              alignItems: "center",
-              gap: 12,
-              fontSize: 13,
-              color: "var(--text-muted)",
-            }}
-          >
-            <ThinkingOrb state={STATUS_ORB[status] || "working"} size={64} />
-            <span>{statusLabel[status] || statusLabel.thinking}</span>
+          <div className="syna-think" role="status" aria-live="polite">
+            <SynaOrb state={status} />
+            <div>
+              <div className="syna-label">{statusLabel[status] || statusLabel.thinking}</div>
+              <div className="syna-sub">
+                <span className="syna-dots"><i /><i /><i /></span>
+                {elapsed >= 3 && <span>{elapsed}s</span>}
+              </div>
+            </div>
           </div>
         )}
 
