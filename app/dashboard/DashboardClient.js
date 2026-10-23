@@ -7,6 +7,27 @@ import GlossIcon from "@/components/GlossIcon";
 
 // Mind Gym keeps its progress on this device under this key (see app/mind-gym/page.js).
 const GYM_KEY = "vreedits.mindgym.v1";
+const OWNER_KEY = "vreedits.mindgym.owner";
+
+// Mind Gym progress lives in this browser, so two accounts on one phone used to share one streak.
+// This keeps a separate copy per account: when a different account opens Home, the previous
+// account's progress is parked under its own key and this account's own copy (or a clean slate) is loaded.
+function claimLocalProgress(userId) {
+  if (!userId) return;
+  try {
+    const owner = localStorage.getItem(OWNER_KEY);
+    if (owner === userId) return;
+    if (owner) {
+      const current = localStorage.getItem(GYM_KEY);
+      if (current) localStorage.setItem(`${GYM_KEY}:u:${owner}`, current);
+      const mine = localStorage.getItem(`${GYM_KEY}:u:${userId}`);
+      if (mine) localStorage.setItem(GYM_KEY, mine);
+      else localStorage.removeItem(GYM_KEY);
+    }
+    // First time after this update (no owner yet): the progress already on this device is kept for this account.
+    localStorage.setItem(OWNER_KEY, userId);
+  } catch {}
+}
 
 function pad(n) { return String(n).padStart(2, "0"); }
 function localDayKey(d = new Date()) {
@@ -18,9 +39,16 @@ function shiftDay(key, delta) {
 }
 function streakFromDays(days, today) {
   const set = new Set(days);
+  // Alive only if you played today or yesterday.
+  if (!set.has(today) && !set.has(shiftDay(today, -1))) return 0;
   let cursor = set.has(today) ? today : shiftDay(today, -1);
   let n = 0;
-  while (set.has(cursor)) { n++; cursor = shiftDay(cursor, -1); }
+  let grace = 1; // one missed day is forgiven
+  for (;;) {
+    if (set.has(cursor)) { n++; cursor = shiftDay(cursor, -1); }
+    else if (grace > 0 && set.has(shiftDay(cursor, -1))) { grace--; cursor = shiftDay(cursor, -1); }
+    else break;
+  }
   return n;
 }
 function loadGym() {
@@ -75,6 +103,7 @@ export default function DashboardClient({ user }) {
   useEffect(() => {
     setGreeting(greetingFor(new Date().getHours()));
     let removeWalletListeners = null;
+    claimLocalProgress(user.id);
     const local = loadGym();
     setGym(local);
 
@@ -212,7 +241,9 @@ export default function DashboardClient({ user }) {
         .dh-gym { display: flex; gap: 10px; }
         .dh-gym > a { flex: 1; }
         @media (min-width: 1024px) { .dh { max-width: 720px; padding-top: 28px; } .dh-grid { grid-template-columns: repeat(3, 1fr); } }
-      `}</style>      <div className="dh-hello">
+      `}</style>
+
+      <div className="dh-hello">
         {user.avatarDataUrl ? (
           <img className="dh-avatar" src={user.avatarDataUrl} alt="Profile" />
         ) : (
