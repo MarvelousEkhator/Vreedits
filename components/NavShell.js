@@ -78,7 +78,30 @@ function matchesTab(pathname, tab) {
   return tab.match.some((p) => pathname === p || pathname.startsWith(p + "/"));
 }
 
+const GYM_KEY = "vreedits.mindgym.v1";
+const OWNER_KEY = "vreedits.mindgym.owner.v2";
+
+// Mind Gym progress (streak, scores) is saved in this browser. To keep every account's streak board
+// separate, each account's copy is stored under its own key. When a different account opens the app,
+// the previous account's progress is parked and this account's own copy (or a clean slate) is loaded.
+// Progress saved before this existed can't be tied to an account, so it is parked as "legacy".
+function claimLocalProgress(userId) {
+  if (!userId || typeof window === "undefined") return;
+  try {
+    const owner = localStorage.getItem(OWNER_KEY);
+    if (owner === userId) return;
+    const current = localStorage.getItem(GYM_KEY);
+    if (current) localStorage.setItem(`${GYM_KEY}:u:${owner || "legacy"}`, current);
+    const mine = localStorage.getItem(`${GYM_KEY}:u:${userId}`);
+    if (mine) localStorage.setItem(GYM_KEY, mine);
+    else localStorage.removeItem(GYM_KEY);
+    localStorage.setItem(OWNER_KEY, userId);
+  } catch {}
+}
+
 function NavShellInner({ children, user }) {
+  // Runs before the page below renders, so it never sees another account's Mind Gym progress.
+  useState(() => { claimLocalProgress(user?.id); return true; });
   const { t } = useLanguage();
   // Falls back to plain English when a translation key doesn't exist yet.
   const tr = (key, fallback) => {
@@ -364,7 +387,9 @@ function NavShellInner({ children, user }) {
           .vreedits-tabbar { justify-content: center; gap: 12px; }
           .vreedits-tab { flex: 0 0 auto; width: 104px; }
         }
-      `}</style>      {!hideTopBar && (
+      `}</style>
+
+      {!hideTopBar && (
         <div className="vreedits-topbar">
           {showBack ? (
             <button
