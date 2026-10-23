@@ -7,24 +7,22 @@ import GlossIcon from "@/components/GlossIcon";
 
 // Mind Gym keeps its progress on this device under this key (see app/mind-gym/page.js).
 const GYM_KEY = "vreedits.mindgym.v1";
-const OWNER_KEY = "vreedits.mindgym.owner";
+const OWNER_KEY = "vreedits.mindgym.owner.v2";
 
-// Mind Gym progress lives in this browser, so two accounts on one phone used to share one streak.
-// This keeps a separate copy per account: when a different account opens Home, the previous
-// account's progress is parked under its own key and this account's own copy (or a clean slate) is loaded.
+// Mind Gym progress (streak, scores) is saved in this browser. To keep every account's streak board
+// separate, each account's copy is stored under its own key. When a different account opens the app,
+// the previous account's progress is parked and this account's own copy (or a clean slate) is loaded.
+// Progress saved before this existed can't be tied to an account, so it is parked as "legacy".
 function claimLocalProgress(userId) {
-  if (!userId) return;
+  if (!userId || typeof window === "undefined") return;
   try {
     const owner = localStorage.getItem(OWNER_KEY);
     if (owner === userId) return;
-    if (owner) {
-      const current = localStorage.getItem(GYM_KEY);
-      if (current) localStorage.setItem(`${GYM_KEY}:u:${owner}`, current);
-      const mine = localStorage.getItem(`${GYM_KEY}:u:${userId}`);
-      if (mine) localStorage.setItem(GYM_KEY, mine);
-      else localStorage.removeItem(GYM_KEY);
-    }
-    // First time after this update (no owner yet): the progress already on this device is kept for this account.
+    const current = localStorage.getItem(GYM_KEY);
+    if (current) localStorage.setItem(`${GYM_KEY}:u:${owner || "legacy"}`, current);
+    const mine = localStorage.getItem(`${GYM_KEY}:u:${userId}`);
+    if (mine) localStorage.setItem(GYM_KEY, mine);
+    else localStorage.removeItem(GYM_KEY);
     localStorage.setItem(OWNER_KEY, userId);
   } catch {}
 }
