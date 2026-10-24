@@ -9,9 +9,16 @@ import {
 export const dynamic = "force-dynamic";
 
 // GET: everything the Premium / V-Coins page needs.
-export async function GET() {
+export async function GET(req) {
   const user = await requireUser().catch(() => null);
   if (!user) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
+
+  // ?userId=... : just the frame and badge someone is wearing (public, so profiles can show them).
+  const target = new URL(req.url).searchParams.get("userId");
+  if (target) {
+    return NextResponse.json({ equipped: await getEquipped(String(target).slice(0, 64)) });
+  }
+
   if (user.isGuest) return guestBlockedResponse();
 
   const [balances, premium, owned, equipped] = await Promise.all([
