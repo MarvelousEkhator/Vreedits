@@ -4,6 +4,7 @@ import {
   PACKS, PREMIUM_PRICE_VCOINS, PREMIUM_DAYS,
   SHOP_ITEMS, getWallet, getPremium, startPurchase, settlePayment, buyPremium,
   getOwnedItems, getEquipped, buyShopItem, setEquipped, WalletError,
+  PREMIUM_NEURON_CAP, PREMIUM_SHOP_DISCOUNT, neuronPrice, reconcileUserPayments, paymentsAreTest,
 } from "@/lib/wallet";
 
 export const dynamic = "force-dynamic";
@@ -21,17 +22,26 @@ export async function GET(req) {
 
   if (user.isGuest) return guestBlockedResponse();
 
+  // Finish any payment that went through while the tab was closed
+  await reconcileUserPayments(user.id).catch(() => 0);
+
   const [balances, premium, owned, equipped] = await Promise.all([
     getWallet(user.id), getPremium(user.id), getOwnedItems(user.id), getEquipped(user.id),
   ]);
+  const ownedIds = new Set(owned.map((o) => o.itemId));
+  // Retired items stay out of the shop (people who own them keep them)
+  const items = SHOP_ITEMS
+    .filter((i) => !i.retired || ownedIds.has(i.id))
+    .map((i) => ({ ...i, price: neuronPrice(i, premium.active) }));
   return NextResponse.json({
     balances,
-    items: SHOP_ITEMS,
+    items,
     owned,
     equipped,
     packs: PACKS,
-    premium: { ...premium, price: PREMIUM_PRICE_VCOINS, days: PREMIUM_DAYS },
+    premium: { ...premium, price: PREMIUM_PRICE_VCOINS, days: PREMIUM_DAYS, neuronCap: PREMIUM_NEURON_CAP, discount: PREMIUM_SHOP_DISCOUNT },
     paymentsReady: !!process.env.FLW_SECRET_KEY,
+    testMode: paymentsAreTest(),
   });
 }
 
