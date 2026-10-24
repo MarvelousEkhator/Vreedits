@@ -5,22 +5,26 @@ import { ChevronRight, Loader2, Zap, Gem } from "lucide-react";
 import { useLanguage } from "@/components/LanguageProvider";
 import GlossIcon from "@/components/GlossIcon";
 
-// A round photo with a shop frame around it. Picture frames come from one image file (public/frames.webp,
-// 8 per row, 4 rows); the older colour rings are drawn with a gradient.
+// Every picture in the shop is one square of a bigger image file (public/*.webp) laid out as a grid.
+function spriteBg(sheet, sprite) {
+  const col = sprite % sheet.cols, row = Math.floor(sprite / sheet.cols);
+  return {
+    backgroundImage: `url(${sheet.file})`, backgroundRepeat: "no-repeat",
+    backgroundSize: `${sheet.cols * 100}% ${sheet.rows * 100}%`,
+    backgroundPosition: `${sheet.cols > 1 ? (col / (sheet.cols - 1)) * 100 : 0}% ${sheet.rows > 1 ? (row / (sheet.rows - 1)) * 100 : 0}%`,
+  };
+}
+
+// A round photo with a shop frame around it (picture frames, or the older gradient rings).
 function FramedAvatar({ frame, size = 48, children }) {
-  if (frame && frame.sprite != null) {
+  if (frame && frame.sheet && frame.sprite != null) {
     const fit = Math.max(frame.fit || 0.6, 0.5);
     const O = Math.round(size / fit);
-    const col = frame.sprite % 8, row = Math.floor(frame.sprite / 8);
-    const m = Math.round((O - size) / 2 * 0.6);
+    const m = Math.round((O - size) / 2);
     return (
       <span style={{ position: "relative", display: "inline-flex", width: size, height: size, margin: m, flexShrink: 0 }}>
         {children}
-        <span aria-hidden="true" style={{
-          position: "absolute", left: (size - O) / 2, top: (size - O) / 2, width: O, height: O, pointerEvents: "none",
-          backgroundImage: "url(/frames.webp)", backgroundRepeat: "no-repeat", backgroundSize: "800% 400%",
-          backgroundPosition: `${(col / 7) * 100}% ${(row / 3) * 100}%`,
-        }} />
+        <span aria-hidden="true" style={{ position: "absolute", left: (size - O) / 2, top: (size - O) / 2, width: O, height: O, pointerEvents: "none", ...spriteBg(frame.sheet, frame.sprite) }} />
       </span>
     );
   }
