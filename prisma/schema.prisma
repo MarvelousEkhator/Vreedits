@@ -1220,6 +1220,9 @@ model Payment {
   vcoins    Int
   status    String    @default("pending")
   flwId     String?
+  mode      String    @default("live")
+  fee       Float?
+  settled   Float?
   createdAt DateTime  @default(now())
   paidAt    DateTime?
 
@@ -1251,5 +1254,6 @@ model UserItem {
   @@id([userId, itemId])
   @@index([userId])
 }
+
 
   
