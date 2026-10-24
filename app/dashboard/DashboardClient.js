@@ -5,6 +5,31 @@ import { ChevronRight, Loader2, Zap, Gem } from "lucide-react";
 import { useLanguage } from "@/components/LanguageProvider";
 import GlossIcon from "@/components/GlossIcon";
 
+// A round photo with a shop frame around it. Picture frames come from one image file (public/frames.webp,
+// 8 per row, 4 rows); the older colour rings are drawn with a gradient.
+function FramedAvatar({ frame, size = 48, children }) {
+  if (frame && frame.sprite != null) {
+    const fit = Math.max(frame.fit || 0.6, 0.5);
+    const O = Math.round(size / fit);
+    const col = frame.sprite % 8, row = Math.floor(frame.sprite / 8);
+    const m = Math.round((O - size) / 2 * 0.6);
+    return (
+      <span style={{ position: "relative", display: "inline-flex", width: size, height: size, margin: m, flexShrink: 0 }}>
+        {children}
+        <span aria-hidden="true" style={{
+          position: "absolute", left: (size - O) / 2, top: (size - O) / 2, width: O, height: O, pointerEvents: "none",
+          backgroundImage: "url(/frames.webp)", backgroundRepeat: "no-repeat", backgroundSize: "800% 400%",
+          backgroundPosition: `${(col / 7) * 100}% ${(row / 3) * 100}%`,
+        }} />
+      </span>
+    );
+  }
+  if (frame && frame.ring) {
+    return <span style={{ display: "inline-flex", padding: 3, borderRadius: "50%", background: frame.ring, flexShrink: 0 }}>{children}</span>;
+  }
+  return <span style={{ display: "inline-flex", flexShrink: 0 }}>{children}</span>;
+}
+
 // Mind Gym keeps its progress on this device under this key (see app/mind-gym/page.js).
 const GYM_KEY = "vreedits.mindgym.v1";
 const OWNER_KEY = "vreedits.mindgym.owner.v2";
@@ -94,7 +119,7 @@ export default function DashboardClient({ user }) {
   const [communities, setCommunities] = useState([]);
   const [gym, setGym] = useState(null);
   const [wallet, setWallet] = useState(null);
-  const [frameRing, setFrameRing] = useState("");
+  const [frame, setFrame] = useState(null);
   const [greeting, setGreeting] = useState("");
 
   const name = user.displayName || user.username;
@@ -128,7 +153,7 @@ export default function DashboardClient({ user }) {
       // The frame you chose in the shop (if any) around your photo.
       fetch("/api/store", { cache: "no-store" })
         .then((r) => (r.ok ? r.json() : null))
-        .then((d) => { if (d && d.equipped && d.equipped.frame) setFrameRing(d.equipped.frame.ring || ""); })
+        .then((d) => { if (d && d.equipped) setFrame(d.equipped.frame || null); })
         .catch(() => {});
 
       // Your wallet lives on Home. Stays hidden if it can't be loaded.
@@ -249,13 +274,13 @@ export default function DashboardClient({ user }) {
       `}</style>
 
       <div className="dh-hello">
-        <div style={frameRing ? { padding: 3, borderRadius: "50%", background: frameRing, display: "flex", flexShrink: 0 } : { display: "flex", flexShrink: 0 }}>
+        <FramedAvatar frame={frame} size={56}>
           {user.avatarDataUrl ? (
             <img className="dh-avatar" src={user.avatarDataUrl} alt="Profile" />
           ) : (
             <div className="dh-avatar-fallback">{(name || "?").slice(0, 2).toUpperCase()}</div>
           )}
-        </div>
+        </FramedAvatar>
         <div style={{ minWidth: 0 }}>
           <div className="dh-greet">{greeting || t("dash.welcomeBack")}</div>
           <div className="dh-name">{name}</div>
