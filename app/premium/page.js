@@ -1,26 +1,30 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Loader2, AlertCircle, Crown, Coins, Check, Zap, BookOpen, Moon, Brain, Trophy, Sparkles } from "lucide-react";
+import { Loader2, AlertCircle, Crown, Coins, Check, Zap, BookOpen, Moon, Brain, Trophy } from "lucide-react";
 import NavShell from "@/components/NavShell";
 
 const BADGE_ICONS = { book: BookOpen, moon: Moon, brain: Brain, trophy: Trophy };
 
-// A round photo with a shop frame around it. Picture frames come from one image file (public/frames.webp,
-// 8 per row, 4 rows); the older colour rings are drawn with a gradient.
+// Every picture in the shop is one square of a bigger image file (public/*.webp) laid out as a grid.
+function spriteBg(sheet, sprite) {
+  const col = sprite % sheet.cols, row = Math.floor(sprite / sheet.cols);
+  return {
+    backgroundImage: `url(${sheet.file})`, backgroundRepeat: "no-repeat",
+    backgroundSize: `${sheet.cols * 100}% ${sheet.rows * 100}%`,
+    backgroundPosition: `${sheet.cols > 1 ? (col / (sheet.cols - 1)) * 100 : 0}% ${sheet.rows > 1 ? (row / (sheet.rows - 1)) * 100 : 0}%`,
+  };
+}
+
+// A round photo with a shop frame around it (picture frames, or the older gradient rings).
 function FramedAvatar({ frame, size = 48, children }) {
-  if (frame && frame.sprite != null) {
+  if (frame && frame.sheet && frame.sprite != null) {
     const fit = Math.max(frame.fit || 0.6, 0.5);
     const O = Math.round(size / fit);
-    const col = frame.sprite % 8, row = Math.floor(frame.sprite / 8);
     const m = Math.round((O - size) / 2);
     return (
       <span style={{ position: "relative", display: "inline-flex", width: size, height: size, margin: m, flexShrink: 0 }}>
         {children}
-        <span aria-hidden="true" style={{
-          position: "absolute", left: (size - O) / 2, top: (size - O) / 2, width: O, height: O, pointerEvents: "none",
-          backgroundImage: "url(/frames.webp)", backgroundRepeat: "no-repeat", backgroundSize: "800% 400%",
-          backgroundPosition: `${(col / 7) * 100}% ${(row / 3) * 100}%`,
-        }} />
+        <span aria-hidden="true" style={{ position: "absolute", left: (size - O) / 2, top: (size - O) / 2, width: O, height: O, pointerEvents: "none", ...spriteBg(frame.sheet, frame.sprite) }} />
       </span>
     );
   }
@@ -28,6 +32,37 @@ function FramedAvatar({ frame, size = 48, children }) {
     return <span style={{ display: "inline-flex", padding: 3, borderRadius: "50%", background: frame.ring, flexShrink: 0 }}>{children}</span>;
   }
   return <span style={{ display: "inline-flex", flexShrink: 0 }}>{children}</span>;
+}
+
+const TABS = [
+  { id: "frame", label: "Frames" },
+  { id: "nameplate", label: "Nameplates" },
+  { id: "effect", label: "Effects" },
+  { id: "badge", label: "Badges" },
+];
+
+// What an item looks like in the shop
+function Preview({ it, Icon }) {
+  if (it.slot === "frame") return <FramedAvatar frame={it} size={44}><span className="pm-dummy" /></FramedAvatar>;
+  if (it.slot === "nameplate" && it.sheet) {
+    return (
+      <span className="pm-plate">
+        <span className="pm-plate-dark" />
+        <span className="pm-plate-art" style={spriteBg(it.sheet, it.sprite)} />
+        <b>Your name</b>
+      </span>
+    );
+  }
+  if (it.slot === "effect" && it.sheet) {
+    return (
+      <span className="pm-fx">
+        <span className="pm-plate-art" style={spriteBg(it.sheet, it.sprite)} />
+        <span className="pm-fx-dot" />
+      </span>
+    );
+  }
+  if (it.slot === "badge" && it.sheet) return <span className="pm-bdimg" style={spriteBg(it.sheet, it.sprite)} />;
+  return <span className="pm-badge">{Icon ? <Icon size={22} /> : null}</span>;
 }
 
 function fmt(n) { return Number(n || 0).toLocaleString("en-US"); }
@@ -43,6 +78,7 @@ export default function PremiumPage() {
   const [notice, setNotice] = useState(null); // { kind: "ok" | "err", text }
   const [busy, setBusy] = useState("");
   const verified = useRef(false);
+  const [tab, setTab] = useState("frame");
 
   const loadStore = useCallback(async () => {
     const res = await fetch("/api/store", { cache: "no-store" });
@@ -207,12 +243,11 @@ export default function PremiumPage() {
               <div className="pm-sub">{premium.active ? `Active until ${dateText(premium.expiresAt)}` : `${premium.days} days of Premium`}</div>
             </div>
           </div>
-          <ul className="pm-perks">
-            <li><Sparkles size={14} /> Earn up to {fmt(premium.neuronCap)} Neurons a day (instead of 500)</li>
-            <li><Sparkles size={14} /> {Math.round((premium.discount || 0) * 100)}% off the Neuron price of every shop item</li>
-            <li><Sparkles size={14} /> A Premium crown on your profile</li>
-            <li><Sparkles size={14} /> The exclusive Royal frame, free while you are a member</li>
-          </ul>
+          <div className="pm-perks">
+            <div><b>Double the daily Neurons.</b> Earn up to {fmt(premium.neuronCap)} a day instead of 500.</div>
+            <div><b>{Math.round((premium.discount || 0) * 100)}% off the shop.</b> Applies to the Neuron price of every item.</div>
+            <div><b>Crown and Royal frame.</b> A Premium crown on your profile, plus the Royal frame and Premium badge, free while you are a member.</div>
+          </div>
           <p className="pm-text">Your membership starts counting right away{premium.active ? " and stacks on top of the time you have left" : ""}.</p>
           <button className="pm-btn" disabled={busy === "premium" || !enough} onClick={getPremium}>
             {busy === "premium" ? <Loader2 size={16} className="animate-spin" /> : <><Check size={15} /> {premium.active ? "Add" : "Get"} {premium.days} days · {fmt(premium.price)} V-Coins</>}
@@ -222,19 +257,20 @@ export default function PremiumPage() {
 
         <h2 className="pm-h">Shop</h2>
         <p className="pm-hint" style={{ textAlign: "left", marginBottom: 10 }}>Neurons come from Mind Gym. Rare items also need a few V-Coins.</p>
+        <div className="pm-tabs">
+          {TABS.map((t) => (
+            <button key={t.id} className={`pm-tab ${tab === t.id ? "on" : ""}`} onClick={() => setTab(t.id)}>{t.label}</button>
+          ))}
+        </div>
         <div className="pm-shop">
-          {items.map((it) => {
+          {items.filter((it) => it.slot === tab).map((it) => {
             const own = ownedMap[it.id];
             const Icon = BADGE_ICONS[it.icon];
             const cost = it.price != null ? it.price : it.neurons;
             const canAfford = balances.neurons >= cost && balances.vcoins >= it.vcoins;
             return (
               <div key={it.id} className={`pm-item ${own && own.equipped ? "worn" : ""}`}>
-                <div className="pm-item-art">
-                  {it.slot === "frame"
-                    ? <FramedAvatar frame={it} size={44}><span className="pm-dummy" /></FramedAvatar>
-                    : <span className="pm-badge">{Icon ? <Icon size={22} /> : null}</span>}
-                </div>
+                <div className="pm-item-art"><Preview it={it} Icon={Icon} /></div>
                 <div className="pm-item-name">{it.name}</div>
                 <div className="pm-item-desc">{it.desc}</div>
                 {own ? (
@@ -284,11 +320,21 @@ export default function PremiumPage() {
         .pm-shop { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
         .pm-item { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 12px; border-radius: 16px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 3px 0 var(--border); }
         .pm-item.worn { border-color: var(--accent); }
-        .pm-item-art { height: 88px; width: 100%; display: flex; align-items: center; justify-content: center; margin-bottom: 4px; overflow: hidden; }
+        .pm-item-art { min-height: 88px; width: 100%; display: flex; align-items: center; justify-content: center; margin-bottom: 4px; overflow: hidden; }
+        .pm-tabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 4px; }
+        .pm-tab { flex: 0 0 auto; padding: 8px 14px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--text-muted); font-size: 13px; font-weight: 700; cursor: pointer; }
+        .pm-tab.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+        .pm-plate { position: relative; display: flex; align-items: center; justify-content: center; width: 100%; aspect-ratio: 2.5; }
+        .pm-plate b { position: relative; z-index: 2; color: #fff; font-size: 13px; text-shadow: 0 1px 3px #000, 0 0 6px #000; }
+        .pm-plate-dark { position: absolute; inset: 18% 8%; border-radius: 999px; background: rgba(8,5,16,.92); }
+        .pm-plate-art { position: absolute; inset: 0; z-index: 1; }
+        .pm-fx { position: relative; display: flex; align-items: center; justify-content: center; width: 100%; aspect-ratio: 1.8; border-radius: 12px; background: #0b0814; overflow: hidden; }
+        .pm-fx-dot { position: absolute; z-index: 2; width: 30%; aspect-ratio: 1; border-radius: 50%; background: var(--accent-soft); bottom: 6%; }
+        .pm-bdimg { width: 78px; height: 78px; display: block; }
         .pm-dummy { width: 44px; height: 44px; border-radius: 50%; background: var(--accent-soft); }
-        .pm-perks { list-style: none; padding: 0; margin: 12px 0 0; display: flex; flex-direction: column; gap: 7px; }
-        .pm-perks li { display: flex; align-items: flex-start; gap: 8px; font-size: 13.5px; line-height: 1.35; color: var(--text); }
-        .pm-perks svg { color: var(--accent); flex-shrink: 0; margin-top: 2px; }
+        .pm-perks { margin: 14px 0 0; display: flex; flex-direction: column; gap: 10px; }
+        .pm-perks > div { font-size: 13.5px; line-height: 1.45; color: var(--text-muted); padding-left: 12px; border-left: 2px solid var(--accent); }
+        .pm-perks b { color: var(--text); font-weight: 700; }
         .pm-badge { width: 44px; height: 44px; border-radius: 14px; display: inline-flex; align-items: center; justify-content: center; background: var(--accent-soft); color: var(--accent); }
         .pm-item-name { font-size: 14px; font-weight: 800; color: var(--text); }
         .pm-item-desc { font-size: 11.5px; color: var(--text-muted); line-height: 1.35; flex: 1; }
