@@ -1,7 +1,9 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
+import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/requireUser";
+import { getTreasury, recordWithdrawal, isAdminUser, VCOINS_PER_USD } from "@/lib/wallet";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +20,22 @@ function when(d) {
   return new Date(d).toISOString().replace("T", " ").slice(0, 16) + " UTC";
 }
 
+// Records a withdrawal from the platform wallet (the bank transfer itself is done in Flutterwave).
+async function withdrawAction(formData) {
+  "use server";
+  const u = await requireUser().catch(() => null);
+  if (!u || u.isGuest || !(await isAdminUser(u.id))) return;
+  const vcoins = parseInt(String(formData.get("vcoins") || ""), 10);
+  const note = String(formData.get("note") || "").slice(0, 200);
+  if (!Number.isInteger(vcoins) || vcoins <= 0) return;
+  try { await recordWithdrawal(u.id, vcoins, note); } catch {}
+  revalidatePath("/admin/coins");
+}
+
+function usd(n) {
+  return "$" + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 export default async function AdminCoinsPage() {
   // Anyone who is not an admin just sees a normal "not found" page.
   let user = null;
@@ -31,9 +49,10 @@ export default async function AdminCoinsPage() {
   const startOfDay = new Date();
   startOfDay.setUTCHours(0, 0, 0, 0);
 
+  const treasury = await getTreasury();
   const [totals, holders, earnedToday, spentToday, byType, top, recent, totalUsers] = await Promise.all([
-    prisma.wallet.aggregate({ _sum: { neurons: true, gems: true, vcoins: true } }),
-    prisma.wallet.count(),
+    prisma.wallet.aggregate({ _sum: { neurons: true, gems: true, vcoins: true }, where: { userId: { not: "platform" } } }),
+    prisma.wallet.count({ where: { userId: { not: "platform" } } }),
     prisma.walletTransaction.aggregate({
       _sum: { amount: true },
       _count: true,
@@ -97,6 +116,10 @@ export default async function AdminCoinsPage() {
         .ad th { font-size: 12px; opacity: .6; font-weight: 600; }
         .ad tr:last-child td { border-bottom: 0; }
         .ad .num { text-align: right; }
+        .ad-wd { margin-top: 12px; }
+        .ad-wdrow { display: flex; gap: 8px; flex-wrap: wrap; }
+        .ad-wdrow input { flex: 1; min-width: 140px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border, rgba(128,128,128,.4)); background: transparent; color: inherit; font-size: 14px; }
+        .ad-wdrow button { padding: 10px 16px; border-radius: 10px; border: none; background: var(--accent, #7c3aed); color: #fff; font-weight: 700; font-size: 14px; cursor: pointer; }
       `}</style>
 
       <Link href="/dashboard" className="ad-back">← Back to Home</Link>
@@ -111,6 +134,34 @@ export default async function AdminCoinsPage() {
           </div>
         ))}
       </div>
+
+      <h2>Your earnings (platform wallet)</h2>
+      <div className="ad-grid">
+        <div className="ad-tile"><span>Available to withdraw</span><b>{fmt(treasury.available)} V</b><span>{usd(treasury.availableUsd)}</span></div>
+        <div className="ad-tile"><span>Earned from spending (all time)</span><b>{fmt(treasury.earned)} V</b><span>{usd(treasury.earned / VCOINS_PER_USD)}</span></div>
+        <div className="ad-tile"><span>Already withdrawn</span><b>{fmt(treasury.withdrawn)} V</b><span>{usd(treasury.withdrawnUsd)}</span></div>
+        <div className="ad-tile"><span>V-Coin sales (paid)</span><b>{usd(treasury.soldUsd)}</b><span>{fmt(treasury.purchases)} purchases</span></div>
+      </div>
+      <form action={withdrawAction} className="ad-wd">
+        <p className="ad-sub">Move your money out in Flutterwave first, then record it here so the balance stays correct.</p>
+        <div className="ad-wdrow">
+          <input name="vcoins" type="number" min="1" max={treasury.available} step="1" placeholder="V-Coins withdrawn" required />
+          <input name="note" type="text" maxLength="200" placeholder="Note (optional)" />
+          <button type="submit">Record withdrawal</button>
+        </div>
+      </form>
+      {treasury.recentWithdrawals.length > 0 && (
+        <div className="ad-wrap" style={{ marginTop: 10 }}>
+          <table>
+            <thead><tr><th>When</th><th className="num">V-Coins</th><th className="num">USD</th><th>Note</th></tr></thead>
+            <tbody>
+              {treasury.recentWithdrawals.map((w) => (
+                <tr key={w.id}><td>{when(w.createdAt)}</td><td className="num">{fmt(w.vcoins)}</td><td className="num">{usd(w.usd)}</td><td>{w.note || ""}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <h2>All-time totals by type</h2>
       <div className="ad-wrap">
