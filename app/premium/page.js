@@ -5,6 +5,21 @@ import NavShell from "@/components/NavShell";
 
 const BADGE_ICONS = { book: BookOpen, moon: Moon, brain: Brain, trophy: Trophy };
 
+// Remember which picture files load, so a missing file never leaves a blank gap.
+const sheetState = {};
+function useSheetOk(file) {
+  const [ok, setOk] = useState(file && sheetState[file] !== undefined ? sheetState[file] : null);
+  useEffect(() => {
+    if (!file) return;
+    if (sheetState[file] !== undefined) { setOk(sheetState[file]); return; }
+    const im = new Image();
+    im.onload = () => { sheetState[file] = true; setOk(true); };
+    im.onerror = () => { sheetState[file] = false; setOk(false); };
+    im.src = file;
+  }, [file]);
+  return ok;
+}
+
 // Every picture in the shop is one square of a bigger image file (public/*.webp) laid out as a grid.
 function spriteBg(sheet, sprite) {
   const col = sprite % sheet.cols, row = Math.floor(sprite / sheet.cols);
@@ -34,6 +49,13 @@ function FramedAvatar({ frame, size = 48, children }) {
   return <span style={{ display: "inline-flex", flexShrink: 0 }}>{children}</span>;
 }
 
+// Shown only when this tab's picture file isn't on the site yet
+function SheetNote({ file }) {
+  const ok = useSheetOk(file);
+  if (ok !== false) return null;
+  return <div className="pm-note err">The pictures for this tab ({file}) have not been added to the site yet.</div>;
+}
+
 const TABS = [
   { id: "frame", label: "Frames" },
   { id: "nameplate", label: "Nameplates" },
@@ -43,6 +65,8 @@ const TABS = [
 
 // What an item looks like in the shop
 function Preview({ it, Icon }) {
+  const ok = useSheetOk(it.sheet ? it.sheet.file : null);
+  if (it.sheet && ok === false) return <span className="pm-dummy" style={{ opacity: .4 }} />;
   if (it.slot === "frame") return <FramedAvatar frame={it} size={44}><span className="pm-dummy" /></FramedAvatar>;
   if (it.slot === "nameplate" && it.sheet) {
     return (
@@ -257,6 +281,7 @@ export default function PremiumPage() {
 
         <h2 className="pm-h">Shop</h2>
         <p className="pm-hint" style={{ textAlign: "left", marginBottom: 10 }}>Neurons come from Mind Gym. Rare items also need a few V-Coins.</p>
+        {items.some((it) => it.slot === tab && it.sheet) && <SheetNote file={(items.find((it) => it.slot === tab && it.sheet) || {}).sheet.file} />}
         <div className="pm-tabs">
           {TABS.map((t) => (
             <button key={t.id} className={`pm-tab ${tab === t.id ? "on" : ""}`} onClick={() => setTab(t.id)}>{t.label}</button>
