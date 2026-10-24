@@ -12,6 +12,21 @@ function abbreviateCount(n) {
   return `${(num / 1_000_000).toFixed(1)}M`;
 }
 
+// Remember which picture files load, so a missing file never leaves a blank gap.
+const sheetState = {};
+function useSheetOk(file) {
+  const [ok, setOk] = useState(file && sheetState[file] !== undefined ? sheetState[file] : null);
+  useEffect(() => {
+    if (!file) return;
+    if (sheetState[file] !== undefined) { setOk(sheetState[file]); return; }
+    const im = new Image();
+    im.onload = () => { sheetState[file] = true; setOk(true); };
+    im.onerror = () => { sheetState[file] = false; setOk(false); };
+    im.src = file;
+  }, [file]);
+  return ok;
+}
+
 // Every picture in the shop is one square of a bigger image file (public/*.webp) laid out as a grid.
 function spriteBg(sheet, sprite) {
   const col = sprite % sheet.cols, row = Math.floor(sprite / sheet.cols);
@@ -294,6 +309,10 @@ export default function ProfileClient({ profileId }) {
   const [viewerPost, setViewerPost] = useState(null);
   const [notice, setNotice] = useState("");
   const [worn, setWorn] = useState({ frame: null, badge: null }); // shop items this person is wearing
+  const frameOk = useSheetOk(worn.frame && worn.frame.sheet ? worn.frame.sheet.file : null);
+  const plateOk = useSheetOk(worn.nameplate && worn.nameplate.sheet ? worn.nameplate.sheet.file : null);
+  const effectOk = useSheetOk(worn.effect && worn.effect.sheet ? worn.effect.sheet.file : null);
+  const badgeOk = useSheetOk(worn.badge && worn.badge.sheet ? worn.badge.sheet.file : null);
   const noticeTimerRef = useRef(null);
 
   const [sheet, setSheet] = useState(null); // "following" | "followers" | null
@@ -448,11 +467,11 @@ export default function ProfileClient({ profileId }) {
         </div>
       </div>
 
-      <div className="flex flex-col items-center text-center mb-5 px-4" style={{ position: "relative", isolation: "isolate", paddingTop: worn.effect && worn.effect.sheet ? 40 : 0 }}>
-        {worn.effect && worn.effect.sheet && (
+      <div className="flex flex-col items-center text-center mb-5 px-4" style={{ position: "relative", isolation: "isolate", paddingTop: worn.effect && worn.effect.sheet && effectOk ? 40 : 0 }}>
+        {worn.effect && worn.effect.sheet && effectOk && (
           <span aria-hidden="true" style={{ position: "absolute", top: 0, left: "50%", transform: "translateX(-50%)", width: "min(380px, 100%)", aspectRatio: "1.8", zIndex: -1, pointerEvents: "none", ...spriteBg(worn.effect.sheet, worn.effect.sprite) }} />
         )}
-        {worn.frame ? (
+        {worn.frame && (!worn.frame.sheet || frameOk) ? (
           <FramedAvatar frame={worn.frame} size={96}><Avatar user={user} /></FramedAvatar>
         ) : (
           <div style={{ padding: 4, borderRadius: "50%", background: "linear-gradient(135deg, var(--accent), transparent 70%)" }}>
@@ -460,7 +479,7 @@ export default function ProfileClient({ profileId }) {
           </div>
         )}
 
-        {worn.nameplate && worn.nameplate.sheet ? (
+        {worn.nameplate && worn.nameplate.sheet && plateOk ? (
           <div className="mt-2" style={{ position: "relative", width: "min(300px, 94%)", aspectRatio: "2.5", display: "flex", alignItems: "center", justifyContent: "center" }}>
             <span aria-hidden="true" style={{ position: "absolute", inset: "18% 8%", borderRadius: 999, background: "rgba(8,5,16,.92)" }} />
             <span aria-hidden="true" style={{ position: "absolute", inset: 0, ...spriteBg(worn.nameplate.sheet, worn.nameplate.sprite) }} />
@@ -486,11 +505,11 @@ export default function ProfileClient({ profileId }) {
           </span>
         )}
 
-        {worn.badge && worn.badge.sheet && (
+        {worn.badge && worn.badge.sheet && badgeOk && (
           <span title={worn.badge.name} aria-label={worn.badge.name} className="mt-1" style={{ width: 84, height: 84, display: "block", ...spriteBg(worn.badge.sheet, worn.badge.sprite) }} />
         )}
 
-        {worn.badge && !worn.badge.sheet && (() => {
+        {worn.badge && (!worn.badge.sheet || badgeOk === false) && (() => {
           const BadgeIcon = BADGE_ICONS[worn.badge.icon];
           return (
             <span
