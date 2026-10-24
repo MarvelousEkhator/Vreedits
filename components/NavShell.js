@@ -39,7 +39,7 @@ const NAV_ITEMS = [
   { id: "favorites", labelKey: "nav.favorites", href: "/favourites", icon: Heart, gloss: "favorites", available: true },
   { id: "history", labelKey: "nav.history", href: "/history", icon: History, gloss: "history", available: true },
   { id: "notifications", labelKey: "nav.notifications", href: "/notifications", icon: Bell, gloss: "notifications", available: true },
-  { id: "premium", labelKey: "nav.premium", href: "/premium", icon: Crown, gloss: "premium", available: false },
+  { id: "premium", labelKey: "nav.premium", href: "/premium", icon: Crown, gloss: "premium", available: true },
   { id: "settings", labelKey: "nav.settings", href: "/settings", icon: Settings, gloss: "settings", available: true },
   { id: "profile", labelKey: "nav.profile", href: "/profile", icon: User, gloss: "profile", available: true },
 ];
