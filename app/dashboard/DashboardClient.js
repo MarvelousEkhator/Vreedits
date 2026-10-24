@@ -94,6 +94,7 @@ export default function DashboardClient({ user }) {
   const [communities, setCommunities] = useState([]);
   const [gym, setGym] = useState(null);
   const [wallet, setWallet] = useState(null);
+  const [frameRing, setFrameRing] = useState("");
   const [greeting, setGreeting] = useState("");
 
   const name = user.displayName || user.username;
@@ -122,6 +123,12 @@ export default function DashboardClient({ user }) {
             return { ...base, playedDays: merged };
           });
         })
+        .catch(() => {});
+
+      // The frame you chose in the shop (if any) around your photo.
+      fetch("/api/store", { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => { if (d && d.equipped && d.equipped.frame) setFrameRing(d.equipped.frame.ring || ""); })
         .catch(() => {});
 
       // Your wallet lives on Home. Stays hidden if it can't be loaded.
@@ -242,11 +249,13 @@ export default function DashboardClient({ user }) {
       `}</style>
 
       <div className="dh-hello">
-        {user.avatarDataUrl ? (
-          <img className="dh-avatar" src={user.avatarDataUrl} alt="Profile" />
-        ) : (
-          <div className="dh-avatar-fallback">{(name || "?").slice(0, 2).toUpperCase()}</div>
-        )}
+        <div style={frameRing ? { padding: 3, borderRadius: "50%", background: frameRing, display: "flex", flexShrink: 0 } : { display: "flex", flexShrink: 0 }}>
+          {user.avatarDataUrl ? (
+            <img className="dh-avatar" src={user.avatarDataUrl} alt="Profile" />
+          ) : (
+            <div className="dh-avatar-fallback">{(name || "?").slice(0, 2).toUpperCase()}</div>
+          )}
+        </div>
         <div style={{ minWidth: 0 }}>
           <div className="dh-greet">{greeting || t("dash.welcomeBack")}</div>
           <div className="dh-name">{name}</div>
