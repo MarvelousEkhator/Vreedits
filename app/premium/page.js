@@ -1,7 +1,17 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Loader2, AlertCircle, Crown, Coins, Check } from "lucide-react";
+import { Loader2, AlertCircle, Crown, Coins, Check, Zap, BookOpen, Moon, Brain, Trophy } from "lucide-react";
 import NavShell from "@/components/NavShell";
+
+const BADGE_ICONS = { book: BookOpen, moon: Moon, brain: Brain, trophy: Trophy };
+
+function Ring({ ring, size = 46 }) {
+  return (
+    <span style={{ width: size, height: size, borderRadius: "50%", padding: 3, background: ring, display: "inline-flex", flexShrink: 0 }}>
+      <span style={{ flex: 1, borderRadius: "50%", background: "var(--surface-2, #2a2140)" }} />
+    </span>
+  );
+}
 
 function fmt(n) { return Number(n || 0).toLocaleString("en-US"); }
 function dateText(d) {
@@ -110,6 +120,35 @@ export default function PremiumPage() {
     setBusy("");
   }
 
+  async function buyItem(itemId) {
+    setNotice(null); setBusy(itemId);
+    try {
+      const { res, data } = await post({ action: "buyItem", itemId });
+      if (res.ok) {
+        setStore((s) => ({ ...s, balances: data.balances, owned: data.owned, equipped: data.equipped }));
+        setNotice({ kind: "ok", text: "It's yours! Tap Wear to use it." });
+        window.dispatchEvent(new Event("vreedits:wallet-changed"));
+      } else {
+        setNotice({ kind: "err", text: data.error || "Could not buy that." });
+      }
+    } catch {
+      setNotice({ kind: "err", text: "Network problem. Please try again." });
+    }
+    setBusy("");
+  }
+
+  async function equip(itemId, on) {
+    setNotice(null); setBusy(itemId);
+    try {
+      const { res, data } = await post({ action: "equip", itemId, on });
+      if (res.ok) setStore((s) => ({ ...s, owned: data.owned, equipped: data.equipped }));
+      else setNotice({ kind: "err", text: data.error || "Could not change that." });
+    } catch {
+      setNotice({ kind: "err", text: "Network problem. Please try again." });
+    }
+    setBusy("");
+  }
+
   const body = (() => {
     if (loading) {
       return <div className="pm-center"><Loader2 size={22} className="animate-spin" /></div>;
@@ -118,14 +157,25 @@ export default function PremiumPage() {
       return <div className="pm-center"><AlertCircle size={22} /><p>{error || "Could not load Premium."}</p></div>;
     }
     const { balances, packs, premium, paymentsReady } = store;
+    const items = store.items || [];
+    const ownedMap = Object.fromEntries((store.owned || []).map((o) => [o.itemId, o]));
     const enough = balances.vcoins >= premium.price;
     return (
       <div className="pm">
-        <div className="pm-bal">
-          <span className="pm-ico"><Coins size={18} /></span>
-          <div>
-            <div className="pm-bal-num">{fmt(balances.vcoins)}</div>
-            <div className="pm-bal-lbl">V-Coins</div>
+        <div className="pm-bals">
+          <div className="pm-bal">
+            <span className="pm-ico"><Zap size={18} /></span>
+            <div>
+              <div className="pm-bal-num">{fmt(balances.neurons)}</div>
+              <div className="pm-bal-lbl">Neurons</div>
+            </div>
+          </div>
+          <div className="pm-bal">
+            <span className="pm-ico"><Coins size={18} /></span>
+            <div>
+              <div className="pm-bal-num">{fmt(balances.vcoins)}</div>
+              <div className="pm-bal-lbl">V-Coins</div>
+            </div>
           </div>
         </div>
 
@@ -144,6 +194,39 @@ export default function PremiumPage() {
             {busy === "premium" ? <Loader2 size={16} className="animate-spin" /> : <><Check size={15} /> {premium.active ? "Add" : "Get"} {premium.days} days · {fmt(premium.price)} V-Coins</>}
           </button>
           {!enough && <div className="pm-hint">You need {fmt(premium.price - balances.vcoins)} more V-Coins. Get some below.</div>}
+        </div>
+
+        <h2 className="pm-h">Shop</h2>
+        <p className="pm-hint" style={{ textAlign: "left", marginBottom: 10 }}>Neurons come from Mind Gym. Some items also need a few V-Coins.</p>
+        <div className="pm-shop">
+          {items.map((it) => {
+            const own = ownedMap[it.id];
+            const Icon = BADGE_ICONS[it.icon];
+            const canAfford = balances.neurons >= it.neurons && balances.vcoins >= it.vcoins;
+            return (
+              <div key={it.id} className={`pm-item ${own && own.equipped ? "worn" : ""}`}>
+                <div className="pm-item-art">
+                  {it.slot === "frame" ? <Ring ring={it.ring} /> : <span className="pm-badge">{Icon ? <Icon size={22} /> : null}</span>}
+                </div>
+                <div className="pm-item-name">{it.name}</div>
+                <div className="pm-item-desc">{it.desc}</div>
+                {own ? (
+                  <button className="pm-mini" disabled={busy === it.id} onClick={() => equip(it.id, !own.equipped)}>
+                    {busy === it.id ? "…" : own.equipped ? "Take off" : "Wear"}
+                  </button>
+                ) : (
+                  <button className="pm-mini buy" disabled={!!busy || !canAfford} onClick={() => buyItem(it.id)}>
+                    {busy === it.id ? "Buying…" : (
+                      <>
+                        {it.neurons > 0 && <span className="pm-price"><Zap size={12} />{fmt(it.neurons)}</span>}
+                        {it.vcoins > 0 && <span className="pm-price"><Coins size={12} />{fmt(it.vcoins)}</span>}
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
+            );
+          })}
         </div>
 
         <h2 className="pm-h">Get V-Coins</h2>
@@ -166,6 +249,18 @@ export default function PremiumPage() {
       <style>{`
         .pm { max-width: 520px; margin: 0 auto; padding: 18px 16px 40px; }
         .pm-center { min-height: 60vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--text-muted); text-align: center; padding: 0 24px; font-size: 14px; }
+        .pm-bals { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .pm-shop { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+        .pm-item { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 12px; border-radius: 16px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 3px 0 var(--border); }
+        .pm-item.worn { border-color: var(--accent); }
+        .pm-item-art { height: 50px; display: flex; align-items: center; margin-bottom: 4px; }
+        .pm-badge { width: 44px; height: 44px; border-radius: 14px; display: inline-flex; align-items: center; justify-content: center; background: var(--accent-soft); color: var(--accent); }
+        .pm-item-name { font-size: 14px; font-weight: 800; color: var(--text); }
+        .pm-item-desc { font-size: 11.5px; color: var(--text-muted); line-height: 1.35; flex: 1; }
+        .pm-mini { margin-top: 6px; width: 100%; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 8px 10px; border-radius: 11px; border: 1px solid var(--accent); background: transparent; color: var(--accent); font-size: 13px; font-weight: 700; cursor: pointer; }
+        .pm-mini.buy { background: var(--accent); color: #fff; }
+        .pm-mini:disabled { opacity: .5; cursor: not-allowed; }
+        .pm-price { display: inline-flex; align-items: center; gap: 4px; }
         .pm-bal { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: 18px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 3px 0 var(--border); }
         .pm-ico { width: 40px; height: 40px; border-radius: 12px; display: flex; align-items: center; justify-content: center; background: var(--accent-soft); color: var(--accent); }
         .pm-bal-num { font-size: 28px; font-weight: 800; line-height: 1.05; font-variant-numeric: tabular-nums; color: var(--text); }
