@@ -5,6 +5,21 @@ import { ChevronRight, Loader2, Zap, Gem } from "lucide-react";
 import { useLanguage } from "@/components/LanguageProvider";
 import GlossIcon from "@/components/GlossIcon";
 
+// Remember which picture files load, so a missing file never leaves a blank gap.
+const sheetState = {};
+function useSheetOk(file) {
+  const [ok, setOk] = useState(file && sheetState[file] !== undefined ? sheetState[file] : null);
+  useEffect(() => {
+    if (!file) return;
+    if (sheetState[file] !== undefined) { setOk(sheetState[file]); return; }
+    const im = new Image();
+    im.onload = () => { sheetState[file] = true; setOk(true); };
+    im.onerror = () => { sheetState[file] = false; setOk(false); };
+    im.src = file;
+  }, [file]);
+  return ok;
+}
+
 // Every picture in the shop is one square of a bigger image file (public/*.webp) laid out as a grid.
 function spriteBg(sheet, sprite) {
   const col = sprite % sheet.cols, row = Math.floor(sprite / sheet.cols);
@@ -124,6 +139,7 @@ export default function DashboardClient({ user }) {
   const [gym, setGym] = useState(null);
   const [wallet, setWallet] = useState(null);
   const [frame, setFrame] = useState(null);
+  const frameOk = useSheetOk(frame && frame.sheet ? frame.sheet.file : null);
   const [greeting, setGreeting] = useState("");
 
   const name = user.displayName || user.username;
@@ -278,7 +294,7 @@ export default function DashboardClient({ user }) {
       `}</style>
 
       <div className="dh-hello">
-        <FramedAvatar frame={frame} size={56}>
+        <FramedAvatar frame={frame && (!frame.sheet || frameOk) ? frame : null} size={56}>
           {user.avatarDataUrl ? (
             <img className="dh-avatar" src={user.avatarDataUrl} alt="Profile" />
           ) : (
