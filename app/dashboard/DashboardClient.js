@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { ChevronRight, Loader2, Zap, Gem } from "lucide-react";
+import { ChevronRight, Loader2, Zap, Coins } from "lucide-react";
 import { useLanguage } from "@/components/LanguageProvider";
 import GlossIcon from "@/components/GlossIcon";
 
@@ -226,7 +226,6 @@ export default function DashboardClient({ user }) {
   }
   const streak = gym ? streakFromDays((gym.playedDays || []), today) : 0;
   const weekCount = week.filter((d) => d.done).length;
-  const recentTx = wallet ? (wallet.history || []).filter((tx) => tx.currency !== "vcoins").slice(0, 4) : [];
   const utcToday = new Date().toISOString().slice(0, 10);
   const sudokuDone = gym && gym.sudoku && gym.sudoku.done
     ? Object.keys(gym.sudoku.done).filter((k) => k.startsWith(utcToday + ":")).length
@@ -262,7 +261,7 @@ export default function DashboardClient({ user }) {
         .dh-dot.today { border-color: var(--accent); }
 
         .dh-wallet { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-        .dh-wtile { display: flex; flex-direction: column; gap: 2px; padding: 12px; border-radius: 16px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 3px 0 var(--border); }
+        .dh-wtile { text-decoration: none; color: inherit; display: flex; flex-direction: column; gap: 2px; padding: 12px; border-radius: 16px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 3px 0 var(--border); }
         .dh-wico { width: 30px; height: 30px; border-radius: 9px; display: flex; align-items: center; justify-content: center; background: var(--accent-soft); color: var(--accent); margin-bottom: 6px; }
         .dh-wnum { font-size: 24px; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
         .dh-wname { font-size: 12.5px; font-weight: 700; }
@@ -337,26 +336,13 @@ export default function DashboardClient({ user }) {
               <span className="dh-wname">Neurons</span>
               <span className="dh-wsub">Earned in Mind Gym</span>
             </div>
-            <div className="dh-wtile">
-              <span className="dh-wico"><Gem size={16} /></span>
-              <span className="dh-wnum">{wallet.balances.gems}</span>
-              <span className="dh-wname">Gems</span>
-              <span className="dh-wsub">Premium currency</span>
-            </div>
+            <Link href="/premium" className="dh-wtile">
+              <span className="dh-wico"><Coins size={16} /></span>
+              <span className="dh-wnum">{wallet.balances.vcoins || 0}</span>
+              <span className="dh-wname">V-Coins</span>
+              <span className="dh-wsub">Get more in Premium</span>
+            </Link>
           </div>
-          {recentTx.length > 0 && (
-            <div className="dh-list" style={{ marginTop: 10 }}>
-              {recentTx.map((tx) => (
-                <div key={tx.id} className="dh-row">
-                  <div style={{ minWidth: 0 }}>
-                    <div className="dh-row-title">{tx.reason || (CURRENCY_LABEL[tx.currency] || "Wallet") + " " + tx.type}</div>
-                    <div className="dh-row-sub">{relativeTime(tx.createdAt)}</div>
-                  </div>
-                  <span className="dh-wamt">{tx.amount > 0 ? "+" : ""}{tx.amount}</span>
-                </div>
-              ))}
-            </div>
-          )}
         </>
       )}
 
