@@ -1,16 +1,33 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Loader2, AlertCircle, Crown, Coins, Check, Zap, BookOpen, Moon, Brain, Trophy } from "lucide-react";
+import { Loader2, AlertCircle, Crown, Coins, Check, Zap, BookOpen, Moon, Brain, Trophy, Sparkles } from "lucide-react";
 import NavShell from "@/components/NavShell";
 
 const BADGE_ICONS = { book: BookOpen, moon: Moon, brain: Brain, trophy: Trophy };
 
-function Ring({ ring, size = 46 }) {
-  return (
-    <span style={{ width: size, height: size, borderRadius: "50%", padding: 3, background: ring, display: "inline-flex", flexShrink: 0 }}>
-      <span style={{ flex: 1, borderRadius: "50%", background: "var(--surface-2, #2a2140)" }} />
-    </span>
-  );
+// A round photo with a shop frame around it. Picture frames come from one image file (public/frames.webp,
+// 8 per row, 4 rows); the older colour rings are drawn with a gradient.
+function FramedAvatar({ frame, size = 48, children }) {
+  if (frame && frame.sprite != null) {
+    const fit = Math.max(frame.fit || 0.6, 0.5);
+    const O = Math.round(size / fit);
+    const col = frame.sprite % 8, row = Math.floor(frame.sprite / 8);
+    const m = Math.round((O - size) / 2);
+    return (
+      <span style={{ position: "relative", display: "inline-flex", width: size, height: size, margin: m, flexShrink: 0 }}>
+        {children}
+        <span aria-hidden="true" style={{
+          position: "absolute", left: (size - O) / 2, top: (size - O) / 2, width: O, height: O, pointerEvents: "none",
+          backgroundImage: "url(/frames.webp)", backgroundRepeat: "no-repeat", backgroundSize: "800% 400%",
+          backgroundPosition: `${(col / 7) * 100}% ${(row / 3) * 100}%`,
+        }} />
+      </span>
+    );
+  }
+  if (frame && frame.ring) {
+    return <span style={{ display: "inline-flex", padding: 3, borderRadius: "50%", background: frame.ring, flexShrink: 0 }}>{children}</span>;
+  }
+  return <span style={{ display: "inline-flex", flexShrink: 0 }}>{children}</span>;
 }
 
 function fmt(n) { return Number(n || 0).toLocaleString("en-US"); }
@@ -156,7 +173,7 @@ export default function PremiumPage() {
     if (error || !store) {
       return <div className="pm-center"><AlertCircle size={22} /><p>{error || "Could not load Premium."}</p></div>;
     }
-    const { balances, packs, premium, paymentsReady } = store;
+    const { balances, packs, premium, paymentsReady, testMode } = store;
     const items = store.items || [];
     const ownedMap = Object.fromEntries((store.owned || []).map((o) => [o.itemId, o]));
     const enough = balances.vcoins >= premium.price;
@@ -179,6 +196,7 @@ export default function PremiumPage() {
           </div>
         </div>
 
+        {testMode && <div className="pm-note err">Test mode: payments here are practice only and no real money moves.</div>}
         {notice && <div className={`pm-note ${notice.kind}`}>{notice.text}</div>}
 
         <div className="pm-card pm-premium">
@@ -189,7 +207,13 @@ export default function PremiumPage() {
               <div className="pm-sub">{premium.active ? `Active until ${dateText(premium.expiresAt)}` : `${premium.days} days of Premium`}</div>
             </div>
           </div>
-          <p className="pm-text">Support Vreedits and unlock premium perks as they launch. Your membership starts counting right away{premium.active ? " and stacks on top of the time you have left" : ""}.</p>
+          <ul className="pm-perks">
+            <li><Sparkles size={14} /> Earn up to {fmt(premium.neuronCap)} Neurons a day (instead of 500)</li>
+            <li><Sparkles size={14} /> {Math.round((premium.discount || 0) * 100)}% off the Neuron price of every shop item</li>
+            <li><Sparkles size={14} /> A Premium crown on your profile</li>
+            <li><Sparkles size={14} /> The exclusive Royal frame, free while you are a member</li>
+          </ul>
+          <p className="pm-text">Your membership starts counting right away{premium.active ? " and stacks on top of the time you have left" : ""}.</p>
           <button className="pm-btn" disabled={busy === "premium" || !enough} onClick={getPremium}>
             {busy === "premium" ? <Loader2 size={16} className="animate-spin" /> : <><Check size={15} /> {premium.active ? "Add" : "Get"} {premium.days} days · {fmt(premium.price)} V-Coins</>}
           </button>
@@ -197,16 +221,19 @@ export default function PremiumPage() {
         </div>
 
         <h2 className="pm-h">Shop</h2>
-        <p className="pm-hint" style={{ textAlign: "left", marginBottom: 10 }}>Neurons come from Mind Gym. Some items also need a few V-Coins.</p>
+        <p className="pm-hint" style={{ textAlign: "left", marginBottom: 10 }}>Neurons come from Mind Gym. Rare items also need a few V-Coins.</p>
         <div className="pm-shop">
           {items.map((it) => {
             const own = ownedMap[it.id];
             const Icon = BADGE_ICONS[it.icon];
-            const canAfford = balances.neurons >= it.neurons && balances.vcoins >= it.vcoins;
+            const cost = it.price != null ? it.price : it.neurons;
+            const canAfford = balances.neurons >= cost && balances.vcoins >= it.vcoins;
             return (
               <div key={it.id} className={`pm-item ${own && own.equipped ? "worn" : ""}`}>
                 <div className="pm-item-art">
-                  {it.slot === "frame" ? <Ring ring={it.ring} /> : <span className="pm-badge">{Icon ? <Icon size={22} /> : null}</span>}
+                  {it.slot === "frame"
+                    ? <FramedAvatar frame={it} size={44}><span className="pm-dummy" /></FramedAvatar>
+                    : <span className="pm-badge">{Icon ? <Icon size={22} /> : null}</span>}
                 </div>
                 <div className="pm-item-name">{it.name}</div>
                 <div className="pm-item-desc">{it.desc}</div>
@@ -214,11 +241,15 @@ export default function PremiumPage() {
                   <button className="pm-mini" disabled={busy === it.id} onClick={() => equip(it.id, !own.equipped)}>
                     {busy === it.id ? "…" : own.equipped ? "Take off" : "Wear"}
                   </button>
+                ) : it.premiumOnly ? (
+                  <button className="pm-mini buy" disabled={!!busy || !premium.active} onClick={() => buyItem(it.id)}>
+                    {busy === it.id ? "…" : premium.active ? "Unlock free" : <><Crown size={12} /> Premium only</>}
+                  </button>
                 ) : (
                   <button className="pm-mini buy" disabled={!!busy || !canAfford} onClick={() => buyItem(it.id)}>
                     {busy === it.id ? "Buying…" : (
                       <>
-                        {it.neurons > 0 && <span className="pm-price"><Zap size={12} />{fmt(it.neurons)}</span>}
+                        {cost > 0 && <span className="pm-price"><Zap size={12} />{premium.active && cost < it.neurons ? <><s style={{ opacity: .6 }}>{fmt(it.neurons)}</s>&nbsp;{fmt(cost)}</> : fmt(cost)}</span>}
                         {it.vcoins > 0 && <span className="pm-price"><Coins size={12} />{fmt(it.vcoins)}</span>}
                       </>
                     )}
@@ -253,7 +284,11 @@ export default function PremiumPage() {
         .pm-shop { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
         .pm-item { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 12px; border-radius: 16px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 3px 0 var(--border); }
         .pm-item.worn { border-color: var(--accent); }
-        .pm-item-art { height: 50px; display: flex; align-items: center; margin-bottom: 4px; }
+        .pm-item-art { height: 88px; width: 100%; display: flex; align-items: center; justify-content: center; margin-bottom: 4px; overflow: hidden; }
+        .pm-dummy { width: 44px; height: 44px; border-radius: 50%; background: var(--accent-soft); }
+        .pm-perks { list-style: none; padding: 0; margin: 12px 0 0; display: flex; flex-direction: column; gap: 7px; }
+        .pm-perks li { display: flex; align-items: flex-start; gap: 8px; font-size: 13.5px; line-height: 1.35; color: var(--text); }
+        .pm-perks svg { color: var(--accent); flex-shrink: 0; margin-top: 2px; }
         .pm-badge { width: 44px; height: 44px; border-radius: 14px; display: inline-flex; align-items: center; justify-content: center; background: var(--accent-soft); color: var(--accent); }
         .pm-item-name { font-size: 14px; font-weight: 800; color: var(--text); }
         .pm-item-desc { font-size: 11.5px; color: var(--text-muted); line-height: 1.35; flex: 1; }
