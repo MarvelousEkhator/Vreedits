@@ -1210,3 +1210,34 @@ model MindGymDay {
 
   @@id([userId, day])
 }
+model Payment {
+  id        String    @id @default(cuid())
+  userId    String
+  txRef     String    @unique
+  packId    String
+  amount    Float
+  currency  String
+  vcoins    Int
+  status    String    @default("pending")
+  flwId     String?
+  createdAt DateTime  @default(now())
+  paidAt    DateTime?
+
+  @@index([userId, createdAt])
+}
+
+model PremiumSub {
+  userId    String   @id
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Withdrawal {
+  id        String   @id @default(cuid())
+  vcoins    Int
+  usd       Float
+  note      String?
+  adminId   String
+  createdAt DateTime @default(now())
+}
