@@ -12,22 +12,26 @@ function abbreviateCount(n) {
   return `${(num / 1_000_000).toFixed(1)}M`;
 }
 
-// A round photo with a shop frame around it. Picture frames come from one image file (public/frames.webp,
-// 8 per row, 4 rows); the older colour rings are drawn with a gradient.
+// Every picture in the shop is one square of a bigger image file (public/*.webp) laid out as a grid.
+function spriteBg(sheet, sprite) {
+  const col = sprite % sheet.cols, row = Math.floor(sprite / sheet.cols);
+  return {
+    backgroundImage: `url(${sheet.file})`, backgroundRepeat: "no-repeat",
+    backgroundSize: `${sheet.cols * 100}% ${sheet.rows * 100}%`,
+    backgroundPosition: `${sheet.cols > 1 ? (col / (sheet.cols - 1)) * 100 : 0}% ${sheet.rows > 1 ? (row / (sheet.rows - 1)) * 100 : 0}%`,
+  };
+}
+
+// A round photo with a shop frame around it (picture frames, or the older gradient rings).
 function FramedAvatar({ frame, size = 48, children }) {
-  if (frame && frame.sprite != null) {
+  if (frame && frame.sheet && frame.sprite != null) {
     const fit = Math.max(frame.fit || 0.6, 0.5);
     const O = Math.round(size / fit);
-    const col = frame.sprite % 8, row = Math.floor(frame.sprite / 8);
-    const m = Math.round((O - size) / 2 * 0.6);
+    const m = Math.round((O - size) / 2);
     return (
       <span style={{ position: "relative", display: "inline-flex", width: size, height: size, margin: m, flexShrink: 0 }}>
         {children}
-        <span aria-hidden="true" style={{
-          position: "absolute", left: (size - O) / 2, top: (size - O) / 2, width: O, height: O, pointerEvents: "none",
-          backgroundImage: "url(/frames.webp)", backgroundRepeat: "no-repeat", backgroundSize: "800% 400%",
-          backgroundPosition: `${(col / 7) * 100}% ${(row / 3) * 100}%`,
-        }} />
+        <span aria-hidden="true" style={{ position: "absolute", left: (size - O) / 2, top: (size - O) / 2, width: O, height: O, pointerEvents: "none", ...spriteBg(frame.sheet, frame.sprite) }} />
       </span>
     );
   }
@@ -444,7 +448,10 @@ export default function ProfileClient({ profileId }) {
         </div>
       </div>
 
-      <div className="flex flex-col items-center text-center mb-5 px-4">
+      <div className="flex flex-col items-center text-center mb-5 px-4" style={{ position: "relative", isolation: "isolate", paddingTop: worn.effect && worn.effect.sheet ? 40 : 0 }}>
+        {worn.effect && worn.effect.sheet && (
+          <span aria-hidden="true" style={{ position: "absolute", top: 0, left: "50%", transform: "translateX(-50%)", width: "min(380px, 100%)", aspectRatio: "1.8", zIndex: -1, pointerEvents: "none", ...spriteBg(worn.effect.sheet, worn.effect.sprite) }} />
+        )}
         {worn.frame ? (
           <FramedAvatar frame={worn.frame} size={96}><Avatar user={user} /></FramedAvatar>
         ) : (
@@ -453,12 +460,22 @@ export default function ProfileClient({ profileId }) {
           </div>
         )}
 
-        <div className="flex items-center gap-1 mt-3">
-          <h1 className="text-xl font-bold leading-tight" style={{ fontFamily: "var(--font-display)" }}>
-            {displayName}
-          </h1>
-          {isOwner && <ChevronDown size={18} style={{ color: "var(--text-muted)", marginTop: 2 }} />}
-        </div>
+        {worn.nameplate && worn.nameplate.sheet ? (
+          <div className="mt-2" style={{ position: "relative", width: "min(300px, 94%)", aspectRatio: "2.5", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <span aria-hidden="true" style={{ position: "absolute", inset: "18% 8%", borderRadius: 999, background: "rgba(8,5,16,.92)" }} />
+            <span aria-hidden="true" style={{ position: "absolute", inset: 0, ...spriteBg(worn.nameplate.sheet, worn.nameplate.sprite) }} />
+            <h1 className="text-xl font-bold leading-tight" style={{ position: "relative", fontFamily: "var(--font-display)", color: "#fff", textShadow: "0 1px 3px #000, 0 0 8px #000", maxWidth: "70%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {displayName}
+            </h1>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1 mt-3">
+            <h1 className="text-xl font-bold leading-tight" style={{ fontFamily: "var(--font-display)" }}>
+              {displayName}
+            </h1>
+            {isOwner && <ChevronDown size={18} style={{ color: "var(--text-muted)", marginTop: 2 }} />}
+          </div>
+        )}
 
         {worn.premium && (
           <span
@@ -469,7 +486,11 @@ export default function ProfileClient({ profileId }) {
           </span>
         )}
 
-        {worn.badge && (() => {
+        {worn.badge && worn.badge.sheet && (
+          <span title={worn.badge.name} aria-label={worn.badge.name} className="mt-1" style={{ width: 84, height: 84, display: "block", ...spriteBg(worn.badge.sheet, worn.badge.sprite) }} />
+        )}
+
+        {worn.badge && !worn.badge.sheet && (() => {
           const BadgeIcon = BADGE_ICONS[worn.badge.icon];
           return (
             <span
