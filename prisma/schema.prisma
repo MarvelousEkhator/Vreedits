@@ -1241,3 +1241,15 @@ model Withdrawal {
   adminId   String
   createdAt DateTime @default(now())
 }
+
+model UserItem {
+  userId    String
+  itemId    String
+  equipped  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@id([userId, itemId])
+  @@index([userId])
+}
+
+  
