@@ -3,7 +3,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/requireUser";
-import { getTreasury, recordWithdrawal, isAdminUser, VCOINS_PER_USD } from "@/lib/wallet";
+import { getTreasury, recordWithdrawal, isAdminUser } from "@/lib/wallet";
 
 export const dynamic = "force-dynamic";
 
@@ -138,7 +138,7 @@ export default async function AdminCoinsPage() {
       <h2>Your earnings (platform wallet)</h2>
       <div className="ad-grid">
         <div className="ad-tile"><span>Available to withdraw</span><b>{fmt(treasury.available)} V</b><span>{usd(treasury.availableUsd)}</span></div>
-        <div className="ad-tile"><span>Earned from spending (all time)</span><b>{fmt(treasury.earned)} V</b><span>{usd(treasury.earned / VCOINS_PER_USD)}</span></div>
+        <div className="ad-tile"><span>Earned from spending (all time)</span><b>{fmt(treasury.earned)} V</b><span>{usd(treasury.earned * treasury.rate)}</span></div>
         <div className="ad-tile"><span>Already withdrawn</span><b>{fmt(treasury.withdrawn)} V</b><span>{usd(treasury.withdrawnUsd)}</span></div>
         <div className="ad-tile"><span>V-Coin sales (paid)</span><b>{usd(treasury.soldUsd)}</b><span>{fmt(treasury.purchases)} purchases</span></div>
       </div>
