@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
 import BackButton from "@/components/BackButton";
-import { Settings as SettingsIcon, Share2, ChevronDown, Loader2, X, ImageOff, Eye, Heart, MessageCircle, BookOpen, Moon, Brain, Trophy } from "lucide-react";
+import { Settings as SettingsIcon, Share2, ChevronDown, Loader2, X, ImageOff, Eye, Heart, MessageCircle, BookOpen, Moon, Brain, Trophy, Crown } from "lucide-react";
 import Link from "next/link";
 
 // 1,200 -> 1.2K, 3,400,000 -> 3.4M (same style as the feed counters).
@@ -10,6 +10,31 @@ function abbreviateCount(n) {
   if (num < 1000) return `${num}`;
   if (num < 1_000_000) return `${(num / 1000).toFixed(num % 1000 >= 100 ? 1 : 0)}K`;
   return `${(num / 1_000_000).toFixed(1)}M`;
+}
+
+// A round photo with a shop frame around it. Picture frames come from one image file (public/frames.webp,
+// 8 per row, 4 rows); the older colour rings are drawn with a gradient.
+function FramedAvatar({ frame, size = 48, children }) {
+  if (frame && frame.sprite != null) {
+    const fit = Math.max(frame.fit || 0.6, 0.5);
+    const O = Math.round(size / fit);
+    const col = frame.sprite % 8, row = Math.floor(frame.sprite / 8);
+    const m = Math.round((O - size) / 2 * 0.6);
+    return (
+      <span style={{ position: "relative", display: "inline-flex", width: size, height: size, margin: m, flexShrink: 0 }}>
+        {children}
+        <span aria-hidden="true" style={{
+          position: "absolute", left: (size - O) / 2, top: (size - O) / 2, width: O, height: O, pointerEvents: "none",
+          backgroundImage: "url(/frames.webp)", backgroundRepeat: "no-repeat", backgroundSize: "800% 400%",
+          backgroundPosition: `${(col / 7) * 100}% ${(row / 3) * 100}%`,
+        }} />
+      </span>
+    );
+  }
+  if (frame && frame.ring) {
+    return <span style={{ display: "inline-flex", padding: 3, borderRadius: "50%", background: frame.ring, flexShrink: 0 }}>{children}</span>;
+  }
+  return <span style={{ display: "inline-flex", flexShrink: 0 }}>{children}</span>;
 }
 
 // Little icons for the badges from the shop.
@@ -420,14 +445,13 @@ export default function ProfileClient({ profileId }) {
       </div>
 
       <div className="flex flex-col items-center text-center mb-5 px-4">
-        <div
-          style={{
-            padding: 4, borderRadius: "50%",
-            background: worn.frame && worn.frame.ring ? worn.frame.ring : "linear-gradient(135deg, var(--accent), transparent 70%)",
-          }}
-        >
-          <Avatar user={user} />
-        </div>
+        {worn.frame ? (
+          <FramedAvatar frame={worn.frame} size={96}><Avatar user={user} /></FramedAvatar>
+        ) : (
+          <div style={{ padding: 4, borderRadius: "50%", background: "linear-gradient(135deg, var(--accent), transparent 70%)" }}>
+            <Avatar user={user} />
+          </div>
+        )}
 
         <div className="flex items-center gap-1 mt-3">
           <h1 className="text-xl font-bold leading-tight" style={{ fontFamily: "var(--font-display)" }}>
@@ -435,6 +459,15 @@ export default function ProfileClient({ profileId }) {
           </h1>
           {isOwner && <ChevronDown size={18} style={{ color: "var(--text-muted)", marginTop: 2 }} />}
         </div>
+
+        {worn.premium && (
+          <span
+            className="flex items-center gap-1 mt-1"
+            style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 999, background: "var(--accent)", color: "#fff" }}
+          >
+            <Crown size={13} /> Premium
+          </span>
+        )}
 
         {worn.badge && (() => {
           const BadgeIcon = BADGE_ICONS[worn.badge.icon];
