@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
 import BackButton from "@/components/BackButton";
-import { Settings as SettingsIcon, Share2, ChevronDown, Loader2, X, ImageOff, Eye, Heart, MessageCircle } from "lucide-react";
+import { Settings as SettingsIcon, Share2, ChevronDown, Loader2, X, ImageOff, Eye, Heart, MessageCircle, BookOpen, Moon, Brain, Trophy } from "lucide-react";
 import Link from "next/link";
 
 // 1,200 -> 1.2K, 3,400,000 -> 3.4M (same style as the feed counters).
@@ -11,6 +11,9 @@ function abbreviateCount(n) {
   if (num < 1_000_000) return `${(num / 1000).toFixed(num % 1000 >= 100 ? 1 : 0)}K`;
   return `${(num / 1_000_000).toFixed(1)}M`;
 }
+
+// Little icons for the badges from the shop.
+const BADGE_ICONS = { book: BookOpen, moon: Moon, brain: Brain, trophy: Trophy };
 
 function Avatar({ user, size = 96 }) {
   const [failed, setFailed] = useState(false);
@@ -261,6 +264,7 @@ export default function ProfileClient({ profileId }) {
   const [likedHintDismissed, setLikedHintDismissed] = useState(false);
   const [viewerPost, setViewerPost] = useState(null);
   const [notice, setNotice] = useState("");
+  const [worn, setWorn] = useState({ frame: null, badge: null }); // shop items this person is wearing
   const noticeTimerRef = useRef(null);
 
   const [sheet, setSheet] = useState(null); // "following" | "followers" | null
@@ -277,6 +281,16 @@ export default function ProfileClient({ profileId }) {
   }, [profileId]);
 
   useEffect(() => { load(); }, [load]);
+
+  // The frame and badge this person chose in the shop. Quietly skipped if it can't be loaded.
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/store?userId=${encodeURIComponent(profileId)}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (!cancelled && j && j.equipped) setWorn(j.equipped); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [profileId]);
 
   useEffect(() => {
     return () => {
@@ -409,7 +423,7 @@ export default function ProfileClient({ profileId }) {
         <div
           style={{
             padding: 4, borderRadius: "50%",
-            background: "linear-gradient(135deg, var(--accent), transparent 70%)",
+            background: worn.frame && worn.frame.ring ? worn.frame.ring : "linear-gradient(135deg, var(--accent), transparent 70%)",
           }}
         >
           <Avatar user={user} />
@@ -421,6 +435,21 @@ export default function ProfileClient({ profileId }) {
           </h1>
           {isOwner && <ChevronDown size={18} style={{ color: "var(--text-muted)", marginTop: 2 }} />}
         </div>
+
+        {worn.badge && (() => {
+          const BadgeIcon = BADGE_ICONS[worn.badge.icon];
+          return (
+            <span
+              className="flex items-center gap-1 mt-1"
+              style={{
+                fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 999,
+                background: "var(--accent-soft)", color: "var(--accent)",
+              }}
+            >
+              {BadgeIcon && <BadgeIcon size={13} />} {worn.badge.name}
+            </span>
+          );
+        })()}
 
         <span className="text-sm font-normal mt-0.5" style={{ color: "var(--text-muted)" }}>
           @{handle}
