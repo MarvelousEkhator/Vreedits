@@ -31,7 +31,7 @@ export async function GET(req) {
   const ownedIds = new Set(owned.map((o) => o.itemId));
   // Retired items stay out of the shop (people who own them keep them)
   const items = SHOP_ITEMS
-    .filter((i) => !i.retired || ownedIds.has(i.id))
+    .filter((i) => (!i.retired && !i.hidden) || ownedIds.has(i.id))
     .map((i) => ({ ...i, price: neuronPrice(i, premium.active) }));
   return NextResponse.json({
     balances,
