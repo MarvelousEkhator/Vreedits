@@ -140,7 +140,7 @@ export default async function AdminCoinsPage() {
         <div className="ad-tile"><span>Available to withdraw</span><b>{fmt(treasury.available)} V</b><span>{usd(treasury.availableUsd)}</span></div>
         <div className="ad-tile"><span>Earned from spending (all time)</span><b>{fmt(treasury.earned)} V</b><span>{usd(treasury.earned * treasury.rate)}</span></div>
         <div className="ad-tile"><span>Already withdrawn</span><b>{fmt(treasury.withdrawn)} V</b><span>{usd(treasury.withdrawnUsd)}</span></div>
-        <div className="ad-tile"><span>V-Coin sales (paid)</span><b>{usd(treasury.soldUsd)}</b><span>{fmt(treasury.purchases)} purchases{treasury.feesUsd > 0 ? ` · ${usd(treasury.feesUsd)} Flutterwave fees` : ""}</span></div>
+        <div className="ad-tile"><span>V-Coin sales (paid)</span><b>{usd(treasury.soldUsd)}</b><span>{fmt(treasury.purchases)} purchases{treasury.feesUsd > 0 ? ` · about ${usd(treasury.feesUsd)} Flutterwave fees (${treasury.feePercent}%, estimate)` : ""}</span></div>
       </div>
       <form action={withdrawAction} className="ad-wd">
         <p className="ad-sub">Move your money out in Flutterwave first, then record it here so the balance stays correct.</p>
