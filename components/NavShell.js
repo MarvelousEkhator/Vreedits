@@ -390,6 +390,31 @@ function NavShellInner({ children, user }) {
           .vreedits-tabbar { justify-content: center; gap: 12px; }
           .vreedits-tab { flex: 0 0 auto; width: 104px; }
         }
+
+        /* ───────── Bigger screens ─────────
+           Phones keep the compact design. Tablets and computers get wider pages and slightly larger
+           text, and on computers the menu stays open on the left like a real website. */
+        @media (min-width: 768px) {
+          .vreedits-zoom { zoom: 1.1; }
+          .vreedits-zoom .max-w-\\[480px\\], .vreedits-zoom .max-w-\\[420px\\], .vreedits-zoom .max-w-\\[560px\\] { max-width: 680px; }
+          .vreedits-zoom [style*="max-width: 480px"]:not([style*="fixed"]),
+          .vreedits-zoom [style*="max-width: 420px"]:not([style*="fixed"]),
+          .vreedits-zoom [style*="max-width: 560px"]:not([style*="fixed"]) { max-width: 680px !important; }
+          .vreedits-zoom > * { max-width: 1000px; margin-left: auto; margin-right: auto; }
+          .vreedits-topbar { padding-left: 24px; padding-right: 24px; }
+          .vreedits-netswitch { margin-left: auto; margin-right: auto; max-width: 560px; }
+        }
+        @media (min-width: 1100px) {
+          .vreedits-zoom { zoom: 1.2; }
+          .vreedits-zoom .max-w-\\[480px\\], .vreedits-zoom .max-w-\\[420px\\], .vreedits-zoom .max-w-\\[560px\\] { max-width: 720px; }
+          .vreedits-zoom [style*="max-width: 480px"]:not([style*="fixed"]),
+          .vreedits-zoom [style*="max-width: 420px"]:not([style*="fixed"]),
+          .vreedits-zoom [style*="max-width: 560px"]:not([style*="fixed"]) { max-width: 720px !important; }
+          .v-app-shell { padding-left: calc(280px + var(--safe-l)); }
+          .vreedits-menu { width: 280px; transform: none !important; box-shadow: none; }
+          .vreedits-overlay, .vreedits-menu-close, button[aria-label="Open menu"] { display: none !important; }
+          .vreedits-tabbar { display: none; }
+        }
       `}</style>
 
       {!hideTopBar && (
@@ -547,7 +572,7 @@ function NavShellInner({ children, user }) {
         </div>
       </nav>
 
-      <div className="vreedits-content v-main">
+      <div className={`vreedits-content v-main${pathname === "/feed" || hideTabBar ? "" : " vreedits-zoom"}`}>
         <ScreenTimeGate>
           <GuestGate user={user}>{children}</GuestGate>
         </ScreenTimeGate>
