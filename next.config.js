@@ -9,7 +9,7 @@ const nextConfig = {
   async headers() {
     return [
       {
-        source: "/:path*",
+        source: "/((?!api/shop-art).*)",
         headers: [
           {
             key: "Cache-Control",
