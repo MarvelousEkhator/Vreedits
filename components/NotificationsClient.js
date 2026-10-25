@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { Bell, Users, Info, Trash2, Loader2 } from "lucide-react";
+import { Bell, Users, Info, Trash2, Loader2, Coins, ShoppingBag, Brain } from "lucide-react";
 
 function relativeTime(dateStr) {
   const diffMs = Date.now() - new Date(dateStr).getTime();
@@ -18,14 +18,37 @@ const ICONS = { community: Users, system: Info };
 
 export default function NotificationsClient() {
   const [items, setItems] = useState([]);
+  const [wallet, setWallet] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("/api/notifications")
-      .then((r) => r.json())
-      .then((data) => setItems(data.notifications || []))
+    Promise.all([
+      fetch("/api/notifications").then((r) => r.json()).catch(() => ({})),
+      fetch("/api/wallet").then((r) => (r.ok ? r.json() : {})).catch(() => ({})),
+    ])
+      .then(([n, w]) => {
+        setItems(n.notifications || []);
+        setWallet(w.history || []);
+      })
       .finally(() => setLoading(false));
   }, []);
+
+  // Wallet activity (earnings, top-ups, shop purchases) shown as plain rows between the notifications
+  const walletRows = wallet.map((t) => {
+    const unit = t.currency === "vcoins" ? "V-Coins" : t.currency === "gems" ? "Gems" : "Neurons";
+    const n = Math.abs(t.amount);
+    const shop = (t.reason || "").startsWith("Shop:");
+    const title = t.amount > 0
+      ? `+${n} ${unit}`
+      : `-${n} ${unit}`;
+    return {
+      id: "w-" + t.id, wallet: true, createdAt: t.createdAt, read: true,
+      icon: shop ? ShoppingBag : t.currency === "neurons" ? Brain : Coins,
+      title,
+      description: t.reason || (t.amount > 0 ? "Added to your wallet" : "Spent"),
+    };
+  });
+  const feed = [...items, ...walletRows].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
   async function markRead(id) {
     setItems((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
@@ -46,7 +69,7 @@ export default function NotificationsClient() {
     );
   }
 
-  if (items.length === 0) {
+  if (feed.length === 0) {
     return (
       <div className="text-center py-10">
         <Bell size={22} style={{ color: "var(--text-muted)", margin: "0 auto 8px" }} />
@@ -57,12 +80,12 @@ export default function NotificationsClient() {
 
   return (
     <div className="space-y-2">
-      {items.map((n) => {
-        const Icon = ICONS[n.category] || Info;
+      {feed.map((n) => {
+        const Icon = n.icon || ICONS[n.category] || Info;
         return (
           <div
             key={n.id}
-            onClick={() => !n.read && markRead(n.id)}
+            onClick={() => !n.wallet && !n.read && markRead(n.id)}
             className="card flex items-start justify-between p-3.5 cursor-pointer"
             style={{ background: n.read ? "var(--surface)" : "var(--accent-soft)" }}
           >
@@ -74,9 +97,11 @@ export default function NotificationsClient() {
                 <div className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>{relativeTime(n.createdAt)}</div>
               </div>
             </div>
-            <button onClick={(e) => deleteItem(n.id, e)} aria-label="Delete" style={{ color: "var(--text-muted)", flexShrink: 0 }}>
-              <Trash2 size={15} />
-            </button>
+            {!n.wallet && (
+              <button onClick={(e) => deleteItem(n.id, e)} aria-label="Delete" style={{ color: "var(--text-muted)", flexShrink: 0 }}>
+                <Trash2 size={15} />
+              </button>
+            )}
           </div>
         );
       })}
