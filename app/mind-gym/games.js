@@ -2648,7 +2648,7 @@ const TG_SHAPES = {
   P: [[0, 0], [2, 0], [3, 1], [1, 1]],
 };
 const TG_POOL = ["L", "L", "M", "S", "S", "Q", "P"];
-const TG_VIEW = { w: 16, h: 18, cx: 8, cy: 5.2, maxExtent: 9 };
+const TG_VIEW = { w: 16, h: 20, cx: 8, cy: 5.2, maxW: 12, maxH: 9 };
 
 function tgCentroid(poly) {
   let x = 0, y = 0;
@@ -2679,6 +2679,29 @@ function tgBox(polys) {
     if (y > y1) y1 = y;
   }
   return { x0, y0, x1, y1, w: x1 - x0, h: y1 - y0 };
+}
+
+// Nudges a piece so every corner stays inside the board.
+function tgFit(type, rot, flip, x, y) {
+  const b = tgBox([tgPlace(type, rot, flip, x, y)]);
+  const m = 0.15;
+  let nx = x, ny = y;
+  if (b.x0 < m) nx += m - b.x0;
+  if (b.x1 > TG_VIEW.w - m) nx -= b.x1 - (TG_VIEW.w - m);
+  if (b.y0 < m) ny += m - b.y0;
+  if (b.y1 > TG_VIEW.h - m) ny -= b.y1 - (TG_VIEW.h - m);
+  return [nx, ny];
+}
+
+// Where each piece starts in the tray: the biggest pieces get the roomy top row, small ones the bottom row.
+const TG_RADIUS = { L: 2.2, M: 1.6, P: 1.7, S: 1.1, Q: 1.1 };
+function tgTraySlots(types) {
+  const top = [[2.9, 13.2], [8, 13.2], [13.1, 13.2]];
+  const bottom = [[2.2, 17.6], [6.2, 17.6], [10.2, 17.6], [14, 17.6]];
+  const order = types.map((t, i) => i).sort((a, b) => TG_RADIUS[types[b]] - TG_RADIUS[types[a]]);
+  const out = [];
+  order.forEach((idx, k) => { out[idx] = k < 3 ? top[k] : bottom[k - 3]; });
+  return out;
 }
 
 // True when two convex polygons overlap by more than a touch.
@@ -2722,14 +2745,17 @@ function tgAlign(poly, ai, u, v) {
 }
 
 // Builds a puzzle by gluing the pieces edge to edge. The silhouette is the union.
+// Every puzzle is then turned and maybe mirrored at random, so new puzzles look different.
 function tgGenerate(seedStr, count) {
-  const rng = seededRng(seedStr);
+  let rng = seededRng(seedStr);
   let pool = shuffle(TG_POOL, rng).slice(0, count);
-  for (let attempt = 0; attempt < 600; attempt++) {
+  for (let attempt = 0; attempt < 1500; attempt++) {
     // Some mixes cannot touch edge to edge (a large triangle with only small pieces), so change the mix now and then.
     if (attempt > 0 && attempt % 40 === 0) pool = shuffle(TG_POOL, rng).slice(0, count);
     const order = shuffle(pool.map((_, i) => i), rng);
     const placed = [{ id: order[0], type: pool[order[0]], poly: tgPlace(pool[order[0]], 0, false, 0, 0) }];
+    // How tidy this puzzle is: 1 = loose and winding, 8 = tight and blocky.
+    const tidy = pickOne(rng, [1, 2, 4, 8]);
     let ok = true;
     for (let k = 1; k < order.length && ok; k++) {
       const id = order[k];
@@ -2756,7 +2782,7 @@ function tgGenerate(seedStr, count) {
       }
       if (!cands.length) { ok = false; break; }
       let best = null, bestArea = Infinity;
-      for (let t = 0; t < 8; t++) {
+      for (let t = 0; t < tidy; t++) {
         const cand = pickOne(rng, cands);
         const bx = tgBox([...placed.map((o) => o.poly), cand]);
         const area = bx.w * bx.h;
@@ -2765,8 +2791,21 @@ function tgGenerate(seedStr, count) {
       placed.push({ id, type, poly: best });
     }
     if (!ok) continue;
+
+    // Turn the whole shape by a random multiple of 45 degrees, and maybe mirror it.
+    const turn = ri(rng, 0, 7);
+    const mirror = rng() < 0.5;
+    const ang = (turn * Math.PI) / 4;
+    const ca = Math.cos(ang), sa = Math.sin(ang);
+    for (const o of placed) {
+      o.poly = o.poly.map(([x, y]) => {
+        const px = mirror ? -x : x;
+        return [px * ca - y * sa, px * sa + y * ca];
+      });
+    }
+
     const box = tgBox(placed.map((o) => o.poly));
-    if (box.w > TG_VIEW.maxExtent || box.h > TG_VIEW.maxExtent) continue;
+    if (box.w > TG_VIEW.maxW || box.h > TG_VIEW.maxH) continue;
     const dx = TG_VIEW.cx - (box.x0 + box.x1) / 2;
     const dy = TG_VIEW.cy - (box.y0 + box.y1) / 2;
     placed.sort((a, b) => a.id - b.id);
@@ -2776,6 +2815,15 @@ function tgGenerate(seedStr, count) {
     };
   }
   return null;
+}
+
+// Never returns nothing: if one seed cannot be built, try a few neighbours of it.
+function tgGenerateSafe(seedStr, count) {
+  for (let i = 0; i < 8; i++) {
+    const g = tgGenerate(i ? `${seedStr}-${i}` : seedStr, count);
+    if (g) return g;
+  }
+  return tgGenerate(`${seedStr}-x`, Math.min(count, 4));
 }
 
 // Share of the silhouette that the pieces cover (sampled).
@@ -2819,13 +2867,12 @@ const TG_FILL = {
   Q: ["#ffe08a", "#e0841a"],
   P: ["#b9f0cf", "#1f9d6a"],
 };
-const TG_SLOTS = [[2.4, 12.2], [7.4, 12.2], [11.6, 12.2], [14.4, 12.6], [2.2, 16], [6, 16], [11, 16]];
 
 function pts(poly) { return poly.map((p) => `${p[0].toFixed(3)},${p[1].toFixed(3)}`).join(" "); }
 
 function TangramPlay({ level, seed, onNew }) {
   const count = TG_LEVELS[level].count;
-  const puzzle = useMemo(() => tgGenerate(seed, count), [seed, count]);
+  const puzzle = useMemo(() => tgGenerateSafe(seed, count), [seed, count]);
   const saveKey = `tangram-${level}`;
   const saved = useMemo(() => {
     const s = readSave(saveKey);
@@ -2834,7 +2881,8 @@ function TangramPlay({ level, seed, onNew }) {
   const [pieces, setPieces] = useState(() => {
     if (saved) return saved.pieces;
     const rng = seededRng(seed + "-tray");
-    return puzzle.sol.map((s, i) => ({ id: i, type: s.type, x: TG_SLOTS[i][0], y: TG_SLOTS[i][1], rot: ri(rng, 0, 7), flip: false }));
+    const slots = tgTraySlots(puzzle.sol.map((s) => s.type));
+    return puzzle.sol.map((s, i) => ({ id: i, type: s.type, x: slots[i][0], y: slots[i][1], rot: ri(rng, 0, 7), flip: false }));
   });
   const [sel, setSel] = useState(-1);
   const [hint, setHint] = useState(null);
@@ -2898,9 +2946,11 @@ function TangramPlay({ level, seed, onNew }) {
     const dx = p.x - d.sx, dy = p.y - d.sy;
     if (!d.moved && Math.hypot(dx, dy) < 0.15) return;
     d.moved = true;
-    const nx = Math.max(0.6, Math.min(TG_VIEW.w - 0.6, d.ox + dx));
-    const ny = Math.max(0.6, Math.min(TG_VIEW.h - 0.6, d.oy + dy));
-    setPieces((cur) => cur.map((x) => (x.id === d.id ? { ...x, x: nx, y: ny } : x)));
+    setPieces((cur) => cur.map((x) => {
+      if (x.id !== d.id) return x;
+      const [nx, ny] = tgFit(x.type, x.rot, x.flip, d.ox + dx, d.oy + dy);
+      return { ...x, x: nx, y: ny };
+    }));
   }
   function up() {
     const d = dragRef.current;
@@ -2919,17 +2969,28 @@ function TangramPlay({ level, seed, onNew }) {
       if (x.id !== d.id) return x;
       const poly = tgPlace(x.type, x.rot, x.flip, x.x, x.y);
       const s = tgSnap(poly, solPolys, 0.35);
-      return s ? { ...x, x: x.x + s.dx, y: x.y + s.dy } : x;
+      if (!s) return x;
+      const [nx, ny] = tgFit(x.type, x.rot, x.flip, x.x + s.dx, x.y + s.dy);
+      return { ...x, x: nx, y: ny };
     }));
   }
 
   function rotate(id) {
     movedRef.current = true;
-    setPieces((cur) => cur.map((x) => (x.id === id ? { ...x, rot: (x.rot + 1) % 8 } : x)));
+    setPieces((cur) => cur.map((x) => {
+      if (x.id !== id) return x;
+      const rot = (x.rot + 1) % 8;
+      const [nx, ny] = tgFit(x.type, rot, x.flip, x.x, x.y);
+      return { ...x, rot, x: nx, y: ny };
+    }));
   }
   function flip(id) {
     movedRef.current = true;
-    setPieces((cur) => cur.map((x) => (x.id === id ? { ...x, flip: !x.flip } : x)));
+    setPieces((cur) => cur.map((x) => {
+      if (x.id !== id) return x;
+      const [nx, ny] = tgFit(x.type, x.rot, !x.flip, x.x, x.y);
+      return { ...x, flip: !x.flip, x: nx, y: ny };
+    }));
   }
   function showHint() {
     if (paused || won) return;
@@ -3020,7 +3081,9 @@ export function GameTangram({ onExit }) {
     const out = {};
     Object.keys(TG_LEVELS).forEach((k) => {
       const s = readSave(`tangram-${k}`);
-      out[k] = s && s.seed ? s.seed : `tg-${k}-${day}`;
+      // Saves from the old puzzle maker would not match the new shapes, so only keep new-style ones.
+      if (s && s.seed && !String(s.seed).startsWith("tgv2-")) clearSave(`tangram-${k}`);
+      out[k] = s && s.seed && String(s.seed).startsWith("tgv2-") ? s.seed : `tgv2-${k}-${day}-${Math.floor(Math.random() * 1e9).toString(36)}`;
     });
     setSeeds(out);
   }, []);
@@ -3029,7 +3092,7 @@ export function GameTangram({ onExit }) {
   Object.keys(TG_LEVELS).forEach((k) => { if (rec.done && rec.done[k]) marks[k] = "✓"; });
   function fresh() {
     clearSave(`tangram-${level}`);
-    setSeeds((s) => ({ ...s, [level]: `tg-${level}-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6)}` }));
+    setSeeds((s) => ({ ...s, [level]: `tgv2-${level}-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6)}` }));
   }
   return (
     <GameFrame eyebrow="Spatial reasoning" title="Tangram" onExit={onExit}>
