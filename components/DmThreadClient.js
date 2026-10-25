@@ -6,6 +6,7 @@ import {
   Smile, ImagePlus, Pin, PinOff, Copy,
 } from "lucide-react";
 import EmojiPicker from "@/components/EmojiPicker";
+import { TapUser } from "@/components/FramedAvatar";
 
 const QUICK_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 const LONG_PRESS_MS = 420;
@@ -481,7 +482,7 @@ export default function DmThreadClient({ currentUserId, otherUsername }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <div className="flex items-center gap-3 p-4" style={{ borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
-        <Avatar user={otherUser} size={32} />
+        <TapUser user={isSelf ? null : otherUser}><Avatar user={otherUser} size={32} /></TapUser>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div className="text-sm font-semibold flex items-center gap-1.5">
             {isSelf ? "You" : (otherUser.displayName || otherUser.username)}
