@@ -20,20 +20,35 @@ const done = (status = 204) => new NextResponse(null, { status });
 const PATH_NAMES = [
   ["/ai-tools/chat", "syna"],
   ["/ai-tools", "ai_tools"],
+  ["/tools/school/study-room", "study_rooms"],
+  ["/tools/school/flashcards", "flashcards"],
+  ["/tools/school/ai-tutor", "ai_tutor"],
+  ["/tools/school/study-progress", "study_progress"],
+  ["/tools/school/smart-tools", "smart_tools"],
   ["/tools/school", "school"],
   ["/tools/business", "business"],
   ["/tools/writing", "writing"],
   ["/tools/travel", "travel"],
   ["/tools/home", "home_tools"],
+  ["/dashboard", "home"],
+  ["/mind-gym", "mind_gym"],
+  ["/premium", "premium_shop"],
   ["/feed", "feed"],
   ["/inbox", "inbox"],
   ["/communities", "community"],
+  ["/invite", "invite_link"],
+  ["/team-invites", "team_invite"],
+  ["/notes", "notes"],
+  ["/projects", "projects"],
   ["/favourites", "favorites"],
+  ["/favorites", "favorites"],
   ["/history", "history"],
   ["/collections", "collections"],
   ["/notifications", "notifications"],
   ["/profile", "profile"],
   ["/settings", "settings"],
+  ["/register", "sign_up_page"],
+  ["/login", "login_page"],
 ];
 
 function nameFromPath(path) {
@@ -108,6 +123,28 @@ async function maybeRecordGuestStart(visitor, session, source, country) {
   } catch (e) {
     guestStarted.delete(visitor);
     console.error("track guest_start:", e?.message);
+  }
+}
+
+// --- Signed-in people ----------------------------------------------------------
+// Links each real account to the browser it uses, so the owner dashboard can list
+// who signed up and how they arrived. Updated at most once a minute per account.
+const memberSeen = new Map();
+
+async function touchMember(userId, visitor) {
+  const last = memberSeen.get(userId);
+  if (last && Date.now() - last < 60 * 1000) return;
+  if (memberSeen.size > 2000) memberSeen.clear();
+  memberSeen.set(userId, Date.now());
+  try {
+    await pool.query(
+      `INSERT INTO analytics_members (user_id, visitor_id) VALUES ($1, $2)
+       ON CONFLICT (user_id) DO UPDATE SET last_ts = now()`,
+      [userId, visitor]
+    );
+  } catch (e) {
+    memberSeen.delete(userId);
+    console.error("track member:", e?.message);
   }
 }
 
@@ -222,6 +259,10 @@ export async function POST(req) {
       visitor, session, type, name, path,
       isGuest, source, country,
     });
+
+    if (account?.exists && !account.isGuest) {
+      await touchMember(account.id, visitor);
+    }
 
     // Any activity from a signed-in real account can trigger the check, not
     // only page views.
