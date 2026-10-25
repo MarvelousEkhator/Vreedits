@@ -467,20 +467,41 @@ export default function ProfileClient({ profileId }) {
         </div>
       </div>
 
-      <div className="flex flex-col items-center text-center mb-5 px-4" style={{ position: "relative", isolation: "isolate", paddingTop: worn.effect && worn.effect.sheet && effectOk ? 40 : 0 }}>
+      <div className="flex flex-col items-center text-center mb-3 px-4" style={{ position: "relative", isolation: "isolate", paddingTop: worn.effect && worn.effect.sheet && effectOk ? 28 : 0 }}>
         {worn.effect && worn.effect.sheet && effectOk && (
           <span aria-hidden="true" style={{ position: "absolute", top: 0, left: "50%", transform: "translateX(-50%)", width: "min(380px, 100%)", aspectRatio: "1.8", zIndex: -1, pointerEvents: "none", ...spriteBg(worn.effect.sheet, worn.effect.sprite) }} />
         )}
-        {worn.frame && (!worn.frame.sheet || frameOk) ? (
-          <FramedAvatar frame={worn.frame} size={96}><Avatar user={user} /></FramedAvatar>
-        ) : (
-          <div style={{ padding: 4, borderRadius: "50%", background: "linear-gradient(135deg, var(--accent), transparent 70%)" }}>
-            <Avatar user={user} />
-          </div>
-        )}
 
+        {/* Photo with the badge right beside it */}
+        <div className="flex items-center justify-center gap-3">
+          {worn.frame && (!worn.frame.sheet || frameOk) ? (
+            <FramedAvatar frame={worn.frame} size={96}><Avatar user={user} /></FramedAvatar>
+          ) : (
+            <div style={{ padding: 4, borderRadius: "50%", background: "linear-gradient(135deg, var(--accent), transparent 70%)" }}>
+              <Avatar user={user} />
+            </div>
+          )}
+
+          {worn.badge && worn.badge.sheet && badgeOk && (
+            <span title={worn.badge.name} aria-label={worn.badge.name} style={{ width: 84, height: 84, display: "block", flexShrink: 0, ...spriteBg(worn.badge.sheet, worn.badge.sprite) }} />
+          )}
+
+          {worn.badge && (!worn.badge.sheet || badgeOk === false) && (() => {
+            const BadgeIcon = BADGE_ICONS[worn.badge.icon];
+            return (
+              <span
+                className="flex items-center gap-1"
+                style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 999, background: "var(--accent-soft)", color: "var(--accent)" }}
+              >
+                {BadgeIcon && <BadgeIcon size={13} />} {worn.badge.name}
+              </span>
+            );
+          })()}
+        </div>
+
+        {/* Name, then @username underneath */}
         {worn.nameplate && worn.nameplate.sheet && plateOk ? (
-          <div className="mt-2" style={{ position: "relative", width: "min(300px, 94%)", aspectRatio: "2.5", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ position: "relative", width: "min(280px, 94%)", aspectRatio: "2.8", display: "flex", alignItems: "center", justifyContent: "center", marginTop: -4 }}>
             <span aria-hidden="true" style={{ position: "absolute", inset: "18% 8%", borderRadius: 999, background: "rgba(8,5,16,.92)" }} />
             <span aria-hidden="true" style={{ position: "absolute", inset: 0, ...spriteBg(worn.nameplate.sheet, worn.nameplate.sprite) }} />
             <h1 className="text-xl font-bold leading-tight" style={{ position: "relative", fontFamily: "var(--font-display)", color: "#fff", textShadow: "0 1px 3px #000, 0 0 8px #000", maxWidth: "70%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -488,49 +509,22 @@ export default function ProfileClient({ profileId }) {
             </h1>
           </div>
         ) : (
-          <div className="flex items-center gap-1 mt-3">
+          <div className="flex items-center gap-1 mt-2">
             <h1 className="text-xl font-bold leading-tight" style={{ fontFamily: "var(--font-display)" }}>
               {displayName}
             </h1>
             {isOwner && <ChevronDown size={18} style={{ color: "var(--text-muted)", marginTop: 2 }} />}
+            {worn.premium && <Crown size={16} style={{ color: "var(--accent)", marginLeft: 2 }} aria-label="Premium" />}
           </div>
         )}
 
-        {worn.premium && (
-          <span
-            className="flex items-center gap-1 mt-1"
-            style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 999, background: "var(--accent)", color: "#fff" }}
-          >
-            <Crown size={13} /> Premium
-          </span>
-        )}
-
-        {worn.badge && worn.badge.sheet && badgeOk && (
-          <span title={worn.badge.name} aria-label={worn.badge.name} className="mt-1" style={{ width: 84, height: 84, display: "block", ...spriteBg(worn.badge.sheet, worn.badge.sprite) }} />
-        )}
-
-        {worn.badge && (!worn.badge.sheet || badgeOk === false) && (() => {
-          const BadgeIcon = BADGE_ICONS[worn.badge.icon];
-          return (
-            <span
-              className="flex items-center gap-1 mt-1"
-              style={{
-                fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 999,
-                background: "var(--accent-soft)", color: "var(--accent)",
-              }}
-            >
-              {BadgeIcon && <BadgeIcon size={13} />} {worn.badge.name}
-            </span>
-          );
-        })()}
-
-        <span className="text-sm font-normal mt-0.5" style={{ color: "var(--text-muted)" }}>
+        <span className="text-sm font-normal" style={{ color: "var(--text-muted)" }}>
           @{handle}
         </span>
       </div>
 
       <div
-        className="flex items-center justify-center gap-8 mb-5 mx-4 py-3"
+        className="flex items-center justify-center gap-8 mb-3 mx-4 py-2.5"
         style={{
           background: "var(--glass)", border: "1px solid var(--border)", borderRadius: 16,
           backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)",
@@ -550,15 +544,9 @@ export default function ProfileClient({ profileId }) {
         </div>
       </div>
 
-      {user.bio && (
-        <p className="text-sm text-center mb-5 font-medium px-4" style={{ color: "var(--text)", whiteSpace: "pre-wrap" }}>
-          {user.bio}
-        </p>
-      )}
-
-      <div className="mb-6 px-4 flex justify-center">
+      <div className="mb-4 px-4 flex justify-center">
         {isOwner ? (
-          <Link href="/profile/edit" className="btn-primary block text-center" style={{ padding: "10px 0", width: "100%", maxWidth: 160, background: "var(--surface-2)", color: "var(--text)" }}>
+          <Link href="/profile/edit" className="btn-primary block text-center" style={{ padding: "9px 0", width: "100%", maxWidth: 160, background: "var(--surface-2)", color: "var(--text)" }}>
             Edit profile
           </Link>
         ) : (
@@ -568,7 +556,7 @@ export default function ProfileClient({ profileId }) {
             className="btn-primary w-full"
             style={{
               maxWidth: 160,
-              padding: "10px 0",
+              padding: "9px 0",
               ...(isFollowedByMe ? { background: "var(--surface-2)", color: "var(--text)" } : {})
             }}
           >
@@ -576,6 +564,12 @@ export default function ProfileClient({ profileId }) {
           </button>
         )}
       </div>
+
+      {user.bio && (
+        <p className="text-sm text-center mb-4 font-medium px-4" style={{ color: "var(--text)", whiteSpace: "pre-wrap" }}>
+          {user.bio}
+        </p>
+      )}
 
       <div className="flex items-center w-full" style={{ borderBottom: "1px solid var(--border)" }}>
         {tabs.map((t) => (
