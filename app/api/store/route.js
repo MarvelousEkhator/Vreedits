@@ -3,8 +3,8 @@ import { requireUser, guestBlockedResponse } from "@/lib/requireUser";
 import {
   PACKS, PREMIUM_PRICE_VCOINS, PREMIUM_DAYS,
   SHOP_ITEMS, getWallet, getPremium, startPurchase, settlePayment, buyPremium,
-  getOwnedItems, getEquipped, buyShopItem, setEquipped, WalletError,
-  PREMIUM_NEURON_CAP, PREMIUM_SHOP_DISCOUNT, neuronPrice, reconcileUserPayments, paymentsAreTest,
+  getOwnedItems, getEquipped, getEquippedMany, buyShopItem, setEquipped, WalletError,
+  PREMIUM_NEURON_CAP, PREMIUM_SHOP_DISCOUNT, PREMIUM_RESEARCH_PER_HOUR, neuronPrice, reconcileUserPayments, paymentsAreTest,
 } from "@/lib/wallet";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +15,13 @@ export async function GET(req) {
   if (!user) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
 
   // ?userId=... : just the frame and badge someone is wearing (public, so profiles can show them).
-  const target = new URL(req.url).searchParams.get("userId");
+  const qs = new URL(req.url).searchParams;
+  const many = qs.get("userIds");
+  if (many) {
+    const ids = String(many).split(",").map((s) => s.trim().slice(0, 64)).filter(Boolean);
+    return NextResponse.json({ equippedMap: await getEquippedMany(ids) });
+  }
+  const target = qs.get("userId");
   if (target) {
     return NextResponse.json({ equipped: await getEquipped(String(target).slice(0, 64)) });
   }
@@ -39,7 +45,7 @@ export async function GET(req) {
     owned,
     equipped,
     packs: PACKS,
-    premium: { ...premium, price: PREMIUM_PRICE_VCOINS, days: PREMIUM_DAYS, neuronCap: PREMIUM_NEURON_CAP, discount: PREMIUM_SHOP_DISCOUNT },
+    premium: { ...premium, price: PREMIUM_PRICE_VCOINS, days: PREMIUM_DAYS, neuronCap: PREMIUM_NEURON_CAP, researchPerHour: PREMIUM_RESEARCH_PER_HOUR, discount: PREMIUM_SHOP_DISCOUNT },
     paymentsReady: !!process.env.FLW_SECRET_KEY,
     testMode: paymentsAreTest(),
   });
