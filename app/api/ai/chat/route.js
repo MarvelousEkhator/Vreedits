@@ -7,6 +7,7 @@ import { editImage, isImageEditRequest } from "@/lib/geminiImageEdit";
 import { prisma } from "@/lib/prisma"; // adjust to your actual prisma client path
 import crypto from "crypto";
 import { educationContext } from "@/lib/education";
+import { getPremium, PREMIUM_RESEARCH_PER_HOUR } from "@/lib/wallet";
 
 const MAX_ATTACHMENT_LENGTH = 5_500_000;
 const MAX_ATTACHMENTS = 3;
@@ -89,10 +90,10 @@ function pickThinkingLevel(text, research) {
   return "low";
 }
 
-function allowResearch(userId) {
+function allowResearch(userId, perHour = RESEARCH_PER_HOUR) {
   const now = Date.now();
   const recent = (researchLog.get(userId) || []).filter((ts) => now - ts < 60 * 60 * 1000);
-  if (recent.length >= RESEARCH_PER_HOUR) {
+  if (recent.length >= perHour) {
     researchLog.set(userId, recent);
     return false;
   }
@@ -647,7 +648,9 @@ export async function POST(req) {
   // Research is for signed-in students only (not guests), and capped per hour.
   const signedIn = !!user && !user.isGuest;
   const researchRequested = signedIn && (body.research === true || wantsResearch(lastMessageText));
-  const doResearch = researchRequested && allowResearch(user.id);
+  // Premium members get a higher hourly research limit
+  const premium = researchRequested ? await getPremium(user.id).catch(() => ({ active: false })) : { active: false };
+  const doResearch = researchRequested && allowResearch(user.id, premium.active ? PREMIUM_RESEARCH_PER_HOUR : RESEARCH_PER_HOUR);
   const opts = {
     thinkingLevel: pickThinkingLevel(lastMessageText, doResearch),
     search: doResearch,
