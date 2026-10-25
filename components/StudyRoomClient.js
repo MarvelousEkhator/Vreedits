@@ -5,6 +5,7 @@ import {
   ArrowLeft, Loader2, AlertCircle, Users, Timer, Send, UserPlus,
   X, Coffee, BookOpen, LogOut, StopCircle,
 } from "lucide-react";
+import { TapUser } from "@/components/FramedAvatar";
 
 const POLL_MS = 4000;
 
@@ -37,7 +38,7 @@ function groupMessages(messages) {
     if (last && last.userId === msg.userId) {
       last.messages.push(msg);
     } else {
-      groups.push({ userId: msg.userId, username: displayNameOf(msg.user), messages: [msg] });
+      groups.push({ userId: msg.userId, username: displayNameOf(msg.user), user: msg.user, messages: [msg] });
     }
   }
   return groups;
@@ -309,9 +310,18 @@ export default function StudyRoomClient({ roomId }) {
                 return (
                   <div key={m.id} className="card p-2.5 flex items-center gap-2">
                     <Icon size={14} style={{ color: cfg.color, flexShrink: 0 }} />
-                    <span className="text-sm font-medium" style={{ flex: 1 }}>
-                      {displayNameOf(m.user)}{m.userId === room.hostId ? " (host)" : ""}
-                    </span>
+                    <TapUser user={m.user} style={{ flex: 1, alignItems: "center", gap: 8 }}>
+                      {m.user?.avatarDataUrl ? (
+                        <img src={m.user.avatarDataUrl} alt="" style={{ width: 24, height: 24, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
+                      ) : (
+                        <span style={{ width: 24, height: 24, borderRadius: "50%", flexShrink: 0, background: "var(--accent-soft)", color: "var(--accent)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700 }}>
+                          {displayNameOf(m.user).slice(0, 2).toUpperCase()}
+                        </span>
+                      )}
+                      <span className="text-sm font-medium">
+                        {displayNameOf(m.user)}{m.userId === room.hostId ? " (host)" : ""}
+                      </span>
+                    </TapUser>
                     <span className="text-xs" style={{ color: cfg.color }}>{cfg.label}</span>
                   </div>
                 );
@@ -327,20 +337,18 @@ export default function StudyRoomClient({ roomId }) {
                 ) : (
                   groupMessages(room.messages).map((group, gi) => (
                     <div key={gi} className="flex items-start gap-2.5">
-                      <div
-                        style={{
-                          width: 34, height: 34, borderRadius: "50%", flexShrink: 0,
-                          background: "var(--accent-soft)", color: "var(--accent)",
-                          display: "flex", alignItems: "center", justifyContent: "center",
-                          fontSize: 12, fontWeight: 700, fontFamily: "var(--font-display)",
-                          marginTop: 2,
-                        }}
-                      >
-                        {group.username.slice(0, 2).toUpperCase()}
-                      </div>
+                      <TapUser user={group.user} style={{ marginTop: 2 }}>
+                        {group.user?.avatarDataUrl ? (
+                          <img src={group.user.avatarDataUrl} alt="" style={{ width: 34, height: 34, borderRadius: "50%", objectFit: "cover" }} />
+                        ) : (
+                          <div style={{ width: 34, height: 34, borderRadius: "50%", background: "var(--accent-soft)", color: "var(--accent)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, fontFamily: "var(--font-display)" }}>
+                            {group.username.slice(0, 2).toUpperCase()}
+                          </div>
+                        )}
+                      </TapUser>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div className="flex items-baseline gap-2">
-                          <span className="text-sm font-semibold" style={{ color: "var(--accent)" }}>{group.username}</span>
+                          <TapUser user={group.user}><span className="text-sm font-semibold" style={{ color: "var(--accent)" }}>{group.username}</span></TapUser>
                           <span className="text-xs" style={{ color: "var(--text-muted)" }}>{relativeTime(group.messages[0].createdAt)}</span>
                         </div>
                         {group.messages.map((msg) => (
