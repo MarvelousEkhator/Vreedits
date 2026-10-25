@@ -447,6 +447,12 @@ export default function ProfileClient({ profileId }) {
   const displayName = user.displayName || user.username;
   const handle = (user.username || "").toLowerCase();
 
+  const editLink = (
+    <Link href="/profile/edit" aria-label="Edit profile" title="Edit profile" style={{ display: "inline-flex", textDecoration: "none" }}>
+      <GlossIcon name="edit" size={30} />
+    </Link>
+  );
+
   const smallBadge = worn.badge ? (
     worn.badge.sheet && badgeOk ? (
       <span title={worn.badge.name} aria-label={worn.badge.name} style={{ width: 34, height: 34, display: "inline-block", flexShrink: 0, ...spriteBg(worn.badge.sheet, worn.badge.sprite) }} />
@@ -505,17 +511,23 @@ export default function ProfileClient({ profileId }) {
             </h1>
           </div>
         ) : (
-          <div className="flex items-center gap-1.5 mt-2">
-            <h1 className="text-xl font-bold leading-tight" style={{ fontFamily: "var(--font-display)" }}>
-              {displayName}
-            </h1>
-            {isOwner && <ChevronDown size={18} style={{ color: "var(--text-muted)", marginTop: 2 }} />}
-            {worn.premium && <Crown size={16} style={{ color: "var(--accent)", marginLeft: 2 }} aria-label="Premium" />}
-            {smallBadge}
+          <div className="mt-2" style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", width: "100%", columnGap: 6 }}>
+            <span />
+            <div className="flex items-center gap-1">
+              <h1 className="text-xl font-bold leading-tight" style={{ fontFamily: "var(--font-display)" }}>
+                {displayName}
+              </h1>
+              {isOwner && <ChevronDown size={18} style={{ color: "var(--text-muted)", marginTop: 2 }} />}
+              {worn.premium && <Crown size={16} style={{ color: "var(--accent)", marginLeft: 2 }} aria-label="Premium" />}
+            </div>
+            <div className="flex items-center gap-1.5" style={{ justifySelf: "start" }}>
+              {smallBadge}
+              {isOwner && editLink}
+            </div>
           </div>
         )}
 
-        {worn.nameplate && worn.nameplate.sheet && plateOk && worn.badge && <div className="mt-1">{smallBadge}</div>}
+        {worn.nameplate && worn.nameplate.sheet && plateOk && (worn.badge || isOwner) && <div className="mt-1 flex items-center gap-1.5">{smallBadge}{isOwner && editLink}</div>}
 
         <span className="text-sm font-normal" style={{ color: "var(--text-muted)" }}>
           @{handle}
@@ -543,12 +555,8 @@ export default function ProfileClient({ profileId }) {
         </div>
       </div>
 
-      <div className="mb-4 px-4 flex justify-center">
-        {isOwner ? (
-          <Link href="/profile/edit" aria-label="Edit profile" title="Edit profile" style={{ display: "inline-flex", textDecoration: "none" }}>
-            <GlossIcon name="edit" size={44} />
-          </Link>
-        ) : (
+      {!isOwner && (
+        <div className="mb-4 px-4 flex justify-center">
           <button
             onClick={handleFollow}
             disabled={followLoading}
@@ -561,8 +569,8 @@ export default function ProfileClient({ profileId }) {
           >
             {followLoading ? <Loader2 size={16} className="animate-spin mx-auto" /> : isFollowedByMe ? "Following" : "Follow"}
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       {user.bio && (
         <p className="text-sm text-center mb-4 font-medium px-4" style={{ color: "var(--text)", whiteSpace: "pre-wrap" }}>
