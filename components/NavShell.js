@@ -342,6 +342,8 @@ function NavShellInner({ children, user }) {
           cursor: pointer; text-align: left;
         }
         .vreedits-popover-item:hover { background: var(--surface-2); }
+        svg.lucide { filter: drop-shadow(0 1px 0 rgba(255,255,255,.28)) drop-shadow(0 2px 5px rgba(147,3,197,.5)); stroke-width: 2.2; }
+        .vreedits-popover-item svg { stroke-linecap: round; }
         .vreedits-popover-item.danger { color: var(--danger); }
         .vreedits-nav-scroll { padding: 10px 12px 14px; flex: 1; }
         .vreedits-nav-item {
