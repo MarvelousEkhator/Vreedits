@@ -1,7 +1,8 @@
 "use client";
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { ArrowLeft, Loader2, Lock, Play, Calendar } from "lucide-react";
+import { ArrowLeft, Loader2, Lock, Play, Calendar, Crown } from "lucide-react";
+import { FramedAvatar, useSheetOk, spriteBg } from "@/components/FramedAvatar";
 
 function Avatar({ user, size = 88 }) {
   if (user?.avatarDataUrl) {
@@ -30,6 +31,17 @@ export default function PublicProfileClient({ userId }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [followLoading, setFollowLoading] = useState(false);
+  const [worn, setWorn] = useState({});
+  const plateOk = useSheetOk(worn.nameplate && worn.nameplate.sheet ? worn.nameplate.sheet.file : null);
+  const effectOk = useSheetOk(worn.effect && worn.effect.sheet ? worn.effect.sheet.file : null);
+  const badgeOk = useSheetOk(worn.badge && worn.badge.sheet ? worn.badge.sheet.file : null);
+
+  useEffect(() => {
+    fetch(`/api/store?userId=${encodeURIComponent(userId)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d && d.equipped) setWorn(d.equipped); })
+      .catch(() => {});
+  }, [userId]);
 
   useEffect(() => {
     fetch(`/api/users/${userId}`)
@@ -88,12 +100,33 @@ export default function PublicProfileClient({ userId }) {
           <ArrowLeft size={14} /> Back
         </Link>
 
-        <div className="flex flex-col items-center text-center mb-4">
-          <Avatar user={profile} />
-          <h1 className="text-lg font-semibold mt-3" style={{ fontFamily: "var(--font-display)" }}>
-            {displayName}
-          </h1>
+        <div className="flex flex-col items-center text-center mb-4" style={{ position: "relative", isolation: "isolate", paddingTop: worn.effect && worn.effect.sheet && effectOk ? 40 : 0 }}>
+          {worn.effect && worn.effect.sheet && effectOk && (
+            <span aria-hidden="true" style={{ position: "absolute", top: 0, left: "50%", transform: "translateX(-50%)", width: "min(380px, 100%)", aspectRatio: "1.8", zIndex: -1, pointerEvents: "none", ...spriteBg(worn.effect.sheet, worn.effect.sprite) }} />
+          )}
+          <FramedAvatar frame={worn.frame} size={88}><Avatar user={profile} /></FramedAvatar>
+          {worn.nameplate && worn.nameplate.sheet && plateOk ? (
+            <div className="mt-2" style={{ position: "relative", width: "min(300px, 94%)", aspectRatio: "2.5", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <span aria-hidden="true" style={{ position: "absolute", inset: "18% 8%", borderRadius: 999, background: "rgba(8,5,16,.92)" }} />
+              <span aria-hidden="true" style={{ position: "absolute", inset: 0, ...spriteBg(worn.nameplate.sheet, worn.nameplate.sprite) }} />
+              <h1 className="text-lg font-semibold" style={{ position: "relative", fontFamily: "var(--font-display)", color: "#fff", textShadow: "0 1px 3px #000, 0 0 8px #000", maxWidth: "70%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {displayName}
+              </h1>
+            </div>
+          ) : (
+            <h1 className="text-lg font-semibold mt-3" style={{ fontFamily: "var(--font-display)" }}>
+              {displayName}
+            </h1>
+          )}
           <span className="text-xs" style={{ color: "var(--text-muted)" }}>@{handle}</span>
+          {worn.premium && (
+            <span className="flex items-center gap-1 mt-1" style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 999, background: "var(--accent)", color: "#fff" }}>
+              <Crown size={13} /> Premium
+            </span>
+          )}
+          {worn.badge && worn.badge.sheet && badgeOk && (
+            <span title={worn.badge.name} aria-label={worn.badge.name} className="mt-1" style={{ width: 84, height: 84, display: "block", ...spriteBg(worn.badge.sheet, worn.badge.sprite) }} />
+          )}
         </div>
 
         <div className="flex items-center justify-center gap-8 mb-4">
