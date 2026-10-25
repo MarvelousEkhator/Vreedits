@@ -18,7 +18,7 @@ export async function GET(req, { params }) {
       messages: {
         orderBy: { createdAt: "asc" },
         take: 100,
-        include: { user: { select: { id: true, username: true, displayName: true } } },
+        include: { user: { select: { id: true, username: true, displayName: true, avatarDataUrl: true } } },
       },
     },
   });
