@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Search, ChevronRight, Sparkles, MessageCircle, MessageSquare, Loader2, Pin, Trash2, Pencil, Share2, Check, X, Home } from "lucide-react";
 import { useLanguage } from "@/components/LanguageProvider";
+import GlossIcon, { glyphFor } from "@/components/GlossIcon";
 
 // Categories that already have their own dedicated section dashboard —
 // their tools should only show there, not in the general AI Tools list.
@@ -172,7 +173,7 @@ export default function AiToolsClient({ tools }) {
                     style={{ borderBottom: i < arr.length - 1 ? "1px solid var(--border)" : "none" }}
                   >
                     <div className="flex items-start gap-2.5">
-                      <Sparkles size={16} style={{ color: "var(--accent)", marginTop: 2 }} />
+                      <GlossIcon name={glyphFor(tool.id + " " + tool.label + " " + tool.category)} size={32} />
                       <div>
                         <div className="text-sm font-medium">{tool.label}</div>
                         <div className="text-xs" style={{ color: "var(--text-muted)" }}>{tool.description}</div>
