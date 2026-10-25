@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
-import { UserPlus, Check, X as XIcon, Loader2, MoreVertical, Ban, Flag, Bookmark } from "lucide-react";
+import { UserPlus, Check, X as XIcon, Loader2, MoreVertical, Ban, Flag, Bookmark, ChevronDown } from "lucide-react";
 import GlossIcon from "@/components/GlossIcon";
 import { FramedAvatar, useEquippedMap } from "@/components/FramedAvatar";
 
@@ -127,12 +127,17 @@ const INBOX_CSS = `
 .ib-label{font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--text-muted);margin:0 4px 8px}
 .ib-row{
   display:flex;align-items:center;gap:12px;padding:12px 6px;border-radius:0;
-  background:transparent;border:0;border-bottom:1px solid var(--border);box-shadow:none;
+  background:transparent;border:0;box-shadow:none;
   text-decoration:none;color:var(--text);flex:1;min-width:0;
   transition:background .15s ease;
 }
 .ib-row:active{background:var(--accent-soft)}
-.ib-row.self{background:var(--accent-soft)}
+.ib-line{display:flex;align-items:center;gap:2px;border-bottom:1px solid var(--border)}
+.ib-line.self{background:var(--accent-soft);border-radius:14px;border-bottom-color:transparent;margin-bottom:4px}
+.ib-stack{display:flex}
+.ib-stack > *{margin-left:-8px;border:2px solid var(--surface);border-radius:50%;line-height:0}
+.ib-stack > *:first-child{margin-left:0}
+.ib-fold{width:100%;display:flex;align-items:center;gap:10px;background:none;border:0;padding:6px 4px;color:var(--text);cursor:pointer}
 .ib-badge{
   background:var(--accent-btn);color:#fff;font-size:11px;font-weight:700;border-radius:999px;
   min-width:20px;height:20px;display:flex;align-items:center;justify-content:center;padding:0 6px;
@@ -157,6 +162,7 @@ export default function InboxClient({ currentUserId }) {
 
   const [menuFriendId, setMenuFriendId] = useState(null);
   const [blockingId, setBlockingId] = useState(null);
+  const [pendingOpen, setPendingOpen] = useState(false);
   const pressTimer = useRef(null);
   const worn = useEquippedMap(conversations.map((c) => c.friend && c.friend.id));
 
@@ -351,7 +357,7 @@ export default function InboxClient({ currentUserId }) {
       {incoming.length > 0 && (
         <div className="mb-4">
           <div className="ib-label">Friend requests ({incoming.length})</div>
-          <div className="space-y-2">
+          <div className="space-y-2" style={{ maxHeight: 260, overflowY: "auto" }}>
             {incoming.map((r) => (
               <div key={r.id} className="card p-3 flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
@@ -383,28 +389,40 @@ export default function InboxClient({ currentUserId }) {
       )}
 
       {outgoing.length > 0 && (
-        <div className="mb-4">
-          <div className="ib-label">Pending ({outgoing.length})</div>
-          <div className="space-y-1">
-            {outgoing.map((r) => (
-              <div key={r.id} className="flex items-center justify-between gap-2.5 px-1 py-1.5">
-                <div className="flex items-center gap-2.5" style={{ minWidth: 0 }}>
-                  <Avatar user={r.receiver} size={28} />
-                  <span className="text-xs" style={{ color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    Waiting for {r.receiver.displayName || r.receiver.username}
-                  </span>
+        <div className="mb-3">
+          <button className="ib-fold" onClick={() => setPendingOpen((o) => !o)} aria-expanded={pendingOpen}>
+            <span className="ib-label" style={{ margin: 0 }}>Pending ({outgoing.length})</span>
+            {!pendingOpen && (
+              <span className="ib-stack">
+                {outgoing.slice(0, 5).map((r) => (
+                  <span key={r.id}><Avatar user={r.receiver} size={24} /></span>
+                ))}
+              </span>
+            )}
+            <ChevronDown size={16} style={{ marginLeft: "auto", color: "var(--text-muted)", transform: pendingOpen ? "rotate(180deg)" : "none", transition: "transform .15s" }} />
+          </button>
+          {pendingOpen && (
+            <div style={{ maxHeight: 220, overflowY: "auto" }}>
+              {outgoing.map((r) => (
+                <div key={r.id} className="flex items-center justify-between gap-2.5 px-1 py-1">
+                  <div className="flex items-center gap-2.5" style={{ minWidth: 0 }}>
+                    <Avatar user={r.receiver} size={26} />
+                    <span className="text-xs" style={{ color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {r.receiver.displayName || r.receiver.username}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => handleUnsend(r.id)}
+                    disabled={unsendingId === r.id}
+                    className="text-xs font-semibold flex-shrink-0"
+                    style={{ background: "var(--surface-2)", color: "var(--text-muted)", border: "none", borderRadius: 999, padding: "4px 10px" }}
+                  >
+                    {unsendingId === r.id ? <Loader2 size={12} className="animate-spin" /> : "Unsend"}
+                  </button>
                 </div>
-                <button
-                  onClick={() => handleUnsend(r.id)}
-                  disabled={unsendingId === r.id}
-                  className="text-xs font-semibold flex-shrink-0"
-                  style={{ background: "var(--surface-2)", color: "var(--text-muted)", border: "none", borderRadius: 999, padding: "5px 10px" }}
-                >
-                  {unsendingId === r.id ? <Loader2 size={12} className="animate-spin" /> : "Unsend"}
-                </button>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -419,11 +437,11 @@ export default function InboxClient({ currentUserId }) {
           {conversations.length === 0 ? "No friends yet — add one to start chatting." : "No matches."}
         </p>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
           {filtered.map(({ friend, lastMessage, unreadCount, isSelf }) => (
             <div
               key={isSelf ? "self" : friend.id}
-              className="flex items-center gap-1"
+              className={`ib-line ${isSelf ? "self" : ""}`}
               onTouchStart={() => !isSelf && handlePressStart(friend.id)}
               onTouchEnd={handlePressEnd}
               onTouchMove={handlePressEnd}
