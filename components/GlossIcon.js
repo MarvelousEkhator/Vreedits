@@ -87,7 +87,7 @@ function Gem({ size, Fallback }) {
 export default function GlossIcon({ name, size = 36, fallback: FallbackProp }) {
   let Fallback = FallbackProp;
   const pos = POS[ALIAS[name] || name] || POS[SPRITE_FOR[name]];
-  const src = "/api/shop-art/icons.webp";
+  const src = "/icons.webp";
   if (!pos && !Fallback && GLYPHS[name]) Fallback = GLYPHS[name];
 
   // Only shows the old purple tile if the icon name is unknown.
