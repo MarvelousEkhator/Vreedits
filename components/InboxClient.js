@@ -3,8 +3,10 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { UserPlus, Check, X as XIcon, Loader2, MoreVertical, Ban, Flag, Bookmark } from "lucide-react";
 import GlossIcon from "@/components/GlossIcon";
+import { FramedAvatar, useEquippedMap } from "@/components/FramedAvatar";
 
-function Avatar({ user, size = 44 }) {
+function Avatar({ user, size = 44, frame }) {
+  if (frame) return <FramedAvatar frame={frame} size={size}><Avatar user={user} size={size} /></FramedAvatar>;
   if (user?.avatarDataUrl) {
     return <img src={user.avatarDataUrl} alt="" style={{ width: size, height: size, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />;
   }
@@ -124,13 +126,13 @@ function ConversationMenu({ friend, open, onClose, onBlock, blocking, onReport }
 const INBOX_CSS = `
 .ib-label{font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--text-muted);margin:0 4px 8px}
 .ib-row{
-  display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:18px;
-  background:var(--glass);border:1px solid var(--border);box-shadow:0 4px 14px rgba(0,0,0,.14);
+  display:flex;align-items:center;gap:12px;padding:12px 6px;border-radius:0;
+  background:transparent;border:0;border-bottom:1px solid var(--border);box-shadow:none;
   text-decoration:none;color:var(--text);flex:1;min-width:0;
-  transition:transform .1s ease, background .15s ease;
+  transition:background .15s ease;
 }
-.ib-row:active{transform:scale(.985)}
-.ib-row.self{background:var(--accent-soft);border-color:var(--accent)}
+.ib-row:active{background:var(--accent-soft)}
+.ib-row.self{background:var(--accent-soft)}
 .ib-badge{
   background:var(--accent-btn);color:#fff;font-size:11px;font-weight:700;border-radius:999px;
   min-width:20px;height:20px;display:flex;align-items:center;justify-content:center;padding:0 6px;
@@ -156,6 +158,7 @@ export default function InboxClient({ currentUserId }) {
   const [menuFriendId, setMenuFriendId] = useState(null);
   const [blockingId, setBlockingId] = useState(null);
   const pressTimer = useRef(null);
+  const worn = useEquippedMap(conversations.map((c) => c.friend && c.friend.id));
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -321,7 +324,7 @@ export default function InboxClient({ currentUserId }) {
                 <div style={{ position: "relative" }}>
                   <div style={{ padding: 2, borderRadius: "50%", background: "var(--accent-btn)" }}>
                     <div style={{ padding: 2, borderRadius: "50%", background: "var(--surface)", lineHeight: 0 }}>
-                      <Avatar user={friend} size={50} />
+                      <Avatar user={friend} size={50} frame={worn[friend.id]?.frame} />
                     </div>
                   </div>
                   <span
@@ -431,7 +434,7 @@ export default function InboxClient({ currentUserId }) {
             >
               <Link href={`/inbox/${friend.username}`} className={`ib-row ${isSelf ? "self" : ""}`}>
                 <div style={{ position: "relative", flexShrink: 0 }}>
-                  <Avatar user={friend} size={52} />
+                  <Avatar user={friend} size={52} frame={!isSelf ? worn[friend.id]?.frame : undefined} />
                   {isSelf ? (
                     <span
                       style={{
