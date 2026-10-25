@@ -5,7 +5,6 @@ import Link from "next/link";
 import PresenceHeartbeat from "@/components/PresenceHeartbeat";
 import FeedbackPrompt from "@/components/FeedbackPrompt";
 import GlossIcon from "@/components/GlossIcon";
-import spriteData from "@/components/spriteData";
 import ThemeToggle from "@/components/ThemeToggle";
 import ScreenTimeGate from "@/components/ScreenTimeGate";
 import GuestGate from "@/components/GuestGate";
@@ -589,7 +588,7 @@ function GlossSwap() {
     const el = document.createElement("style");
     el.id = "gloss-swap";
     el.textContent = `
-      ${bin}, ${lock} { background-image: url("${spriteData}"); background-repeat: no-repeat; background-size: 500% 1000%; stroke: none; }
+      ${bin}, ${lock} { background-image: url("/api/shop-art/icons.webp"); background-repeat: no-repeat; background-size: 500% 1000%; stroke: none; }
       ${bin} { background-position: 25% 100%; }
       ${lock} { background-position: 100% 88.889%; }
       ${bin.split(", ").map((x) => x + " > *").join(", ")}, ${lock.split(", ").map((x) => x + " > *").join(", ")} { display: none; }
