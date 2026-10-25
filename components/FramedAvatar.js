@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 // Remember which shop picture files load, so a missing file never leaves a blank gap.
 const sheetState = {};
@@ -61,4 +62,26 @@ export function useEquippedMap(ids) {
     return () => { dead = true; };
   }, [key]);
   return map;
+}
+
+// Makes whatever is inside (an avatar, a name) open that person's profile when tapped.
+// Without a user id it just renders the children unchanged.
+export function TapUser({ user, userId, children, style, inline = true }) {
+  const router = useRouter();
+  const id = userId || (user && user.id);
+  if (!id) return children;
+  function go(e) {
+    e.stopPropagation();
+    e.preventDefault();
+    router.push(`/profile/${id}`);
+  }
+  return (
+    <span
+      role="link" tabIndex={0} onClick={go}
+      onKeyDown={(e) => { if (e.key === "Enter") go(e); }}
+      style={{ cursor: "pointer", display: inline ? "inline-flex" : "block", flexShrink: 0, minWidth: 0, ...style }}
+    >
+      {children}
+    </span>
+  );
 }
