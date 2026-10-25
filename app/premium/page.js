@@ -270,6 +270,7 @@ export default function PremiumPage() {
           <div className="pm-perks">
             <div><b>Double the daily Neurons.</b> Earn up to {fmt(premium.neuronCap)} a day instead of 500.</div>
             <div><b>{Math.round((premium.discount || 0) * 100)}% off the shop.</b> Applies to the Neuron price of every item.</div>
+            <div><b>Triple the Syna research.</b> Up to {premium.researchPerHour || 60} web searches an hour instead of 20.</div>
             <div><b>Crown and Royal frame.</b> A Premium crown on your profile, plus the Royal frame and Premium badge, free while you are a member.</div>
           </div>
           <p className="pm-text">Your membership starts counting right away{premium.active ? " and stacks on top of the time you have left" : ""}.</p>
