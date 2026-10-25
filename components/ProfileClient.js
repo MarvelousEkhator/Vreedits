@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import BackButton from "@/components/BackButton";
 import { Settings as SettingsIcon, Share2, ChevronDown, Loader2, X, ImageOff, Eye, Heart, MessageCircle, BookOpen, Moon, Brain, Trophy, Crown } from "lucide-react";
 import Link from "next/link";
+import GlossIcon from "@/components/GlossIcon";
 
 // 1,200 -> 1.2K, 3,400,000 -> 3.4M (same style as the feed counters).
 function abbreviateCount(n) {
@@ -446,6 +447,19 @@ export default function ProfileClient({ profileId }) {
   const displayName = user.displayName || user.username;
   const handle = (user.username || "").toLowerCase();
 
+  const smallBadge = worn.badge ? (
+    worn.badge.sheet && badgeOk ? (
+      <span title={worn.badge.name} aria-label={worn.badge.name} style={{ width: 34, height: 34, display: "inline-block", flexShrink: 0, ...spriteBg(worn.badge.sheet, worn.badge.sprite) }} />
+    ) : (worn.badge.sheet && badgeOk === null) ? null : (() => {
+      const BadgeIcon = BADGE_ICONS[worn.badge.icon];
+      return (
+        <span className="flex items-center gap-1" style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: "var(--accent-soft)", color: "var(--accent)" }}>
+          {BadgeIcon && <BadgeIcon size={12} />} {worn.badge.name}
+        </span>
+      );
+    })()
+  ) : null;
+
   return (
     <div className="pt-6 pb-16" style={{ maxWidth: 480, margin: "0 auto" }}>
       <div className="flex items-center justify-between mb-4 px-4">
@@ -472,32 +486,14 @@ export default function ProfileClient({ profileId }) {
           <span aria-hidden="true" style={{ position: "absolute", top: 0, left: "50%", transform: "translateX(-50%)", width: "min(380px, 100%)", aspectRatio: "1.8", zIndex: -1, pointerEvents: "none", ...spriteBg(worn.effect.sheet, worn.effect.sprite) }} />
         )}
 
-        {/* Photo with the badge right beside it */}
-        <div className="flex items-center justify-center gap-3">
-          {worn.frame && (!worn.frame.sheet || frameOk) ? (
-            <FramedAvatar frame={worn.frame} size={96}><Avatar user={user} /></FramedAvatar>
-          ) : (
-            <div style={{ padding: 4, borderRadius: "50%", background: "linear-gradient(135deg, var(--accent), transparent 70%)" }}>
-              <Avatar user={user} />
-            </div>
-          )}
-
-          {worn.badge && worn.badge.sheet && badgeOk && (
-            <span title={worn.badge.name} aria-label={worn.badge.name} style={{ width: 84, height: 84, display: "block", flexShrink: 0, ...spriteBg(worn.badge.sheet, worn.badge.sprite) }} />
-          )}
-
-          {worn.badge && (!worn.badge.sheet || badgeOk === false) && (() => {
-            const BadgeIcon = BADGE_ICONS[worn.badge.icon];
-            return (
-              <span
-                className="flex items-center gap-1"
-                style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 999, background: "var(--accent-soft)", color: "var(--accent)" }}
-              >
-                {BadgeIcon && <BadgeIcon size={13} />} {worn.badge.name}
-              </span>
-            );
-          })()}
-        </div>
+        {/* Photo stays in the middle */}
+        {worn.frame && (!worn.frame.sheet || frameOk) ? (
+          <FramedAvatar frame={worn.frame} size={96}><Avatar user={user} /></FramedAvatar>
+        ) : (
+          <div style={{ padding: 4, borderRadius: "50%", background: "linear-gradient(135deg, var(--accent), transparent 70%)" }}>
+            <Avatar user={user} />
+          </div>
+        )}
 
         {/* Name, then @username underneath */}
         {worn.nameplate && worn.nameplate.sheet && plateOk ? (
@@ -509,14 +505,17 @@ export default function ProfileClient({ profileId }) {
             </h1>
           </div>
         ) : (
-          <div className="flex items-center gap-1 mt-2">
+          <div className="flex items-center gap-1.5 mt-2">
             <h1 className="text-xl font-bold leading-tight" style={{ fontFamily: "var(--font-display)" }}>
               {displayName}
             </h1>
             {isOwner && <ChevronDown size={18} style={{ color: "var(--text-muted)", marginTop: 2 }} />}
             {worn.premium && <Crown size={16} style={{ color: "var(--accent)", marginLeft: 2 }} aria-label="Premium" />}
+            {smallBadge}
           </div>
         )}
+
+        {worn.nameplate && worn.nameplate.sheet && plateOk && worn.badge && <div className="mt-1">{smallBadge}</div>}
 
         <span className="text-sm font-normal" style={{ color: "var(--text-muted)" }}>
           @{handle}
@@ -546,8 +545,8 @@ export default function ProfileClient({ profileId }) {
 
       <div className="mb-4 px-4 flex justify-center">
         {isOwner ? (
-          <Link href="/profile/edit" className="btn-primary block text-center" style={{ padding: "9px 0", width: "100%", maxWidth: 160, background: "var(--surface-2)", color: "var(--text)" }}>
-            Edit profile
+          <Link href="/profile/edit" aria-label="Edit profile" title="Edit profile" style={{ display: "inline-flex", textDecoration: "none" }}>
+            <GlossIcon name="edit" size={44} />
           </Link>
         ) : (
           <button
