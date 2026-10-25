@@ -5,6 +5,7 @@ import Link from "next/link";
 import PresenceHeartbeat from "@/components/PresenceHeartbeat";
 import FeedbackPrompt from "@/components/FeedbackPrompt";
 import GlossIcon from "@/components/GlossIcon";
+import spriteData from "@/components/spriteData";
 import ThemeToggle from "@/components/ThemeToggle";
 import ScreenTimeGate from "@/components/ScreenTimeGate";
 import GuestGate from "@/components/GuestGate";
@@ -501,10 +502,10 @@ function NavShellInner({ children, user }) {
                 <User size={15} /> {t("menu.viewProfile")}
               </Link>
               <Link href="/profile" className="vreedits-popover-item" onClick={() => setProfileMenuOpen(false)}>
-                <User size={15} /> {t("menu.editProfile")}
+                <GlossIcon name="edit" size={22} /> {t("menu.editProfile")}
               </Link>
               <Link href={popoverSettingsHref} className="vreedits-popover-item" onClick={() => setProfileMenuOpen(false)}>
-                <Settings size={15} /> {t("nav.settings")}
+                <GlossIcon name="settings" size={22} /> {t("nav.settings")}
               </Link>
               {user?.isGuest && (
                 <button className="vreedits-popover-item" onClick={openGuestSignup}>
@@ -578,9 +579,30 @@ function NavShellInner({ children, user }) {
   );
 }
 
+// Every delete (bin) and lock icon in the app is swapped for the glossy picture from the sprite.
+// This runs once in the browser, so no page needs to change.
+function GlossSwap() {
+  useEffect(() => {
+    if (document.getElementById("gloss-swap")) return;
+    const bin = "svg.lucide-trash-2, svg.lucide-trash";
+    const lock = "svg.lucide-lock, svg.lucide-lock-keyhole";
+    const el = document.createElement("style");
+    el.id = "gloss-swap";
+    el.textContent = `
+      ${bin}, ${lock} { background-image: url("${spriteData}"); background-repeat: no-repeat; background-size: 500% 1000%; stroke: none; }
+      ${bin} { background-position: 25% 100%; }
+      ${lock} { background-position: 100% 88.889%; }
+      ${bin.split(", ").map((x) => x + " > *").join(", ")}, ${lock.split(", ").map((x) => x + " > *").join(", ")} { display: none; }
+    `;
+    document.head.appendChild(el);
+  }, []);
+  return null;
+}
+
 export default function NavShell({ children, user }) {
   return (
     <LanguageProvider userLanguage={user?.language}>
+      <GlossSwap />
       <NavShellInner user={user}>{children}</NavShellInner>
     </LanguageProvider>
   );
