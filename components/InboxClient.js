@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
-import { UserPlus, Check, X as XIcon, Loader2, MoreVertical, Ban, Flag, Bookmark, ChevronDown } from "lucide-react";
+import { UserPlus, Check, X as XIcon, Loader2, MoreVertical, Ban, Flag, Bookmark, Clock } from "lucide-react";
 import GlossIcon from "@/components/GlossIcon";
 import { FramedAvatar, useEquippedMap } from "@/components/FramedAvatar";
 
@@ -162,7 +162,7 @@ export default function InboxClient({ currentUserId }) {
 
   const [menuFriendId, setMenuFriendId] = useState(null);
   const [blockingId, setBlockingId] = useState(null);
-  const [pendingOpen, setPendingOpen] = useState(false);
+  const [pendingOpen, setPendingOpen] = useState(false); // the small Pending box
   const pressTimer = useRef(null);
   const worn = useEquippedMap(conversations.map((c) => c.friend && c.friend.id));
 
@@ -288,6 +288,16 @@ export default function InboxClient({ currentUserId }) {
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
+        {outgoing.length > 0 && (
+          <button
+            onClick={() => setPendingOpen(true)}
+            aria-label={`Pending requests (${outgoing.length})`}
+            style={{ position: "relative", background: "var(--surface-2)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 14, width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+          >
+            <Clock size={18} />
+            <span className="ib-badge" style={{ position: "absolute", top: -6, right: -6 }}>{outgoing.length}</span>
+          </button>
+        )}
         <button
           onClick={() => setAddOpen((v) => !v)}
           className="btn-primary"
@@ -388,44 +398,6 @@ export default function InboxClient({ currentUserId }) {
         </div>
       )}
 
-      {outgoing.length > 0 && (
-        <div className="mb-3">
-          <button className="ib-fold" onClick={() => setPendingOpen((o) => !o)} aria-expanded={pendingOpen}>
-            <span className="ib-label" style={{ margin: 0 }}>Pending ({outgoing.length})</span>
-            {!pendingOpen && (
-              <span className="ib-stack">
-                {outgoing.slice(0, 5).map((r) => (
-                  <span key={r.id}><Avatar user={r.receiver} size={24} /></span>
-                ))}
-              </span>
-            )}
-            <ChevronDown size={16} style={{ marginLeft: "auto", color: "var(--text-muted)", transform: pendingOpen ? "rotate(180deg)" : "none", transition: "transform .15s" }} />
-          </button>
-          {pendingOpen && (
-            <div style={{ maxHeight: 220, overflowY: "auto" }}>
-              {outgoing.map((r) => (
-                <div key={r.id} className="flex items-center justify-between gap-2.5 px-1 py-1">
-                  <div className="flex items-center gap-2.5" style={{ minWidth: 0 }}>
-                    <Avatar user={r.receiver} size={26} />
-                    <span className="text-xs" style={{ color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {r.receiver.displayName || r.receiver.username}
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => handleUnsend(r.id)}
-                    disabled={unsendingId === r.id}
-                    className="text-xs font-semibold flex-shrink-0"
-                    style={{ background: "var(--surface-2)", color: "var(--text-muted)", border: "none", borderRadius: 999, padding: "4px 10px" }}
-                  >
-                    {unsendingId === r.id ? <Loader2 size={12} className="animate-spin" /> : "Unsend"}
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
       {conversations.length > 0 && <div className="ib-label">Messages</div>}
 
       {loading ? (
@@ -500,6 +472,47 @@ export default function InboxClient({ currentUserId }) {
             </div>
           ))}
         </div>
+      )}
+
+      {pendingOpen && (
+        <>
+          <div onClick={() => setPendingOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 200 }} />
+          <div
+            className="card"
+            style={{ position: "fixed", left: 12, right: 12, bottom: "calc(12px + var(--safe-b))", zIndex: 201, padding: 14, maxWidth: 440, margin: "0 auto", maxHeight: "70vh", display: "flex", flexDirection: "column" }}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <div className="ib-label" style={{ margin: 0 }}>Pending requests ({outgoing.length})</div>
+              <button onClick={() => setPendingOpen(false)} aria-label="Close" style={{ background: "none", border: "none", color: "var(--text-muted)", padding: 4 }}>
+                <XIcon size={18} />
+              </button>
+            </div>
+            {outgoing.length === 0 ? (
+              <p className="text-sm" style={{ color: "var(--text-muted)", padding: "12px 0" }}>Nothing waiting.</p>
+            ) : (
+              <div style={{ overflowY: "auto" }}>
+                {outgoing.map((r) => (
+                  <div key={r.id} className="flex items-center justify-between gap-2.5 py-2" style={{ borderBottom: "1px solid var(--border)" }}>
+                    <div className="flex items-center gap-2.5" style={{ minWidth: 0 }}>
+                      <Avatar user={r.receiver} size={34} />
+                      <span className="text-sm" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {r.receiver.displayName || r.receiver.username}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => handleUnsend(r.id)}
+                      disabled={unsendingId === r.id}
+                      className="text-xs font-semibold flex-shrink-0"
+                      style={{ background: "var(--surface-2)", color: "var(--text-muted)", border: "none", borderRadius: 999, padding: "6px 12px" }}
+                    >
+                      {unsendingId === r.id ? <Loader2 size={12} className="animate-spin" /> : "Unsend"}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </>
       )}
 
       {menuFriend && (
