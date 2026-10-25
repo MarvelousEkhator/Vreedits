@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 
 // Serves the shop pictures (frames, nameplates, effects, badges).
 // They can sit in the project's main folder or in public/; either works.
-const FILES = new Set(["frames.webp", "nameplates.webp", "effects.webp", "badges.webp"]);
+const FILES = new Set(["frames.webp", "nameplates.webp", "effects.webp", "badges.webp", "icons.webp"]);
 
 export async function GET(req, { params }) {
   const name = String(params.name || "");
