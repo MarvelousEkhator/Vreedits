@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import CameraCapture from "@/components/CameraCapture";
 import GlossIcon from "@/components/GlossIcon";
+import { TapUser } from "@/components/FramedAvatar";
 
 // Videos are stored inside the database, so keep uploads under this size
 // (about 45 million characters of base64, roughly 33 MB of video).
@@ -190,7 +191,7 @@ function CommentRow({ comment, postId, isReply, isPostOwner, currentUserId, onLi
       onMouseLeave={cancelPress}
       onContextMenu={(e) => { e.preventDefault(); setActionsOpen(true); }}
     >
-      <Avatar user={comment.author} size={isReply ? 24 : 28} />
+      <TapUser user={comment.author}><Avatar user={comment.author} size={isReply ? 24 : 28} /></TapUser>
       <div style={{ flex: 1, minWidth: 0 }}>
         {comment.pinned && (
           <div className="flex items-center gap-1 mb-1" style={{ color: "var(--text-muted)" }}>
@@ -199,7 +200,7 @@ function CommentRow({ comment, postId, isReply, isPostOwner, currentUserId, onLi
           </div>
         )}
         <div>
-          <span className="text-sm font-semibold mr-1.5">{comment.author.displayName || comment.author.username}</span>
+          <TapUser user={comment.author}><span className="text-sm font-semibold mr-1.5">{comment.author.displayName || comment.author.username}</span></TapUser>
           <span className="text-sm" style={{ overflowWrap: "anywhere" }}>
             {translated || comment.content}
           </span>
