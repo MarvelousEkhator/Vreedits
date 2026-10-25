@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import CommunitySettingsPage, { resolveSettingsPage } from "@/components/CommunitySettingsPages";
 import EmojiPicker, { renderMessageContent } from "@/components/EmojiPicker";
+import { TapUser } from "@/components/FramedAvatar";
 
 function relativeTime(dateStr) {
   const diffMs = Date.now() - new Date(dateStr).getTime();
@@ -27,7 +28,7 @@ function genId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
-function Avatar({ user, size = 32 }) {
+function PlainAvatar({ user, size = 32 }) {
   if (user?.avatarDataUrl) {
     return <img src={user.avatarDataUrl} alt="" style={{ width: size, height: size, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />;
   }
@@ -43,6 +44,10 @@ function Avatar({ user, size = 32 }) {
       {user?.username?.slice(0, 2).toUpperCase() || "?"}
     </div>
   );
+}
+
+function Avatar({ user, size }) {
+  return <TapUser user={user}><PlainAvatar user={user} size={size} /></TapUser>;
 }
 
 // refreshKey: bump it to make the pills reload (used after reacting from the action sheet)
@@ -1907,7 +1912,7 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
                     <div key={m.id} className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <Avatar user={m} size={28} />
-                        <span className="text-sm">{m.username}</span>
+                        <TapUser user={m}><span className="text-sm">{m.username}</span></TapUser>
                         {m.isOwner && <Crown size={12} style={{ color: "#F0B75E" }} />}
                         {!m.isOwner && community.adminIds?.includes(m.id) && (
                           <span className="text-xs" style={{ color: "var(--accent)" }}>Admin</span>
@@ -3133,7 +3138,7 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
                         <h2 className="text-lg font-bold mb-2">{post.title}</h2>
                         <div className="flex items-center gap-2 mb-3">
                           <Avatar user={post.author} size={28} />
-                          <span className="text-sm font-semibold">{post.author.username}</span>
+                          <TapUser user={post.author}><span className="text-sm font-semibold">{post.author.username}</span></TapUser>
                           <span className="text-xs" style={{ color: "var(--text-muted)" }}>{relativeTime(post.createdAt)}</span>
                         </div>
                         <p className="text-sm mb-2" style={{ overflowWrap: "anywhere", lineHeight: 1.5 }}>
@@ -3177,7 +3182,7 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
                             <Avatar user={c.author} size={24} />
                             <div style={{ minWidth: 0, flex: 1 }}>
                               <div className="flex items-center justify-between gap-2 mb-0.5">
-                                <span className="text-xs font-semibold">{c.author.username}</span>
+                                <TapUser user={c.author}><span className="text-xs font-semibold">{c.author.username}</span></TapUser>
                                 {c.author.id !== currentUserId && (
                                   <button
                                     onClick={() => handleReportComment(c)}
@@ -3230,7 +3235,7 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
                       <div className="flex items-center justify-between text-xs" style={{ color: "var(--text-muted)" }}>
                         <div className="flex items-center gap-1.5">
                           <Avatar user={post.author} size={18} />
-                          <span>{post.author.username}</span>
+                          <TapUser user={post.author}><span>{post.author.username}</span></TapUser>
                           <span>·</span>
                           <span>{relativeTime(post.createdAt)}</span>
                         </div>
@@ -3267,7 +3272,7 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
                         >
                           {!grouped && (
                             <div className="flex items-center gap-2 mb-0.5">
-                              <span className="text-sm font-semibold">{post.author.username}</span>
+                              <TapUser user={post.author}><span className="text-sm font-semibold">{post.author.username}</span></TapUser>
                               <span className="text-xs" style={{ color: "var(--text-muted)" }}>{relativeTime(post.createdAt)}</span>
                             </div>
                           )}
@@ -3320,7 +3325,7 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
                                 <div key={c.id} className="flex items-start gap-2 mb-2">
                                   <Avatar user={c.author} size={22} />
                                   <div className="text-xs" style={{ flex: 1 }}>
-                                    <span className="font-semibold">{c.author.username}</span>{" "}
+                                    <TapUser user={c.author}><span className="font-semibold">{c.author.username}</span></TapUser>{" "}
                                     <span style={{ color: "var(--text-muted)" }}>{c.content}</span>
                                   </div>
                                   {c.author.id !== currentUserId && (
