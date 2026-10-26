@@ -2591,7 +2591,7 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
             aria-label="View profile"
             style={{ display: "block", background: "none", border: "none", padding: 0 }}
           >
-            <WornAvatar frame={worn.frame} size={worn.frame ? 58 : 42} render={(s) => <Avatar user={post.author} size={s} />} />
+            <WornAvatar frame={worn.frame} size={worn.frame ? 52 : 42} contain render={(s) => <Avatar user={post.author} size={s} />} />
           </button>
           {!isOwner && (
             <button
@@ -2684,8 +2684,8 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
           style={{ background: "none", border: "none", padding: 0, textAlign: "left" }}
         >
           <span className="flex items-center gap-1.5">
-            <NameTag plate={worn.nameplate} name={post.author.displayName || post.author.username} width={worn.nameplate ? 200 : 0} className="text-base font-bold drop-shadow-md" style={{ color: "white", lineHeight: 1.2 }} />
-            <WornBadge badge={worn.badge} size={26} />
+            <NameTag plate={worn.nameplate} name={post.author.displayName || post.author.username} width={worn.nameplate ? 140 : 0} className="text-base font-bold drop-shadow-md" style={{ color: "white", lineHeight: 1.2 }} />
+            <WornBadge badge={worn.badge} size={22} />
             {worn.premium && <Crown size={15} style={{ color: "#F0B75E", filter: "drop-shadow(0 1px 2px rgba(0,0,0,.6))" }} aria-label="Premium" />}
           </span>
         </button>
