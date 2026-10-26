@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
-import { Bell, Users, Info, Trash2, Loader2, Coins, ShoppingBag, Brain } from "lucide-react";
+import { Bell, Users, Info, Trash2, Loader2, Coins, ShoppingBag, Brain, Download } from "lucide-react";
+import { useInstall, InstallSteps } from "@/components/PwaSetup";
 
 function relativeTime(dateStr) {
   const diffMs = Date.now() - new Date(dateStr).getTime();
@@ -15,6 +16,35 @@ function relativeTime(dateStr) {
 }
 
 const ICONS = { community: Users, system: Info };
+
+// Always at the top until the app is installed: tells people to put Vreedits on their phone.
+function InstallRow() {
+  const inst = useInstall();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  if (!mounted || inst.installed) return null;
+  return (
+    <div className="card flex items-center gap-3 p-3.5" style={{ background: "var(--accent-soft)" }}>
+      <img src="/icon-192.png" alt="" style={{ width: 40, height: 40, borderRadius: 10, flexShrink: 0 }} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="text-sm font-semibold">Download Vreedits</div>
+        <div className="text-xs" style={{ color: "var(--text-muted)", marginBottom: inst.canPrompt ? 0 : 2 }}>
+          Put it on your home screen and open it like a real app.
+        </div>
+        {!inst.canPrompt && <InstallSteps ios={inst.ios} />}
+      </div>
+      {inst.canPrompt && (
+        <button
+          onClick={() => inst.install()}
+          className="flex items-center gap-1.5"
+          style={{ background: "var(--accent)", color: "white", border: "none", borderRadius: 20, padding: "9px 14px", fontSize: 13, fontWeight: 600, flexShrink: 0 }}
+        >
+          <Download size={14} /> Install
+        </button>
+      )}
+    </div>
+  );
+}
 
 export default function NotificationsClient() {
   const [items, setItems] = useState([]);
@@ -71,15 +101,19 @@ export default function NotificationsClient() {
 
   if (feed.length === 0) {
     return (
-      <div className="text-center py-10">
-        <Bell size={22} style={{ color: "var(--text-muted)", margin: "0 auto 8px" }} />
-        <p className="text-sm" style={{ color: "var(--text-muted)" }}>No notifications yet.</p>
+      <div className="space-y-2">
+        <InstallRow />
+        <div className="text-center py-10">
+          <Bell size={22} style={{ color: "var(--text-muted)", margin: "0 auto 8px" }} />
+          <p className="text-sm" style={{ color: "var(--text-muted)" }}>No notifications yet.</p>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="space-y-2">
+      <InstallRow />
       {feed.map((n) => {
         const Icon = n.icon || ICONS[n.category] || Info;
         return (
