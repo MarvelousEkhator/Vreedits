@@ -4,6 +4,7 @@ import BackButton from "@/components/BackButton";
 import { Settings as SettingsIcon, Share2, ChevronDown, Loader2, X, ImageOff, Eye, Heart, MessageCircle, BookOpen, Moon, Brain, Trophy, Crown } from "lucide-react";
 import Link from "next/link";
 import GlossIcon from "@/components/GlossIcon";
+import { NameTag } from "@/components/FramedAvatar";
 
 // 1,200 -> 1.2K, 3,400,000 -> 3.4M (same style as the feed counters).
 function abbreviateCount(n) {
@@ -503,12 +504,8 @@ export default function ProfileClient({ profileId }) {
 
         {/* Name, then @username underneath */}
         {worn.nameplate && worn.nameplate.sheet && plateOk ? (
-          <div style={{ position: "relative", width: "min(280px, 94%)", aspectRatio: "2.8", display: "flex", alignItems: "center", justifyContent: "center", marginTop: -4 }}>
-            <span aria-hidden="true" style={{ position: "absolute", inset: "18% 8%", borderRadius: 999, background: "rgba(8,5,16,.92)" }} />
-            <span aria-hidden="true" style={{ position: "absolute", inset: 0, ...spriteBg(worn.nameplate.sheet, worn.nameplate.sprite) }} />
-            <h1 className="text-xl font-bold leading-tight" style={{ position: "relative", fontFamily: "var(--font-display)", color: "#fff", textShadow: "0 1px 3px #000, 0 0 8px #000", maxWidth: "70%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {displayName}
-            </h1>
+          <div style={{ marginTop: -2 }}>
+            <NameTag plate={worn.nameplate} name={displayName} width={290} />
           </div>
         ) : (
           <div className="mt-2" style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", width: "100%", columnGap: 6 }}>
