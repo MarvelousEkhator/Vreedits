@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import CommunitySettingsPage, { resolveSettingsPage } from "@/components/CommunitySettingsPages";
 import EmojiPicker, { renderMessageContent } from "@/components/EmojiPicker";
-import { TapUser } from "@/components/FramedAvatar";
+import { TapUser, WornAvatar, NameTag, useWorn } from "@/components/FramedAvatar";
 
 function relativeTime(dateStr) {
   const diffMs = Date.now() - new Date(dateStr).getTime();
@@ -46,8 +46,24 @@ function PlainAvatar({ user, size = 32 }) {
   );
 }
 
-function Avatar({ user, size }) {
-  return <TapUser user={user}><PlainAvatar user={user} size={size} /></TapUser>;
+function Avatar({ user, size = 32 }) {
+  // tiny avatars (16-18px) stay plain; everything bigger wears its frame
+  const worn = useWorn(user?.id && size >= 24 ? user.id : null);
+  return (
+    <TapUser user={user}>
+      <WornAvatar frame={worn.frame} size={size} render={(s) => <PlainAvatar user={user} size={s} />} />
+    </TapUser>
+  );
+}
+
+// A member in the members list: tap opens the profile; shows their nameplate when they have one.
+function MemberName({ m }) {
+  const worn = useWorn(m.id);
+  return (
+    <TapUser user={m}>
+      <NameTag plate={worn.nameplate} name={m.username} width={140} className="text-sm" />
+    </TapUser>
+  );
 }
 
 // refreshKey: bump it to make the pills reload (used after reacting from the action sheet)
@@ -1911,8 +1927,8 @@ export default function CommunityDetailClient({ communityId, currentUserId }) {
                   {members.map((m) => (
                     <div key={m.id} className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <Avatar user={m} size={28} />
-                        <TapUser user={m}><span className="text-sm">{m.username}</span></TapUser>
+                        <Avatar user={m} size={40} />
+                        <MemberName m={m} />
                         {m.isOwner && <Crown size={12} style={{ color: "#F0B75E" }} />}
                         {!m.isOwner && community.adminIds?.includes(m.id) && (
                           <span className="text-xs" style={{ color: "var(--accent)" }}>Admin</span>
