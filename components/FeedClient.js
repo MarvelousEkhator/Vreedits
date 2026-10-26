@@ -6,11 +6,11 @@ import {
   Heart, MessageCircle, Share2, Bookmark, RotateCw, Plus, X, Send,
   Loader2, Search, User as UserIcon, Download, Trash2, Music2,
   Volume2, VolumeX, Check, Play, Pause, Pin, Languages, Copy, ArrowLeft,
-  Star, Globe, Lock, Flag, BellOff, Bell, Mic, Upload, Pencil,
+  Star, Globe, Lock, Flag, BellOff, Bell, Mic, Upload, Pencil, Crown,
 } from "lucide-react";
 import CameraCapture from "@/components/CameraCapture";
 import GlossIcon from "@/components/GlossIcon";
-import { TapUser } from "@/components/FramedAvatar";
+import { TapUser, WornAvatar, NameTag, WornBadge, useWorn } from "@/components/FramedAvatar";
 
 // Videos are stored inside the database, so keep uploads under this size
 // (about 45 million characters of base64, roughly 33 MB of video).
@@ -65,6 +65,12 @@ function Avatar({ user, size = 40 }) {
       {(user?.displayName || user?.username)?.slice(0, 2).toUpperCase() || "?"}
     </div>
   );
+}
+
+// A person's photo with the frame they wear (used for comments).
+function FramedUserAvatar({ user, size }) {
+  const worn = useWorn(user?.id);
+  return <WornAvatar frame={worn.frame} size={size} render={(s) => <Avatar user={user} size={s} />} />;
 }
 
 function CommentActionsSheet({ comment, open, canPin, canDelete, onClose, onCopy, onTranslate, onPin, onDelete }) {
@@ -191,7 +197,7 @@ function CommentRow({ comment, postId, isReply, isPostOwner, currentUserId, onLi
       onMouseLeave={cancelPress}
       onContextMenu={(e) => { e.preventDefault(); setActionsOpen(true); }}
     >
-      <TapUser user={comment.author}><Avatar user={comment.author} size={isReply ? 24 : 28} /></TapUser>
+      <TapUser user={comment.author}><FramedUserAvatar user={comment.author} size={isReply ? 30 : 38} /></TapUser>
       <div style={{ flex: 1, minWidth: 0 }}>
         {comment.pinned && (
           <div className="flex items-center gap-1 mb-1" style={{ color: "var(--text-muted)" }}>
@@ -2232,6 +2238,7 @@ function HeartBurst({ x, y }) {
 }
 
 function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onOpenComments, onLongPress, onOpenProfile, onOpenSound, registerVideoRef, onRefresh, refreshing, onCreate }) {
+  const worn = useWorn(post.author?.id); // the full package shows here: frame, nameplate, badge, crown
   const pressTimer = useRef(null);
   const lastTapRef = useRef(0);
   const singleTapTimerRef = useRef(null);
@@ -2584,7 +2591,7 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
             aria-label="View profile"
             style={{ display: "block", background: "none", border: "none", padding: 0 }}
           >
-            <Avatar user={post.author} size={42} />
+            <WornAvatar frame={worn.frame} size={worn.frame ? 58 : 42} render={(s) => <Avatar user={post.author} size={s} />} />
           </button>
           {!isOwner && (
             <button
@@ -2676,8 +2683,10 @@ function PostCard({ post, isOwner, muted, onLike, onSave, onShare, onFollow, onO
           className="flex flex-col items-start mb-1"
           style={{ background: "none", border: "none", padding: 0, textAlign: "left" }}
         >
-          <span className="text-base font-bold drop-shadow-md" style={{ color: "white", lineHeight: 1.2 }}>
-            {post.author.displayName || post.author.username}
+          <span className="flex items-center gap-1.5">
+            <NameTag plate={worn.nameplate} name={post.author.displayName || post.author.username} width={worn.nameplate ? 200 : 0} className="text-base font-bold drop-shadow-md" style={{ color: "white", lineHeight: 1.2 }} />
+            <WornBadge badge={worn.badge} size={26} />
+            {worn.premium && <Crown size={15} style={{ color: "#F0B75E", filter: "drop-shadow(0 1px 2px rgba(0,0,0,.6))" }} aria-label="Premium" />}
           </span>
         </button>
 
