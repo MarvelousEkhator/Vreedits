@@ -73,6 +73,12 @@ export default function PwaSetup() {
     }
     window.addEventListener("beforeinstallprompt", onPrompt);
 
+    // Fade away the opening screen once the app is up (it stays at least a moment so it never just flashes).
+    const splashTimer = setTimeout(() => {
+      const el = document.getElementById("vr-splash");
+      if (el) el.classList.add("done");
+    }, 900);
+
     // Show the banner a few seconds after opening, unless they already installed it or said "not now" recently.
     let t;
     if (!isInstalled()) {
@@ -83,6 +89,7 @@ export default function PwaSetup() {
     return () => {
       window.removeEventListener("beforeinstallprompt", onPrompt);
       if (t) clearTimeout(t);
+      clearTimeout(splashTimer);
     };
   }, []);
 
