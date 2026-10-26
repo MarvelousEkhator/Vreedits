@@ -5,6 +5,7 @@ import Link from "next/link";
 import PresenceHeartbeat from "@/components/PresenceHeartbeat";
 import FeedbackPrompt from "@/components/FeedbackPrompt";
 import GlossIcon from "@/components/GlossIcon";
+import { WornAvatar, NameTag, useWorn } from "@/components/FramedAvatar";
 import iconsImg from "@/icons.webp";
 import ThemeToggle from "@/components/ThemeToggle";
 import ScreenTimeGate from "@/components/ScreenTimeGate";
@@ -163,6 +164,7 @@ function NavShellInner({ children, user }) {
 
   const userId = user?.id;
   const isGuest = !!user?.isGuest;
+  const worn = useWorn(user && !user.isGuest ? user.id : null);
   const loadWallet = useCallback(async () => {
     if (!userId || isGuest) { setWallet(null); return; }
     try {
@@ -498,16 +500,29 @@ function NavShellInner({ children, user }) {
 
         <div className="vreedits-profile-block">
           <div style={{ position: "relative" }} ref={profileRef}>
-            <div className="vreedits-avatar-wrap" onClick={toggleProfileMenu}>
-              {user?.avatarDataUrl ? (
-                <img className="vreedits-avatar" src={user.avatarDataUrl} alt="Profile" />
-              ) : (
-                <div className="vreedits-avatar">{(user?.displayName || user?.username)?.slice(0, 2).toUpperCase()}</div>
-              )}
-              <span className={`vreedits-status-dot ${user?.online ? "online" : "offline"}`} />
-            </div>
+            {worn.frame ? (
+              <div style={{ position: "relative", width: 96, height: 96, margin: "-8px 0 -6px", cursor: "pointer" }} onClick={toggleProfileMenu}>
+                <WornAvatar frame={worn.frame} size={96} render={(sz) => (
+                  user?.avatarDataUrl ? (
+                    <img className="vreedits-avatar" style={{ width: sz, height: sz }} src={user.avatarDataUrl} alt="Profile" />
+                  ) : (
+                    <div className="vreedits-avatar" style={{ width: sz, height: sz }}>{(user?.displayName || user?.username)?.slice(0, 2).toUpperCase()}</div>
+                  )
+                )} />
+                <span className={`vreedits-status-dot ${user?.online ? "online" : "offline"}`} style={{ bottom: 14, right: 14 }} />
+              </div>
+            ) : (
+              <div className="vreedits-avatar-wrap" onClick={toggleProfileMenu}>
+                {user?.avatarDataUrl ? (
+                  <img className="vreedits-avatar" src={user.avatarDataUrl} alt="Profile" />
+                ) : (
+                  <div className="vreedits-avatar">{(user?.displayName || user?.username)?.slice(0, 2).toUpperCase()}</div>
+                )}
+                <span className={`vreedits-status-dot ${user?.online ? "online" : "offline"}`} />
+              </div>
+            )}
             <div className="vreedits-name-row" onClick={toggleProfileMenu}>
-              <span className="vreedits-display-name">{user?.displayName || user?.username}</span>
+              <NameTag plate={worn.nameplate} name={user?.displayName || user?.username} width={200} className="vreedits-display-name" />
             </div>
             <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 1 }}>
               @{user?.username?.toLowerCase()}
