@@ -59,13 +59,15 @@ export function FramedAvatar({ frame, size = 48, children }) {
 // Photo + frame for lists, chats and menus. It always takes exactly `size` pixels of room, so rows
 // never get pushed around; the frame's decoration just spills a little over the edge.
 // Use: <WornAvatar frame={worn.frame} size={44} render={(s) => <Avatar user={u} size={s} />} />
-export function WornAvatar({ frame, size = 40, render, children }) {
+export function WornAvatar({ frame, size = 40, render, children, contain = false }) {
   const file = frame && frame.sheet ? frame.sheet.file : null;
   const ok = useSheetOk(file);
   const draw = (s) => (render ? render(s) : children);
   if (frame && frame.sheet && frame.sprite != null && ok) {
-    const photo = Math.round(size * 0.8);
-    const O = Math.round(photo / Math.max(frame.fit || 0.6, 0.62));
+    // contain: the whole frame stays inside `size` (nothing spills over the video or picture next to it)
+    const fit = Math.max(frame.fit || 0.6, contain ? 0.5 : 0.62);
+    const photo = contain ? Math.round(size * fit) : Math.round(size * 0.8);
+    const O = contain ? size : Math.round(photo / fit);
     return (
       <span style={{ position: "relative", display: "inline-flex", alignItems: "center", justifyContent: "center", width: size, height: size, flexShrink: 0 }}>
         {draw(photo)}
