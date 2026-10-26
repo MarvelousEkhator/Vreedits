@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ChevronRight, Loader2, Zap, Coins } from "lucide-react";
 import { useLanguage } from "@/components/LanguageProvider";
 import GlossIcon from "@/components/GlossIcon";
+import { NameTag } from "@/components/FramedAvatar";
 
 // Remember which picture files load, so a missing file never leaves a blank gap.
 const sheetState = {};
@@ -139,6 +140,7 @@ export default function DashboardClient({ user }) {
   const [gym, setGym] = useState(null);
   const [wallet, setWallet] = useState(null);
   const [frame, setFrame] = useState(null);
+  const [plate, setPlate] = useState(null);
   const frameOk = useSheetOk(frame && frame.sheet ? frame.sheet.file : null);
   const [greeting, setGreeting] = useState("");
 
@@ -173,7 +175,7 @@ export default function DashboardClient({ user }) {
       // The frame you chose in the shop (if any) around your photo.
       fetch("/api/store", { cache: "no-store" })
         .then((r) => (r.ok ? r.json() : null))
-        .then((d) => { if (d && d.equipped) setFrame(d.equipped.frame || null); })
+        .then((d) => { if (d && d.equipped) { setFrame(d.equipped.frame || null); setPlate(d.equipped.nameplate || null); } })
         .catch(() => {});
 
       // Your wallet lives on Home. Stays hidden if it can't be loaded.
@@ -302,7 +304,7 @@ export default function DashboardClient({ user }) {
         </FramedAvatar>
         <div style={{ minWidth: 0 }}>
           <div className="dh-greet">{greeting || t("dash.welcomeBack")}</div>
-          <div className="dh-name">{name}</div>
+          <NameTag plate={plate} name={name} width={210} className="dh-name" plainTag="div" />
         </div>
       </div>
 
