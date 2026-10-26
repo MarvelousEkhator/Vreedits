@@ -5,7 +5,7 @@ import {
   ArrowLeft, Loader2, AlertCircle, Users, Timer, Send, UserPlus,
   X, Coffee, BookOpen, LogOut, StopCircle,
 } from "lucide-react";
-import { TapUser } from "@/components/FramedAvatar";
+import { TapUser, WornAvatar, useEquippedMap } from "@/components/FramedAvatar";
 
 const POLL_MS = 4000;
 
@@ -47,6 +47,7 @@ function groupMessages(messages) {
 export default function StudyRoomClient({ roomId }) {
   const router = useRouter();
   const [room, setRoom] = useState(null);
+  const wornMap = useEquippedMap(room ? [...(room.members || []).map((m) => m.userId), ...(room.messages || []).map((m) => m.userId)] : []);
   const [myStatus, setMyStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -311,13 +312,15 @@ export default function StudyRoomClient({ roomId }) {
                   <div key={m.id} className="card p-2.5 flex items-center gap-2">
                     <Icon size={14} style={{ color: cfg.color, flexShrink: 0 }} />
                     <TapUser user={m.user} style={{ flex: 1, alignItems: "center", gap: 8 }}>
-                      {m.user?.avatarDataUrl ? (
-                        <img src={m.user.avatarDataUrl} alt="" style={{ width: 24, height: 24, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
-                      ) : (
-                        <span style={{ width: 24, height: 24, borderRadius: "50%", flexShrink: 0, background: "var(--accent-soft)", color: "var(--accent)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700 }}>
-                          {displayNameOf(m.user).slice(0, 2).toUpperCase()}
-                        </span>
-                      )}
+                      <WornAvatar frame={wornMap[m.userId]?.frame} size={36} render={(sz) => (
+                        m.user?.avatarDataUrl ? (
+                          <img src={m.user.avatarDataUrl} alt="" style={{ width: sz, height: sz, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
+                        ) : (
+                          <span style={{ width: sz, height: sz, borderRadius: "50%", flexShrink: 0, background: "var(--accent-soft)", color: "var(--accent)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: sz * 0.4, fontWeight: 700 }}>
+                            {displayNameOf(m.user).slice(0, 2).toUpperCase()}
+                          </span>
+                        )
+                      )} />
                       <span className="text-sm font-medium">
                         {displayNameOf(m.user)}{m.userId === room.hostId ? " (host)" : ""}
                       </span>
@@ -338,13 +341,15 @@ export default function StudyRoomClient({ roomId }) {
                   groupMessages(room.messages).map((group, gi) => (
                     <div key={gi} className="flex items-start gap-2.5">
                       <TapUser user={group.user} style={{ marginTop: 2 }}>
-                        {group.user?.avatarDataUrl ? (
-                          <img src={group.user.avatarDataUrl} alt="" style={{ width: 34, height: 34, borderRadius: "50%", objectFit: "cover" }} />
-                        ) : (
-                          <div style={{ width: 34, height: 34, borderRadius: "50%", background: "var(--accent-soft)", color: "var(--accent)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, fontFamily: "var(--font-display)" }}>
-                            {group.username.slice(0, 2).toUpperCase()}
-                          </div>
-                        )}
+                        <WornAvatar frame={wornMap[group.userId]?.frame} size={42} render={(sz) => (
+                          group.user?.avatarDataUrl ? (
+                            <img src={group.user.avatarDataUrl} alt="" style={{ width: sz, height: sz, borderRadius: "50%", objectFit: "cover" }} />
+                          ) : (
+                            <div style={{ width: sz, height: sz, borderRadius: "50%", background: "var(--accent-soft)", color: "var(--accent)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: sz * 0.36, fontWeight: 700, fontFamily: "var(--font-display)" }}>
+                              {group.username.slice(0, 2).toUpperCase()}
+                            </div>
+                          )
+                        )} />
                       </TapUser>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div className="flex items-baseline gap-2">
