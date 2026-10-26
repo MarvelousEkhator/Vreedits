@@ -1030,6 +1030,14 @@ model AnalyticsEvent {
   @@index([visitorId, ts])
   @@index([sessionId])
   @@map("analytics_events")
+ // People with accounts who opened the app (who signed up, and where they came from). Used by the analytics page.
+model AnalyticsMember {
+  userId    String   @id @map("user_id")
+  visitorId String   @map("visitor_id")
+  firstTs   DateTime @default(now()) @map("first_ts") @db.Timestamptz(6)
+  lastTs    DateTime @default(now()) @map("last_ts") @db.Timestamptz(6)
+
+  @@map("analytics_members")
 }
 
 model Block {
