@@ -3,10 +3,10 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { UserPlus, Check, X as XIcon, Loader2, MoreVertical, Ban, Flag, Bookmark, Clock } from "lucide-react";
 import GlossIcon from "@/components/GlossIcon";
-import { FramedAvatar, useEquippedMap } from "@/components/FramedAvatar";
+import { WornAvatar, NameTag, useEquippedMap } from "@/components/FramedAvatar";
 
 function Avatar({ user, size = 44, frame }) {
-  if (frame) return <FramedAvatar frame={frame} size={size}><Avatar user={user} size={size} /></FramedAvatar>;
+  if (frame) return <WornAvatar frame={frame} size={size} render={(s) => <Avatar user={user} size={s} />} />;
   if (user?.avatarDataUrl) {
     return <img src={user.avatarDataUrl} alt="" style={{ width: size, height: size, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />;
   }
@@ -162,7 +162,6 @@ export default function InboxClient({ currentUserId }) {
 
   const [menuFriendId, setMenuFriendId] = useState(null);
   const [blockingId, setBlockingId] = useState(null);
-  const [pendingOpen, setPendingOpen] = useState(false); // the small Pending box
   const pressTimer = useRef(null);
   const worn = useEquippedMap(conversations.map((c) => c.friend && c.friend.id));
 
@@ -288,16 +287,6 @@ export default function InboxClient({ currentUserId }) {
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
-        {outgoing.length > 0 && (
-          <button
-            onClick={() => setPendingOpen(true)}
-            aria-label={`Pending requests (${outgoing.length})`}
-            style={{ position: "relative", background: "var(--surface-2)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 14, width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
-          >
-            <Clock size={18} />
-            <span className="ib-badge" style={{ position: "absolute", top: -6, right: -6 }}>{outgoing.length}</span>
-          </button>
-        )}
         <button
           onClick={() => setAddOpen((v) => !v)}
           className="btn-primary"
@@ -307,6 +296,35 @@ export default function InboxClient({ currentUserId }) {
           <UserPlus size={16} />
         </button>
       </div>
+
+      {outgoing.length > 0 && (
+        <div className="mb-3" style={{ border: "1px solid var(--border)", borderRadius: 14, background: "var(--surface-2)", overflow: "hidden" }}>
+          <div className="flex items-center gap-2" style={{ padding: "8px 12px", fontSize: 12.5, fontWeight: 700, color: "var(--text-muted)", borderBottom: "1px solid var(--border)" }}>
+            <Clock size={14} /> Pending requests
+            <span className="ib-badge" style={{ marginLeft: "auto" }}>{outgoing.length}</span>
+          </div>
+          <div style={{ maxHeight: 112, overflowY: "auto" }}>
+            {outgoing.map((r) => (
+              <div key={r.id} className="flex items-center justify-between gap-2" style={{ padding: "6px 12px" }}>
+                <div className="flex items-center gap-2" style={{ minWidth: 0 }}>
+                  <Avatar user={r.receiver} size={26} />
+                  <span style={{ fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {r.receiver.displayName || r.receiver.username}
+                  </span>
+                </div>
+                <button
+                  onClick={() => handleUnsend(r.id)}
+                  disabled={unsendingId === r.id}
+                  className="flex-shrink-0"
+                  style={{ background: "var(--surface)", color: "var(--text-muted)", border: "1px solid var(--border)", borderRadius: 999, padding: "3px 10px", fontSize: 11.5, fontWeight: 600 }}
+                >
+                  {unsendingId === r.id ? <Loader2 size={11} className="animate-spin" /> : "Unsend"}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {addOpen && (
         <form onSubmit={handleAddFriend} className="card p-3 mb-3 space-y-2">
@@ -340,7 +358,7 @@ export default function InboxClient({ currentUserId }) {
                 <div style={{ position: "relative" }}>
                   <div style={{ padding: 2, borderRadius: "50%", background: "var(--accent-btn)" }}>
                     <div style={{ padding: 2, borderRadius: "50%", background: "var(--surface)", lineHeight: 0 }}>
-                      <Avatar user={friend} size={50} frame={worn[friend.id]?.frame} />
+                      <Avatar user={friend} size={56} frame={worn[friend.id]?.frame} />
                     </div>
                   </div>
                   <span
@@ -424,7 +442,7 @@ export default function InboxClient({ currentUserId }) {
             >
               <Link href={`/inbox/${friend.username}`} className={`ib-row ${isSelf ? "self" : ""}`}>
                 <div style={{ position: "relative", flexShrink: 0 }}>
-                  <Avatar user={friend} size={52} frame={!isSelf ? worn[friend.id]?.frame : undefined} />
+                  <Avatar user={friend} size={!isSelf && worn[friend.id]?.frame ? 62 : 52} frame={!isSelf ? worn[friend.id]?.frame : undefined} />
                   {isSelf ? (
                     <span
                       style={{
@@ -447,9 +465,12 @@ export default function InboxClient({ currentUserId }) {
                 </div>
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div className="flex items-center justify-between gap-2">
-                    <span style={{ fontSize: 15, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {isSelf ? "You" : (friend.displayName || friend.username)}
-                    </span>
+                    <NameTag
+                      plate={!isSelf ? worn[friend.id]?.nameplate : null}
+                      name={isSelf ? "You" : (friend.displayName || friend.username)}
+                      width={132}
+                      style={{ fontSize: 15, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}
+                    />
                     <span className="text-xs" style={{ color: unreadCount > 0 ? "var(--accent)" : "var(--text-muted)", fontWeight: unreadCount > 0 ? 700 : 400, flexShrink: 0 }}>
                       {relativeTime(lastMessage?.createdAt)}
                     </span>
@@ -472,47 +493,6 @@ export default function InboxClient({ currentUserId }) {
             </div>
           ))}
         </div>
-      )}
-
-      {pendingOpen && (
-        <>
-          <div onClick={() => setPendingOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 200 }} />
-          <div
-            className="card"
-            style={{ position: "fixed", left: 12, right: 12, bottom: "calc(12px + var(--safe-b))", zIndex: 201, padding: 14, maxWidth: 440, margin: "0 auto", maxHeight: "70vh", display: "flex", flexDirection: "column" }}
-          >
-            <div className="flex items-center justify-between mb-2">
-              <div className="ib-label" style={{ margin: 0 }}>Pending requests ({outgoing.length})</div>
-              <button onClick={() => setPendingOpen(false)} aria-label="Close" style={{ background: "none", border: "none", color: "var(--text-muted)", padding: 4 }}>
-                <XIcon size={18} />
-              </button>
-            </div>
-            {outgoing.length === 0 ? (
-              <p className="text-sm" style={{ color: "var(--text-muted)", padding: "12px 0" }}>Nothing waiting.</p>
-            ) : (
-              <div style={{ overflowY: "auto" }}>
-                {outgoing.map((r) => (
-                  <div key={r.id} className="flex items-center justify-between gap-2.5 py-2" style={{ borderBottom: "1px solid var(--border)" }}>
-                    <div className="flex items-center gap-2.5" style={{ minWidth: 0 }}>
-                      <Avatar user={r.receiver} size={34} />
-                      <span className="text-sm" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {r.receiver.displayName || r.receiver.username}
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => handleUnsend(r.id)}
-                      disabled={unsendingId === r.id}
-                      className="text-xs font-semibold flex-shrink-0"
-                      style={{ background: "var(--surface-2)", color: "var(--text-muted)", border: "none", borderRadius: 999, padding: "6px 12px" }}
-                    >
-                      {unsendingId === r.id ? <Loader2 size={12} className="animate-spin" /> : "Unsend"}
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </>
       )}
 
       {menuFriend && (
