@@ -3,28 +3,46 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Vreedits is offline</title>
+  <meta name="theme-color" content="#13051f" />
+  <title>Vreedits</title>
   <style>
     html, body { height: 100%; margin: 0; }
     body {
       display: flex; flex-direction: column; align-items: center; justify-content: center;
-      text-align: center; padding: 24px; color: #fff;
+      text-align: center; padding: 24px; color: #fff; background: #13051f;
       font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-      background: linear-gradient(160deg, #02060E, #9303C5);
     }
-    img { width: 96px; height: 96px; border-radius: 22px; margin-bottom: 20px; }
-    h1 { font-size: 24px; margin: 0 0 8px; }
-    p { margin: 0 0 24px; opacity: 0.85; max-width: 320px; line-height: 1.5; }
-    button {
-      border: none; border-radius: 24px; padding: 12px 24px; font-size: 15px; font-weight: 600;
-      background: #fff; color: #5b0680; cursor: pointer;
-    }
+    img { width: 108px; height: 108px; border-radius: 26px; box-shadow: 0 10px 40px rgba(124,58,237,.45); animation: pulse 1.8s ease-in-out infinite; }
+    h1 { font-size: 22px; margin: 26px 0 8px; }
+    p { margin: 0; opacity: .8; max-width: 300px; line-height: 1.5; font-size: 14.5px; }
+    .bar { width: 160px; height: 4px; border-radius: 4px; background: rgba(255,255,255,.15); margin-top: 24px; overflow: hidden; }
+    .bar i { display: block; width: 40%; height: 100%; border-radius: 4px; background: #c4b5fd; animation: slide 1.3s ease-in-out infinite; }
+    button { margin-top: 26px; border: none; border-radius: 24px; padding: 11px 22px; font-size: 14px; font-weight: 600; background: #fff; color: #4c1d95; cursor: pointer; }
+    @keyframes pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+    @keyframes slide { 0% { margin-left: -40%; } 100% { margin-left: 100%; } }
   </style>
 </head>
 <body>
   <img src="/icon-192.png" alt="Vreedits" />
-  <h1>You're offline</h1>
-  <p>Vreedits needs a connection to load your study tools. Check your internet and try again.</p>
-  <button onclick="location.reload()">Try again</button>
+  <h1 id="t">Getting Vreedits ready…</h1>
+  <p id="m">Waking things up. The first open after a quiet while can take up to a minute. This page opens the app by itself.</p>
+  <div class="bar"><i></i></div>
+  <button onclick="location.reload()">Try now</button>
+  <script>
+    // Ask the server every few seconds; the moment it answers, open the real page.
+    function check() {
+      if (!navigator.onLine) {
+        document.getElementById("t").textContent = "No connection";
+        document.getElementById("m").textContent = "Check your internet. Vreedits will open by itself when you're back online.";
+        return;
+      }
+      document.getElementById("t").textContent = "Getting Vreedits ready…";
+      fetch("/icon-192.png?ping=" + Date.now(), { cache: "no-store" })
+        .then(function (r) { if (r.ok && (r.headers.get("content-type") || "").indexOf("image/png") === 0) location.reload(); })
+        .catch(function () {});
+    }
+    setInterval(check, 3000);
+    window.addEventListener("online", check);
+  </script>
 </body>
 </html>
