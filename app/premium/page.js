@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { Loader2, AlertCircle, Crown, Coins, Check, Zap, BookOpen, Moon, Brain, Trophy } from "lucide-react";
 import NavShell from "@/components/NavShell";
 
@@ -95,6 +96,7 @@ function dateText(d) {
 }
 
 export default function PremiumPage() {
+  const router = useRouter();
   const [user, setUser] = useState(null);
   const [store, setStore] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -137,7 +139,8 @@ export default function PremiumPage() {
     if (!txRef) return;
     verified.current = true;
     const status = p.get("status");
-    window.history.replaceState({}, "", "/premium");
+    // Clean the payment details out of the address bar the way Next.js expects (a raw history call can break the page).
+    router.replace("/premium", { scroll: false });
     if (status === "cancelled") { setNotice({ kind: "err", text: "Payment cancelled. You were not charged." }); return; }
     setBusy("verify");
     (async () => {
@@ -159,7 +162,7 @@ export default function PremiumPage() {
       }
       setBusy("");
     })();
-  }, [store, loadStore]);
+  }, [store, loadStore, router]);
 
   async function post(body) {
     const res = await fetch("/api/store", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
