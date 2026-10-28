@@ -90,6 +90,18 @@ function Preview({ it, Icon }) {
   return <span className="pm-badge">{Icon ? <Icon size={22} /> : null}</span>;
 }
 
+// Flutterwave's payment box (loaded only when someone taps Buy)
+function loadFlutterwave() {
+  return new Promise((resolve, reject) => {
+    if (window.FlutterwaveCheckout) return resolve();
+    const s = document.createElement("script");
+    s.src = "https://checkout.flutterwave.com/v3.js";
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error("Could not load the payment box."));
+    document.body.appendChild(s);
+  });
+}
+
 function fmt(n) { return Number(n || 0).toLocaleString("en-US"); }
 function dateText(d) {
   try { return new Date(d).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" }); } catch { return ""; }
@@ -131,7 +143,29 @@ export default function PremiumPage() {
     })();
   }, [loadStore]);
 
-  // Coming back from the payment page: confirm it with the server, then clean the address bar.
+  // Ask the server to confirm a payment with Flutterwave, then show the result and refresh the wallet.
+  const verifyPayment = useCallback(async (txRef, transactionId) => {
+    setBusy("verify");
+    try {
+      const res = await fetch("/api/store", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "verify", txRef, transactionId: transactionId || null }),
+      });
+      const d = await res.json();
+      if (d.ok) {
+        setNotice({ kind: "ok", text: d.already ? "That payment was already added to your wallet." : `${fmt(d.vcoins)} V-Coins added to your wallet.` });
+        await loadStore();
+        window.dispatchEvent(new Event("vreedits:wallet-changed"));
+      } else {
+        setNotice({ kind: d.pending ? "ok" : "err", text: d.error || "We couldn't confirm the payment." });
+      }
+    } catch {
+      setNotice({ kind: "err", text: "Couldn't confirm the payment. If you were charged, your V-Coins will appear shortly." });
+    }
+    setBusy("");
+  }, [loadStore]);
+
+  // Older way: coming back from Flutterwave's own page with the payment details in the address.
   useEffect(() => {
     if (!store || verified.current) return;
     const p = new URLSearchParams(window.location.search);
@@ -142,27 +176,8 @@ export default function PremiumPage() {
     // Clean the payment details out of the address bar the way Next.js expects (a raw history call can break the page).
     router.replace("/premium", { scroll: false });
     if (status === "cancelled") { setNotice({ kind: "err", text: "Payment cancelled. You were not charged." }); return; }
-    setBusy("verify");
-    (async () => {
-      try {
-        const res = await fetch("/api/store", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "verify", txRef, transactionId: p.get("transaction_id") }),
-        });
-        const d = await res.json();
-        if (d.ok) {
-          setNotice({ kind: "ok", text: d.already ? "That payment was already added to your wallet." : `${fmt(d.vcoins)} V-Coins added to your wallet.` });
-          await loadStore();
-          window.dispatchEvent(new Event("vreedits:wallet-changed"));
-        } else {
-          setNotice({ kind: d.pending ? "ok" : "err", text: d.error || "We couldn't confirm the payment." });
-        }
-      } catch {
-        setNotice({ kind: "err", text: "Couldn't confirm the payment. If you were charged, your V-Coins will appear shortly." });
-      }
-      setBusy("");
-    })();
-  }, [store, loadStore, router]);
+    verifyPayment(txRef, p.get("transaction_id"));
+  }, [store, verifyPayment, router]);
 
   async function post(body) {
     const res = await fetch("/api/store", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -174,6 +189,30 @@ export default function PremiumPage() {
     setNotice(null); setBusy(packId);
     try {
       const { res, data } = await post({ action: "buy", packId });
+      if (res.ok && data.inline) {
+        // The payment box opens on top of this page. Nothing to return to, so nothing can go blank.
+        const i = data.inline;
+        await loadFlutterwave();
+        let answered = false;
+        window.FlutterwaveCheckout({
+          public_key: i.publicKey,
+          tx_ref: i.txRef,
+          amount: i.amount,
+          currency: i.currency,
+          customer: i.customer,
+          customizations: { title: "Vreedits", description: i.description, logo: window.location.origin + "/icon-192.png" },
+          callback: (r) => {
+            answered = true;
+            const ok = r && (r.status === "successful" || r.status === "completed");
+            if (ok) verifyPayment(i.txRef, r.transaction_id);
+            else { setNotice({ kind: "err", text: "Payment was not completed. You were not charged." }); setBusy(""); }
+          },
+          onclose: () => {
+            if (!answered) { setBusy(""); loadStore().catch(() => {}); } // paid but closed early? the wallet check below picks it up
+          },
+        });
+        return;
+      }
       if (res.ok && data.link) { window.location.href = data.link; return; }
       setNotice({ kind: "err", text: data.error || "Could not start the payment." });
     } catch {
