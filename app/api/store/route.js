@@ -61,8 +61,8 @@ export async function POST(req) {
 
   try {
     if (body.action === "buy") {
-      const { link } = await startPurchase(user, String(body.packId || ""));
-      return NextResponse.json({ ok: true, link });
+      const out = await startPurchase(user, String(body.packId || ""));
+      return NextResponse.json({ ok: true, link: out.link || null, inline: out.inline || null, txRef: out.txRef });
     }
 
     if (body.action === "verify") {
