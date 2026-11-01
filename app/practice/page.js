@@ -324,7 +324,7 @@ export default function PracticePage() {
   if (phase === "setup") {
     return (
       <div style={wrap}>
-        <h1 style={{ fontSize: 24, fontWeight: 800, color: "var(--text)", margin: "4px 0 4px" }}>Exam practice</h1>
+        <h1 style={{ fontFamily: "var(--font-display)", fontSize: 42, fontWeight: 400, lineHeight: 1.05, color: "var(--text)", margin: "2px 0 6px" }}>Exam practice</h1>
         <p style={{ color: "var(--text-muted)", fontSize: 14, margin: "0 0 14px" }}>
           {cfg.intro}
         </p>
