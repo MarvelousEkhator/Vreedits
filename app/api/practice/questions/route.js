@@ -46,6 +46,7 @@ Rules:
 - Solve each question carefully and double-check the correct option before you write it down. Do not write a question you are not certain about.
 - Do not copy real past questions. Write new ones.
 - "why" is one or two short sentences explaining the correct answer.
+- Write maths in plain classroom signs a Nigerian secondary-school student sees in a textbook. Use × for multiply and ÷ for divide. Write powers with superscript digits (x², 2³), roots as √ (for example √36, ∛27), fractions as 3/4, and π for pi. Do NOT use ^, *, LaTeX, backslashes, dollar signs or code-style notation. Do not use fractional powers like 27^(1/3); write ∛27 instead.
 Return ONLY JSON, with no other text, in exactly this shape:
 {"questions":[{"q":"question text","options":["A","B","C","D"],"answer":0,"why":"short explanation"}]}
 "answer" is the index (0 to 3) of the correct option.`;
