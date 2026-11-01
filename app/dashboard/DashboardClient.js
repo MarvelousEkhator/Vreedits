@@ -124,6 +124,7 @@ function greetingFor(hour) {
 }
 
 const SHORTCUTS = [
+  { label: "Exam practice", sub: "Timed, like the real test", href: "/practice", gloss: "school" },
   { label: "Ask Syna", sub: "Chat or upload notes", href: "/ai-tools/chat", gloss: "ai-tools" },
   { label: "Study planner", sub: "Plan your revision", href: "/ai-tools/study-planner", gloss: "planner" },
   { label: "Summarizer", sub: "Shrink long notes", href: "/ai-tools/summarizer", gloss: "summarizer" },
@@ -143,11 +144,20 @@ export default function DashboardClient({ user }) {
   const [plate, setPlate] = useState(null);
   const frameOk = useSheetOk(frame && frame.sheet ? frame.sheet.file : null);
   const [greeting, setGreeting] = useState("");
+  const [exam, setExam] = useState(null); // { days, last } for the practice card (Nigeria only)
 
   const name = user.displayName || user.username;
 
   useEffect(() => {
     setGreeting(greetingFor(new Date().getHours()));
+    try {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+      if (!tz || tz.startsWith("Africa/")) {
+        const days = Math.max(0, Math.ceil((new Date("2027-03-15T08:00:00+01:00") - Date.now()) / 86400000));
+        const list = JSON.parse(localStorage.getItem("vreedits.practice.attempts") || "[]");
+        setExam({ days, last: list[0] || null });
+      }
+    } catch {}
     let removeWalletListeners = null;
     claimLocalProgress(user.id);
     const local = loadGym();
@@ -249,6 +259,16 @@ export default function DashboardClient({ user }) {
         .dh-label { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); margin: 22px 0 10px; display: flex; justify-content: space-between; align-items: baseline; }
         .dh-label a { color: var(--accent); letter-spacing: 0; text-transform: none; font-size: 12.5px; font-weight: 600; }
 
+        .dh-exam {
+          display: flex; align-items: center; gap: 14px; padding: 14px 16px; margin-bottom: 12px; border-radius: 20px;
+          background: var(--accent-btn); color: #fff; text-decoration: none;
+          box-shadow: inset 0 1px 0 var(--btn-hi, rgba(255,255,255,0.3)), 0 4px 0 var(--btn-edge, rgba(0,0,0,0.3));
+          transition: transform 0.08s ease, box-shadow 0.08s ease;
+        }
+        .dh-exam:active { transform: translateY(3px); box-shadow: inset 0 1px 0 var(--btn-hi, rgba(255,255,255,0.3)), 0 1px 0 var(--btn-edge, rgba(0,0,0,0.3)); }
+        .dh-exam-num { font-size: 38px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+        .dh-exam-title { font-size: 14px; font-weight: 700; }
+        .dh-exam-sub { font-size: 12.5px; opacity: 0.9; margin-top: 2px; }
         .dh-streak {
           display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 16px;
           border-radius: 20px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 4px 0 var(--border);
@@ -307,6 +327,21 @@ export default function DashboardClient({ user }) {
           <NameTag plate={plate} name={name} width={210} className="dh-name" plainTag="div" />
         </div>
       </div>
+
+      {exam && (
+        <Link href="/practice" className="dh-exam">
+          <div className="dh-exam-num">{exam.days}</div>
+          <div style={{ minWidth: 0 }}>
+            <div className="dh-exam-title">days to UTME (provisional)</div>
+            <div className="dh-exam-sub">
+              {exam.last
+                ? `Last practice: ${exam.last.score}/${exam.last.total}. Keep going`
+                : "Take a 20-question timed mock now"}
+            </div>
+          </div>
+          <ChevronRight size={18} style={{ color: "#fff", flexShrink: 0, marginLeft: "auto" }} />
+        </Link>
+      )}
 
       <Link href="/mind-gym" className="dh-streak">
         <div>
