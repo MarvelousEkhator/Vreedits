@@ -62,6 +62,24 @@ const BANK = [
   ["Chemistry", "Rusting of iron needs", ["oxygen only", "water only", "oxygen and water", "nitrogen"], 2, "Iron rusts when both oxygen and water are present."],
 ].map((r, i) => ({ id: i, sub: r[0], q: r[1], o: r[2], a: r[3], why: r[4] }));
 
+
+// Turns maths written the computer way into the signs students see in textbooks.
+const SUP = { "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹", "-": "⁻", "+": "⁺", "n": "ⁿ" };
+const toSup = (t) => t.split("").map((c) => SUP[c] || c).join("");
+function pretty(str) {
+  let t = String(str || "");
+  t = t.replace(/\$/g, "").replace(/\\left|\\right/g, "");
+  t = t.replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, "($1)/($2)");
+  t = t.replace(/\\times|\\cdot/g, "×").replace(/\\div/g, "÷");
+  t = t.replace(/\\sqrt\{([^{}]+)\}/g, "√($1)").replace(/\\pi/g, "π").replace(/\\(le|leq)\b/g, "≤").replace(/\\(ge|geq)\b/g, "≥");
+  t = t.replace(/sqrt\(/gi, "√(").replace(/cbrt\(/gi, "∛(");
+  t = t.replace(/(\d+)\^\(1\/2\)/g, "√$1").replace(/(\d+)\^\(1\/3\)/g, "∛$1").replace(/(\d+)\^\(2\/3\)/g, "(∛$1)²").replace(/(\d+)\^\(1\/4\)/g, "⁴√$1");
+  t = t.replace(/\^\(?(-?\d+)\)?(?!\s*\/\s*\d)/g, (_, d) => toSup(d));
+  t = t.replace(/\s\*\s|(?<=\d|\))\*(?=\d|\()/g, " × ");
+  t = t.replace(/\{|\}/g, "");
+  return t;
+}
+
 function shuffle(arr) {
   const a = arr.slice();
   for (let i = a.length - 1; i > 0; i--) {
@@ -123,7 +141,7 @@ export default function PracticePage() {
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) { setFreshErr(d.error || "Could not get fresh questions."); return; }
-      const list = d.questions.map((q, i) => ({ ...q, id: `f${i}`, sub: s }));
+      const list = d.questions.map((q, i) => ({ ...q, id: `f${i}`, sub: s, q: pretty(q.q), o: q.o.map(pretty), why: pretty(q.why) }));
       retryRef.current = () => startFresh(s);
       start(`${s} · fresh from Syna`, list, 10);
     } catch {
@@ -374,7 +392,9 @@ export default function PracticePage() {
         <div style={{ color: "var(--text-muted)" }}>{pct}% · time {mmss(usedSecs)}</div>
         {weakest && weakest[1].right < weakest[1].total && (
           <p style={{ marginTop: 12, fontSize: 14, color: "var(--text)" }}>
-            Syna says: start with <b>{weakest[0]}</b> next. You got {weakest[1].right} of {weakest[1].total} there.
+            {subs.length > 1
+              ? <>Syna says: start with <b>{weakest[0]}</b> next. You got {weakest[1].right} of {weakest[1].total} there.</>
+              : <>Syna says: read the explanations below for the ones you missed, then try again.</>}
           </p>
         )}
       </div>
