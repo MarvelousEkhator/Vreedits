@@ -222,6 +222,7 @@ export default function PracticePage() {
   const [freshErr, setFreshErr] = useState("");
   const retryRef = useRef(null);
   const [market, setMarket] = useState("NG");
+  const [me, setMe] = useState(null); // { classLevel, country }
   const cfg = MARKETS[market];
   const SUBJECTS = cfg.subjects;
   const BANK = BANKS[market];
@@ -231,7 +232,17 @@ export default function PracticePage() {
 
   useEffect(() => {
     setAttempts(loadAttempts());
-    try { const m = localStorage.getItem("vreedits.practice.market"); setMarket(MARKETS[m] ? m : guessMarket()); } catch { setMarket(guessMarket()); }
+    let saved = null;
+    try { const m = localStorage.getItem("vreedits.practice.market"); if (MARKETS[m]) saved = m; } catch {}
+    setMarket(saved || guessMarket());
+    fetch("/api/practice/questions", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!d) return;
+        setMe({ classLevel: d.classLevel, country: d.country });
+        if (!saved && d.market && MARKETS[d.market]) setMarket(d.market);
+      })
+      .catch(() => {});
   }, []);
   function pickMarket(m) {
     setMarket(m); setFreshErr("");
@@ -318,6 +329,11 @@ export default function PracticePage() {
           {cfg.intro}
         </p>
 
+        {me && me.classLevel && (
+          <div style={{ fontSize: 13, color: "var(--text-muted)", margin: "-6px 0 12px" }}>
+            Your level from sign-up: <b style={{ color: "var(--text)" }}>{me.classLevel}</b>. Fresh Syna questions are pitched to it.
+          </div>
+        )}
         <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
           {Object.entries(MARKETS).map(([k, m]) => (
             <button key={k} className={k === market ? "btn-soft" : "raise"} onClick={() => pickMarket(k)}
