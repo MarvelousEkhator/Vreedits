@@ -12,10 +12,60 @@ import { Flag, Clock, ChevronLeft, ChevronRight, CheckCircle2, XCircle } from "l
 const EXAM_DATE = new Date("2027-03-15T08:00:00+01:00"); // provisional UTME start
 const STORE_KEY = "vreedits.practice.attempts";
 
-const SUBJECTS = ["English", "Mathematics", "Biology", "Physics", "Chemistry"];
+const MARKETS = {
+  NG: {
+    label: "Nigeria", exam: "UTME",
+    subjects: ["English", "Mathematics", "Biology", "Physics", "Chemistry"],
+    intro: "Timed, like the real computer-based test. Answer first, then see the explanations.",
+    style: "UTME-style",
+    links: [
+      ["JAMB (UTME news, syllabus, registration)", "https://www.jamb.gov.ng"],
+      ["WAEC Nigeria", "https://www.waecnigeria.org"],
+      ["NECO", "https://www.neco.gov.ng"],
+    ],
+    warn: "Beware of fake exam links and “leaked questions”. Always check dates and news on these official sites.",
+  },
+  GB: {
+    label: "UK", exam: "GCSE and A-level",
+    subjects: ["Mathematics", "English", "Biology", "Chemistry", "Physics"],
+    intro: "Timed GCSE-style practice. Answer first, then see the explanations.",
+    style: "GCSE-style",
+    links: [
+      ["AQA (specifications and past papers)", "https://www.aqa.org.uk"],
+      ["Pearson Edexcel", "https://qualifications.pearson.com"],
+      ["GOV.UK: exams and qualifications", "https://www.gov.uk/browse/education"],
+    ],
+    warn: "Exam boards and dates differ by school. Check the dates and your exact specification with your teacher and the exam board.",
+  },
+  US: {
+    label: "US", exam: "SAT and ACT",
+    subjects: ["Math", "Reading & Writing", "Science"],
+    intro: "Timed SAT and ACT-style practice. Answer first, then see the explanations.",
+    style: "SAT/ACT-style",
+    links: [
+      ["College Board (SAT)", "https://collegeboard.org"],
+      ["ACT", "https://www.act.org"],
+      ["Khan Academy", "https://www.khanacademy.org"],
+    ],
+    warn: "Test dates, formats and registration change. Always check the official sites above.",
+  },
+};
+function guessMarket() {
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+    if (tz === "Europe/London") return "GB";
+    if (tz.startsWith("America/") || tz.startsWith("US/") || tz === "Pacific/Honolulu") return "US";
+    if (tz.startsWith("Africa/")) return "NG";
+    const l = (navigator.language || "").toLowerCase();
+    if (l.endsWith("-gb")) return "GB";
+    if (l.endsWith("-us")) return "US";
+  } catch {}
+  return "NG";
+}
 
 // [subject, question, [options], correctIndex, explanation]
-const BANK = [
+const RAW = {
+  NG: [
   ["English", "Neither of the boys ___ present.", ["were", "was", "are", "have been"], 1, "“Neither” takes a singular verb, so the answer is “was”."],
   ["English", "Choose the opposite of “generous”.", ["Stingy", "Kind", "Rich", "Proud"], 0, "Generous means giving freely. Stingy means unwilling to give."],
   ["English", "Which is the correct spelling?", ["Acommodation", "Accomodation", "Accommodation", "Acomodation"], 2, "Accommodation has double c and double m."],
@@ -60,7 +110,67 @@ const BANK = [
   ["Chemistry", "Which of these is an acid?", ["NaOH", "NaCl", "KOH", "HCl"], 3, "HCl (hydrochloric acid) is an acid. NaOH and KOH are bases."],
   ["Chemistry", "Salt can be separated from sea water by", ["filtration", "evaporation", "magnetism", "decanting"], 1, "Heating drives off the water and leaves the salt behind."],
   ["Chemistry", "Rusting of iron needs", ["oxygen only", "water only", "oxygen and water", "nitrogen"], 2, "Iron rusts when both oxygen and water are present."],
-].map((r, i) => ({ id: i, sub: r[0], q: r[1], o: r[2], a: r[3], why: r[4] }));
+],
+  GB: [
+  ["Mathematics", "Expand 3(x + 4).", ["3x + 4", "3x + 12", "x + 12", "3x + 7"], 1, "Multiply both terms inside the bracket by 3: 3x + 12."],
+  ["Mathematics", "Solve 2x − 7 = 9.", ["x = 1", "x = 4", "x = 8", "x = 16"], 2, "Add 7 to both sides: 2x = 16. Then divide by 2: x = 8."],
+  ["Mathematics", "The angles in a triangle add up to", ["90°", "180°", "270°", "360°"], 1, "The interior angles of any triangle sum to 180°."],
+  ["Mathematics", "What is the value of 3² × 2³?", ["30", "48", "72", "216"], 2, "3² = 9 and 2³ = 8, so 9 × 8 = 72."],
+  ["Mathematics", "A fair six-sided dice is rolled. What is the probability of an even number?", ["1/6", "1/3", "1/2", "2/3"], 2, "Even numbers are 2, 4 and 6, so 3 out of 6 = 1/2."],
+  ["Mathematics", "Simplify the fraction 12/18.", ["1/2", "2/3", "3/4", "6/9"], 1, "Divide top and bottom by 6 to get 2/3."],
+
+  ["English", "Which word is the adverb in: “She ran quickly home”?", ["She", "ran", "quickly", "home"], 2, "“Quickly” describes how she ran, so it is an adverb."],
+  ["English", "“The classroom was a zoo” is an example of", ["a simile", "a metaphor", "alliteration", "onomatopoeia"], 1, "It says one thing IS another without using “like” or “as”, so it is a metaphor."],
+  ["English", "Which sentence uses the apostrophe correctly?", ["The childrens toys were lost.", "The children's toys were lost.", "The childrens' toys were lost.", "The childs toys were lost."], 1, "“Children” is already plural, so possession is shown with 's: children's."],
+  ["English", "Which line uses alliteration?", ["The cat sat on the mat.", "Sally sells seashells by the shore.", "It was a dark night.", "He ran home quickly."], 1, "Alliteration repeats the same starting sound: Sally sells seashells."],
+  ["English", "Which word is closest in meaning to “ambiguous”?", ["Clear", "Unclear", "Loud", "Harmful"], 1, "Ambiguous means open to more than one meaning, so unclear."],
+  ["English", "Which opening suits a formal letter when you do not know the name of the person?", ["Hey there,", "Dear Sir or Madam,", "Yo,", "Hi mate,"], 1, "“Dear Sir or Madam” is the standard formal opening."],
+
+  ["Biology", "Which part of the cell contains the chromosomes?", ["Cytoplasm", "Cell membrane", "Nucleus", "Ribosome"], 2, "The nucleus holds the DNA, arranged in chromosomes."],
+  ["Biology", "Enzymes are", ["fats", "biological catalysts", "hormones", "vitamins"], 1, "Enzymes are proteins that speed up chemical reactions."],
+  ["Biology", "The movement of water across a partially permeable membrane is called", ["diffusion", "osmosis", "respiration", "transpiration"], 1, "Osmosis is the movement of water from a dilute to a more concentrated solution through a partially permeable membrane."],
+  ["Biology", "Which blood vessels carry blood away from the heart?", ["Veins", "Arteries", "Capillaries", "Valves"], 1, "Arteries carry blood away from the heart. Veins carry it back."],
+  ["Biology", "Where does photosynthesis take place in a plant cell?", ["Mitochondria", "Nucleus", "Chloroplasts", "Vacuole"], 2, "Chloroplasts contain chlorophyll, which absorbs light for photosynthesis."],
+  ["Biology", "Different forms of the same gene are called", ["alleles", "chromosomes", "enzymes", "mutations"], 0, "Alleles are alternative versions of a gene."],
+
+  ["Chemistry", "The atomic number of an element is the number of", ["neutrons", "protons", "electron shells", "molecules"], 1, "The atomic number equals the number of protons in the nucleus."],
+  ["Chemistry", "The Group 1 elements are known as the", ["halogens", "noble gases", "alkali metals", "transition metals"], 2, "Group 1 contains the alkali metals, such as lithium, sodium and potassium."],
+  ["Chemistry", "Which bond is formed when atoms share electrons?", ["Ionic", "Covalent", "Metallic", "Hydrogen"], 1, "Sharing electron pairs forms a covalent bond."],
+  ["Chemistry", "A solution with pH 3 is", ["acidic", "neutral", "alkaline", "a salt"], 0, "pH below 7 is acidic."],
+  ["Chemistry", "What is the chemical formula of carbon dioxide?", ["CO", "CO₂", "C₂O", "O₂C₂"], 1, "One carbon atom and two oxygen atoms: CO₂."],
+  ["Chemistry", "What is the test for hydrogen gas?", ["Relights a glowing splint", "Turns limewater milky", "A lit splint gives a squeaky pop", "Bleaches damp litmus paper"], 2, "Hydrogen burns with a squeaky pop when a lit splint is held to it."],
+
+  ["Physics", "The unit of frequency is the", ["watt", "hertz", "newton", "joule"], 1, "Frequency is measured in hertz (Hz)."],
+  ["Physics", "An object travels 150 m in 30 s. What is its average speed?", ["0.2 m/s", "5 m/s", "30 m/s", "4500 m/s"], 1, "Speed = distance ÷ time = 150 ÷ 30 = 5 m/s."],
+  ["Physics", "A 10 kg mass accelerates at 3 m/s². What is the resultant force?", ["13 N", "3.3 N", "30 N", "300 N"], 2, "F = m × a = 10 × 3 = 30 N."],
+  ["Physics", "Which of these is a renewable energy resource?", ["Coal", "Natural gas", "Wind", "Oil"], 2, "Wind will not run out, so it is renewable."],
+  ["Physics", "A current of 2 A flows through a 6 Ω resistor. What is the potential difference?", ["3 V", "8 V", "12 V", "0.33 V"], 2, "V = I × R = 2 × 6 = 12 V."],
+  ["Physics", "Sound waves are", ["transverse", "longitudinal", "electromagnetic", "stationary"], 1, "Sound is a longitudinal wave: the vibrations run along the direction of travel."],
+],
+  US: [
+  ["Math", "If 5x − 3 = 22, what is x?", ["3", "4", "5", "6"], 2, "Add 3: 5x = 25. Then divide by 5: x = 5."],
+  ["Math", "If f(x) = 2x² − 1, what is f(3)?", ["5", "11", "17", "35"], 2, "f(3) = 2(9) − 1 = 17."],
+  ["Math", "Which expression is equivalent to (x + 3)²?", ["x² + 9", "x² + 6x + 9", "x² + 3x + 9", "2x + 6"], 1, "Expand: x² + 3x + 3x + 9 = x² + 6x + 9."],
+  ["Math", "What is 40% of 250?", ["40", "80", "100", "125"], 2, "10% of 250 is 25, so 40% is 100."],
+  ["Math", "A line passes through (0, 2) and (4, 10). What is its slope?", ["1", "2", "3", "4"], 1, "Slope = (10 − 2) ÷ (4 − 0) = 8 ÷ 4 = 2."],
+  ["Math", "A circle has radius 5. What is its circumference?", ["5π", "10π", "25π", "50π"], 1, "Circumference = 2πr = 2π(5) = 10π."],
+
+  ["Reading & Writing", "The team of researchers ___ publishing its results next week.", ["are", "is", "were", "have been"], 1, "“Team” is a single group here, so use the singular verb “is”."],
+  ["Reading & Writing", "Which word is closest in meaning to “meticulous”?", ["Careless", "Careful", "Quick", "Shy"], 1, "Meticulous means very careful about details."],
+  ["Reading & Writing", "The experiment failed. ____, the team learned something useful.", ["Similarly", "However", "Therefore", "Likewise"], 1, "The second sentence contrasts with the first, so “However” fits."],
+  ["Reading & Writing", "Which sentence is punctuated correctly?", ["I bought apples, oranges and, bananas.", "I bought apples, oranges, and bananas.", "I bought, apples oranges and bananas.", "I bought apples oranges, and bananas."], 1, "Items in a list are separated by commas, with no comma right after “and”."],
+  ["Reading & Writing", "Which choice is the most concise and clear?", ["Due to the fact that it rained, the game was cancelled.", "Because it rained, the game was cancelled.", "The game was cancelled on account of the reason of rain.", "It was raining so the game, it got cancelled."], 1, "“Because” says the same thing in fewer words."],
+  ["Reading & Writing", "The word “ephemeral” most nearly means", ["short-lived", "enormous", "ancient", "hidden"], 0, "Ephemeral describes something that lasts only a short time."],
+
+  ["Science", "In a controlled experiment, the variable the scientist changes on purpose is the", ["dependent variable", "independent variable", "control", "constant"], 1, "The independent variable is the one the scientist changes."],
+  ["Science", "At sea level, water boils at", ["50 °C", "90 °C", "100 °C", "212 °C"], 2, "Water boils at 100 °C (212 °F) at sea level."],
+  ["Science", "Which of these is a physical change?", ["Burning wood", "Rusting iron", "Ice melting", "Baking a cake"], 2, "Melting changes the state but not the substance, so it is physical."],
+  ["Science", "A car travels 90 miles in 1.5 hours. What is its average speed?", ["45 mph", "60 mph", "90 mph", "135 mph"], 1, "Speed = distance ÷ time = 90 ÷ 1.5 = 60 mph."],
+  ["Science", "Which layer of the Earth is liquid?", ["Crust", "Mantle", "Outer core", "Inner core"], 2, "The outer core is liquid metal. The inner core is solid."],
+  ["Science", "Newton's third law says that", ["force equals mass times acceleration", "objects at rest stay at rest", "every action has an equal and opposite reaction", "energy cannot be created"], 2, "When one object pushes on another, the second pushes back equally and oppositely."],
+],
+};
+const BANKS = Object.fromEntries(Object.entries(RAW).map(([k, rows]) => [k, rows.map((r, i) => ({ id: `${k}${i}`, sub: r[0], q: r[1], o: r[2], a: r[3], why: r[4] }))]));
 
 
 // Turns maths written the computer way into the signs students see in textbooks.
@@ -111,11 +221,22 @@ export default function PracticePage() {
   const [loadingFresh, setLoadingFresh] = useState("");
   const [freshErr, setFreshErr] = useState("");
   const retryRef = useRef(null);
+  const [market, setMarket] = useState("NG");
+  const cfg = MARKETS[market];
+  const SUBJECTS = cfg.subjects;
+  const BANK = BANKS[market];
   const endRef = useRef(0);
   const startRef = useRef(0);
   const doneRef = useRef(false);
 
-  useEffect(() => { setAttempts(loadAttempts()); }, []);
+  useEffect(() => {
+    setAttempts(loadAttempts());
+    try { const m = localStorage.getItem("vreedits.practice.market"); setMarket(MARKETS[m] ? m : guessMarket()); } catch { setMarket(guessMarket()); }
+  }, []);
+  function pickMarket(m) {
+    setMarket(m); setFreshErr("");
+    try { localStorage.setItem("vreedits.practice.market", m); } catch {}
+  }
 
   const days = Math.max(0, Math.ceil((EXAM_DATE - Date.now()) / 86400000));
 
@@ -128,8 +249,8 @@ export default function PracticePage() {
     setLeft(minutes * 60);
     setPhase("exam");
   }
-  const startMixed = () => { retryRef.current = startMixed; start("Mixed mock", shuffle(BANK).slice(0, 20), 20); };
-  const startSubject = (s) => { retryRef.current = () => startSubject(s); start(`${s} drill`, shuffle(BANK.filter((q) => q.sub === s)), 8); };
+  const startMixed = () => { retryRef.current = startMixed; start("Mixed mock", shuffle(BANK).slice(0, 20), Math.min(20, BANK.length)); };
+  const startSubject = (s) => { retryRef.current = () => startSubject(s); start(`${s} drill`, shuffle(BANK.filter((q) => q.sub === s)), BANK.filter((q) => q.sub === s).length); };
   async function startFresh(s) {
     if (loadingFresh) return;
     setFreshErr(""); setLoadingFresh(s);
@@ -137,7 +258,7 @@ export default function PracticePage() {
       const r = await fetch("/api/practice/questions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subject: s, topic }),
+        body: JSON.stringify({ subject: s, topic, market }),
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) { setFreshErr(d.error || "Could not get fresh questions."); return; }
@@ -163,7 +284,7 @@ export default function PracticePage() {
       if (ans[i] === q.a) bySub[q.sub].right++;
     });
     const score = qs.filter((q, i) => ans[i] === q.a).length;
-    saveAttempt({ ts: Date.now(), mode, score, total: qs.length, used, bySub });
+    saveAttempt({ ts: Date.now(), market, mode, score, total: qs.length, used, bySub });
     setAttempts(loadAttempts());
     setPhase("result");
     setConfirm(false);
@@ -182,9 +303,9 @@ export default function PracticePage() {
   }, [phase, qs]);
 
   const best = useMemo(() => {
-    const m = attempts.filter((a) => a.mode === "Mixed mock").map((a) => Math.round((a.score / a.total) * 100));
+    const m = attempts.filter((a) => (a.market || "NG") === market && a.mode === "Mixed mock").map((a) => Math.round((a.score / a.total) * 100));
     return m.length ? Math.max(...m) : null;
-  }, [attempts]);
+  }, [attempts, market]);
 
   const wrap = { maxWidth: 480, margin: "0 auto", padding: "16px 16px 40px" };
 
@@ -194,25 +315,36 @@ export default function PracticePage() {
       <div style={wrap}>
         <h1 style={{ fontSize: 24, fontWeight: 800, color: "var(--text)", margin: "4px 0 4px" }}>Exam practice</h1>
         <p style={{ color: "var(--text-muted)", fontSize: 14, margin: "0 0 14px" }}>
-          Timed, like the real computer-based test. Answer first, then see the explanations.
+          {cfg.intro}
         </p>
 
+        <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+          {Object.entries(MARKETS).map(([k, m]) => (
+            <button key={k} className={k === market ? "btn-soft" : "raise"} onClick={() => pickMarket(k)}
+              style={{ padding: "6px 14px", fontSize: 13, fontWeight: 700, color: k === market ? undefined : "var(--text-muted)" }}>
+              {m.label}
+            </button>
+          ))}
+        </div>
+
+        {market === "NG" && (
         <div className="card rise" style={{ padding: 16, marginBottom: 14, display: "flex", alignItems: "center", gap: 14 }}>
           <div style={{ fontSize: 34, fontWeight: 800, color: "var(--accent)", lineHeight: 1 }}>{days}</div>
           <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
             <b style={{ color: "var(--text)" }}>days to UTME</b> (provisional date: 15 March 2027, check JAMB for the final date)
           </div>
         </div>
+        )}
 
         <div className="card rise" style={{ padding: 16, marginBottom: 14, "--i": 1 }}>
           <div style={{ fontWeight: 800, color: "var(--text)", fontSize: 16 }}>Mixed mock</div>
           <div style={{ color: "var(--text-muted)", fontSize: 13, margin: "2px 0 12px" }}>
-            20 questions across all 5 subjects, 20 minutes.{best !== null && ` Your best: ${best}%.`}
+            {Math.min(20, BANK.length)} questions across all {SUBJECTS.length} subjects, {Math.min(20, BANK.length)} minutes.{best !== null && ` Your best: ${best}%.`}
           </div>
           <button className="btn-primary" onClick={startMixed}>Start mock exam</button>
         </div>
 
-        <div style={{ fontWeight: 700, color: "var(--text)", margin: "18px 2px 8px" }}>Subject drills (8 questions, 8 minutes)</div>
+        <div style={{ fontWeight: 700, color: "var(--text)", margin: "18px 2px 8px" }}>Subject drills (one quick set per subject)</div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           {SUBJECTS.map((s) => (
             <button key={s} className="raise" onClick={() => startSubject(s)} style={{ padding: "14px 12px", fontWeight: 700, color: "var(--text)", textAlign: "left" }}>
@@ -224,7 +356,7 @@ export default function PracticePage() {
         <div className="card" style={{ padding: 16, marginTop: 22 }}>
           <div style={{ fontWeight: 800, color: "var(--text)", fontSize: 16 }}>Fresh questions from Syna</div>
           <div style={{ color: "var(--text-muted)", fontSize: 13, margin: "2px 0 10px" }}>
-            10 new UTME-style questions every time, 10 minutes. Add a topic if you want (for example: Quadratic equations).
+            10 new {cfg.style} questions every time, 10 minutes. Add a topic if you want (for example: Quadratic equations).
           </div>
           <input
             className="input"
@@ -249,25 +381,21 @@ export default function PracticePage() {
 
         <div className="card" style={{ padding: 16, marginTop: 14 }}>
           <div style={{ fontWeight: 800, color: "var(--text)", fontSize: 16, marginBottom: 8 }}>Official sources</div>
-          {[
-            ["JAMB (UTME news, syllabus, registration)", "https://www.jamb.gov.ng"],
-            ["WAEC Nigeria", "https://www.waecnigeria.org"],
-            ["NECO", "https://www.neco.gov.ng"],
-          ].map(([t, u]) => (
+          {cfg.links.map(([t, u]) => (
             <a key={u} href={u} target="_blank" rel="noopener noreferrer" style={{ display: "block", padding: "9px 0", fontSize: 14, color: "var(--accent)", fontWeight: 600, borderTop: "1px solid var(--border)" }}>
               {t} ↗
             </a>
           ))}
           <div style={{ color: "var(--text-muted)", fontSize: 12, marginTop: 6 }}>
-            Beware of fake exam links and "leaked questions". Always check dates and news on these official sites.
+            {cfg.warn}
           </div>
         </div>
 
-        {attempts.length > 0 && (
+        {attempts.filter((a) => (a.market || "NG") === market).length > 0 && (
           <>
             <div style={{ fontWeight: 700, color: "var(--text)", margin: "22px 2px 8px" }}>Your recent attempts</div>
             <div className="card" style={{ padding: 6 }}>
-              {attempts.slice(0, 6).map((a) => (
+              {attempts.filter((a) => (a.market || "NG") === market).slice(0, 6).map((a) => (
                 <div key={a.ts} style={{ display: "flex", justifyContent: "space-between", padding: "10px 10px", fontSize: 14, color: "var(--text)", borderBottom: "1px solid var(--border)" }}>
                   <span>{a.mode}</span>
                   <span style={{ color: "var(--text-muted)" }}>
@@ -279,7 +407,7 @@ export default function PracticePage() {
           </>
         )}
         <p style={{ color: "var(--text-muted)", fontSize: 12, marginTop: 14 }}>
-          Questions are written for Vreedits in the style of the exams. Attempts are saved on this device.
+          Questions are written for Vreedits in the style of the exams, not copied from past papers. Attempts are saved on this device.
         </p>
       </div>
     );
