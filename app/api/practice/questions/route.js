@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUserId } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { countryName } from "@/lib/education";
 import { callGemini } from "@/lib/gemini";
 
 export const runtime = "nodejs";
@@ -23,6 +25,15 @@ function clean(q) {
   if (!Number.isInteger(answer) || answer < 0 || answer > 3) return null;
   if (q.q.trim().length < 8) return null;
   return { q: q.q.trim(), o: options, a: answer, why: typeof q.why === "string" ? q.why.trim() : "" };
+}
+
+// The student's country and class from sign-up, so Practice can start on the right exam.
+export async function GET() {
+  const userId = getSessionUserId();
+  if (!userId) return NextResponse.json({ error: "Please log in." }, { status: 401 });
+  const u = await prisma.user.findUnique({ where: { id: userId }, select: { country: true, classLevel: true } });
+  const market = u?.country === "GB" ? "GB" : u?.country === "US" ? "US" : u?.country === "NG" ? "NG" : null;
+  return NextResponse.json({ country: u?.country || null, classLevel: u?.classLevel || null, market });
 }
 
 export async function POST(req) {
@@ -49,7 +60,16 @@ export async function POST(req) {
     GB: `an experienced UK examiner writing GCSE-style practice questions (AQA/Edexcel style, with some A-level-style stretch) for ${subject}, using British spelling`,
     US: `an experienced SAT and ACT item writer writing practice questions for ${subject}, in the style of the digital SAT and the ACT, using American spelling`,
   }[market];
-  const prompt = `You are ${WHO}${topic ? `, on the topic: ${topic}` : ", covering a spread of topics from the usual syllabus"}.
+  let level = "";
+  try {
+    const u = await prisma.user.findUnique({ where: { id: userId }, select: { country: true, classLevel: true } });
+    if (u?.classLevel) {
+      const where = u.country ? ` in ${countryName(u.country) || u.country}` : "";
+      level = `\nThe student is in ${String(u.classLevel).slice(0, 40)}${where}. Pitch the difficulty and topics so they suit this level: if the level is below the exam year, use questions on topics already taught at that level, still in the exam's style.`;
+    }
+  } catch {}
+
+  const prompt = `You are ${WHO}${topic ? `, on the topic: ${topic}` : ", covering a spread of topics from the usual syllabus"}.${level}
 Rules:
 - Write exactly 10 multiple-choice questions at the real exam's difficulty, with local context where natural.
 - Each question has exactly 4 different options and exactly ONE correct option.
