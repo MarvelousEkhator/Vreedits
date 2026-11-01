@@ -202,7 +202,9 @@ ${userText}
 // ---------------------------------------------------------------------------
 // Layer 1: literal-wording + sensitive-pattern checks on the outgoing reply
 // ---------------------------------------------------------------------------
-const LEAK_CHECK_MIN_WORDS = 6;
+// 6 words was too easy to match by accident (study plans and tool names reuse the same words as the
+// instructions). A real copy of her instructions is much longer than 12 words.
+const LEAK_CHECK_MIN_WORDS = 12;
 
 const SYSTEM_PROMPT_WORDS = SYNA_SYSTEM_CONTEXT
   .toLowerCase()
