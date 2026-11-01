@@ -1,586 +1,270 @@
 "use client";
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Flag, Clock, ChevronLeft, ChevronRight, CheckCircle2, XCircle } from "lucide-react";
+import { Download, Share2, Star, Check } from "lucide-react";
 
 /* ═══════════════════════════════════════════════════════════════
-   PRACTICE — timed, computer-style exam practice (Nigeria first).
-   One file: the question bank, the exam screen and the results.
-   Questions are written for Vreedits in UTME style (not copied from any
-   past paper). Attempts are saved on this device only.
+   TIMETABLE — builds a drawn weekly study timetable from a few choices.
+   No AI needed, so it is instant and always works. Weak subjects get more
+   sessions, no subject repeats back to back, and the result can be saved
+   as a picture and shared. Choices are saved on this device.
    ═══════════════════════════════════════════════════════════════ */
 
-const EXAM_DATE = new Date("2027-03-15T08:00:00+01:00"); // provisional UTME start
-const STORE_KEY = "vreedits.practice.attempts";
-
-const MARKETS = {
-  NG: {
-    label: "Nigeria", exam: "UTME",
-    subjects: ["English", "Mathematics", "Biology", "Physics", "Chemistry"],
-    intro: "Timed, like the real computer-based test. Answer first, then see the explanations.",
-    style: "UTME-style",
-    links: [
-      ["JAMB (UTME news, syllabus, registration)", "https://www.jamb.gov.ng"],
-      ["WAEC Nigeria", "https://www.waecnigeria.org"],
-      ["NECO", "https://www.neco.gov.ng"],
-    ],
-    warn: "Beware of fake exam links and “leaked questions”. Always check dates and news on these official sites.",
-  },
-  GB: {
-    label: "UK", exam: "GCSE and A-level",
-    subjects: ["Mathematics", "English", "Biology", "Chemistry", "Physics"],
-    intro: "Timed GCSE-style practice. Answer first, then see the explanations.",
-    style: "GCSE-style",
-    links: [
-      ["AQA (specifications and past papers)", "https://www.aqa.org.uk"],
-      ["Pearson Edexcel", "https://qualifications.pearson.com"],
-      ["GOV.UK: exams and qualifications", "https://www.gov.uk/browse/education"],
-    ],
-    warn: "Exam boards and dates differ by school. Check the dates and your exact specification with your teacher and the exam board.",
-  },
-  US: {
-    label: "US", exam: "SAT and ACT",
-    subjects: ["Math", "Reading & Writing", "Science"],
-    intro: "Timed SAT and ACT-style practice. Answer first, then see the explanations.",
-    style: "SAT/ACT-style",
-    links: [
-      ["College Board (SAT)", "https://collegeboard.org"],
-      ["ACT", "https://www.act.org"],
-      ["Khan Academy", "https://www.khanacademy.org"],
-    ],
-    warn: "Test dates, formats and registration change. Always check the official sites above.",
-  },
+const STORE = "vreedits.timetable.v1";
+const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const PRESETS = {
+  "UTME": ["English", "Mathematics", "Biology", "Physics", "Chemistry"],
+  "WAEC / NECO": ["English", "Mathematics", "Biology", "Physics", "Chemistry", "Economics", "Government"],
+  "GCSE": ["Maths", "English", "Biology", "Chemistry", "Physics", "History"],
+  "SAT / ACT": ["Math", "Reading & Writing", "Science"],
 };
-function guessMarket() {
-  try {
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
-    if (tz === "Europe/London") return "GB";
-    if (tz.startsWith("America/") || tz.startsWith("US/") || tz === "Pacific/Honolulu") return "US";
-    if (tz.startsWith("Africa/")) return "NG";
-    const l = (navigator.language || "").toLowerCase();
-    if (l.endsWith("-gb")) return "GB";
-    if (l.endsWith("-us")) return "US";
-  } catch {}
-  return "NG";
+const HUES = [285, 200, 150, 35, 340, 175, 250, 60];
+const colorFor = (i) => `hsl(${HUES[i % HUES.length]}, 62%, 42%)`;
+
+function fmt(mins) {
+  const h24 = Math.floor(mins / 60) % 24, m = mins % 60;
+  const ap = h24 >= 12 ? "pm" : "am";
+  const h = h24 % 12 === 0 ? 12 : h24 % 12;
+  return `${h}:${String(m).padStart(2, "0")} ${ap}`;
 }
 
-// [subject, question, [options], correctIndex, explanation]
-const RAW = {
-  NG: [
-  ["English", "Neither of the boys ___ present.", ["were", "was", "are", "have been"], 1, "“Neither” takes a singular verb, so the answer is “was”."],
-  ["English", "Choose the opposite of “generous”.", ["Stingy", "Kind", "Rich", "Proud"], 0, "Generous means giving freely. Stingy means unwilling to give."],
-  ["English", "Which is the correct spelling?", ["Acommodation", "Accomodation", "Accommodation", "Acomodation"], 2, "Accommodation has double c and double m."],
-  ["English", "She is the ___ of the two sisters.", ["tallest", "taller", "more tall", "most tall"], 1, "Use the comparative (taller) when comparing two people."],
-  ["English", "“The wind whispered through the trees” is an example of", ["simile", "metaphor", "personification", "hyperbole"], 2, "The wind is given a human action (whispering), which is personification."],
-  ["English", "Choose the word nearest in meaning to “obstinate”.", ["Stubborn", "Gentle", "Weak", "Lazy"], 0, "Obstinate means refusing to change your mind, which is stubborn."],
-  ["English", "The idiom “to let the cat out of the bag” means to", ["lose a pet", "reveal a secret", "waste money", "start a fight"], 1, "It means to reveal something that was meant to stay secret."],
-  ["English", "He ___ to school yesterday.", ["goes", "going", "went", "gone"], 2, "“Yesterday” needs the simple past tense: went."],
-
-  ["Mathematics", "What is 2⁵?", ["10", "16", "32", "64"], 2, "2×2×2×2×2 = 32."],
-  ["Mathematics", "Simplify 3/4 + 1/8.", ["4/12", "5/8", "7/8", "1"], 2, "3/4 = 6/8, and 6/8 + 1/8 = 7/8."],
-  ["Mathematics", "Solve x² − 5x + 6 = 0.", ["x = 1 or 6", "x = 2 or 3", "x = −2 or −3", "x = −2 or 3"], 1, "Factorise: (x − 2)(x − 3) = 0, so x = 2 or 3."],
-  ["Mathematics", "What is the area of a rectangle 8 cm by 5 cm?", ["13 cm²", "26 cm²", "40 cm²", "80 cm²"], 2, "Area = length × width = 8 × 5 = 40 cm²."],
-  ["Mathematics", "Find the mean of 2, 4, 6, 8 and 10.", ["5", "6", "8", "30"], 1, "Sum = 30, and 30 ÷ 5 = 6."],
-  ["Mathematics", "Convert 0.25 to a percentage.", ["2.5%", "0.25%", "25%", "250%"], 2, "Multiply by 100: 0.25 × 100 = 25%."],
-  ["Mathematics", "A square has side 7 cm. What is its perimeter?", ["14 cm", "28 cm", "49 cm", "21 cm"], 1, "Perimeter = 4 × 7 = 28 cm."],
-  ["Mathematics", "If y = 3x − 2 and x = 4, find y.", ["6", "10", "12", "14"], 1, "y = 3(4) − 2 = 12 − 2 = 10."],
-
-  ["Biology", "Which part of the cell is called its powerhouse?", ["Nucleus", "Ribosome", "Mitochondrion", "Vacuole"], 2, "Mitochondria release energy from food during respiration."],
-  ["Biology", "Which blood group is the universal donor?", ["AB", "A", "B", "O"], 3, "Group O can be given to people of any blood group."],
-  ["Biology", "A lack of vitamin C causes", ["rickets", "scurvy", "night blindness", "beriberi"], 1, "Scurvy comes from too little vitamin C."],
-  ["Biology", "Which organ produces insulin?", ["Liver", "Kidney", "Pancreas", "Stomach"], 2, "The pancreas makes insulin, which controls blood sugar."],
-  ["Biology", "Plants lose water vapour through their leaves by", ["transpiration", "respiration", "digestion", "excretion"], 0, "Transpiration is loss of water vapour mainly through stomata."],
-  ["Biology", "Which gas do plants release during photosynthesis?", ["Carbon dioxide", "Nitrogen", "Oxygen", "Methane"], 2, "Photosynthesis uses carbon dioxide and water and releases oxygen."],
-  ["Biology", "Malaria is spread by the female", ["housefly", "Anopheles mosquito", "tsetse fly", "cockroach"], 1, "The female Anopheles mosquito carries the malaria parasite."],
-  ["Biology", "The basic unit of heredity is the", ["cell", "tissue", "gene", "organ"], 2, "A gene carries inherited information from parent to offspring."],
-
-  ["Physics", "What is the SI unit of power?", ["Joule", "Watt", "Newton", "Pascal"], 1, "Power is measured in watts (W)."],
-  ["Physics", "A car covers 120 km in 2 hours. Its average speed is", ["60 km/h", "100 km/h", "120 km/h", "240 km/h"], 0, "Speed = distance ÷ time = 120 ÷ 2 = 60 km/h."],
-  ["Physics", "Which of these is a vector quantity?", ["Mass", "Speed", "Time", "Velocity"], 3, "Velocity has both size and direction, so it is a vector."],
-  ["Physics", "The SI unit of electrical resistance is the", ["ampere", "volt", "ohm", "coulomb"], 2, "Resistance is measured in ohms (Ω)."],
-  ["Physics", "The bending of light as it passes from air into water is called", ["reflection", "refraction", "diffraction", "dispersion"], 1, "Light changes speed and bends at the boundary: refraction."],
-  ["Physics", "The acceleration due to gravity is about", ["1 m/s²", "5 m/s²", "10 m/s²", "100 m/s²"], 2, "It is about 9.8 m/s², usually rounded to 10 in exams."],
-  ["Physics", "Which type of mirror is used in car headlamps?", ["Plane", "Convex", "Concave", "Cylindrical"], 2, "A concave mirror makes a strong parallel beam from the bulb."],
-  ["Physics", "A stretched spring stores", ["heat energy", "elastic potential energy", "sound energy", "kinetic energy only"], 1, "Stretching a spring stores elastic potential energy."],
-
-  ["Chemistry", "What is the chemical symbol for gold?", ["Go", "Gd", "Ag", "Au"], 3, "Au comes from the Latin word aurum."],
-  ["Chemistry", "A neutral solution has a pH of", ["0", "7", "10", "14"], 1, "pH 7 is neutral. Below 7 is acidic and above 7 is alkaline."],
-  ["Chemistry", "How many protons does a carbon atom have?", ["4", "6", "8", "12"], 1, "Carbon has atomic number 6, so it has 6 protons."],
-  ["Chemistry", "Which gas is produced when zinc reacts with dilute hydrochloric acid?", ["Oxygen", "Carbon dioxide", "Hydrogen", "Chlorine"], 2, "A metal and an acid give a salt and hydrogen gas."],
-  ["Chemistry", "Which of these is a noble gas?", ["Oxygen", "Argon", "Nitrogen", "Chlorine"], 1, "Argon is in Group 18 with the unreactive noble gases."],
-  ["Chemistry", "Which of these is an acid?", ["NaOH", "NaCl", "KOH", "HCl"], 3, "HCl (hydrochloric acid) is an acid. NaOH and KOH are bases."],
-  ["Chemistry", "Salt can be separated from sea water by", ["filtration", "evaporation", "magnetism", "decanting"], 1, "Heating drives off the water and leaves the salt behind."],
-  ["Chemistry", "Rusting of iron needs", ["oxygen only", "water only", "oxygen and water", "nitrogen"], 2, "Iron rusts when both oxygen and water are present."],
-],
-  GB: [
-  ["Mathematics", "Expand 3(x + 4).", ["3x + 4", "3x + 12", "x + 12", "3x + 7"], 1, "Multiply both terms inside the bracket by 3: 3x + 12."],
-  ["Mathematics", "Solve 2x − 7 = 9.", ["x = 1", "x = 4", "x = 8", "x = 16"], 2, "Add 7 to both sides: 2x = 16. Then divide by 2: x = 8."],
-  ["Mathematics", "The angles in a triangle add up to", ["90°", "180°", "270°", "360°"], 1, "The interior angles of any triangle sum to 180°."],
-  ["Mathematics", "What is the value of 3² × 2³?", ["30", "48", "72", "216"], 2, "3² = 9 and 2³ = 8, so 9 × 8 = 72."],
-  ["Mathematics", "A fair six-sided dice is rolled. What is the probability of an even number?", ["1/6", "1/3", "1/2", "2/3"], 2, "Even numbers are 2, 4 and 6, so 3 out of 6 = 1/2."],
-  ["Mathematics", "Simplify the fraction 12/18.", ["1/2", "2/3", "3/4", "6/9"], 1, "Divide top and bottom by 6 to get 2/3."],
-
-  ["English", "Which word is the adverb in: “She ran quickly home”?", ["She", "ran", "quickly", "home"], 2, "“Quickly” describes how she ran, so it is an adverb."],
-  ["English", "“The classroom was a zoo” is an example of", ["a simile", "a metaphor", "alliteration", "onomatopoeia"], 1, "It says one thing IS another without using “like” or “as”, so it is a metaphor."],
-  ["English", "Which sentence uses the apostrophe correctly?", ["The childrens toys were lost.", "The children's toys were lost.", "The childrens' toys were lost.", "The childs toys were lost."], 1, "“Children” is already plural, so possession is shown with 's: children's."],
-  ["English", "Which line uses alliteration?", ["The cat sat on the mat.", "Sally sells seashells by the shore.", "It was a dark night.", "He ran home quickly."], 1, "Alliteration repeats the same starting sound: Sally sells seashells."],
-  ["English", "Which word is closest in meaning to “ambiguous”?", ["Clear", "Unclear", "Loud", "Harmful"], 1, "Ambiguous means open to more than one meaning, so unclear."],
-  ["English", "Which opening suits a formal letter when you do not know the name of the person?", ["Hey there,", "Dear Sir or Madam,", "Yo,", "Hi mate,"], 1, "“Dear Sir or Madam” is the standard formal opening."],
-
-  ["Biology", "Which part of the cell contains the chromosomes?", ["Cytoplasm", "Cell membrane", "Nucleus", "Ribosome"], 2, "The nucleus holds the DNA, arranged in chromosomes."],
-  ["Biology", "Enzymes are", ["fats", "biological catalysts", "hormones", "vitamins"], 1, "Enzymes are proteins that speed up chemical reactions."],
-  ["Biology", "The movement of water across a partially permeable membrane is called", ["diffusion", "osmosis", "respiration", "transpiration"], 1, "Osmosis is the movement of water from a dilute to a more concentrated solution through a partially permeable membrane."],
-  ["Biology", "Which blood vessels carry blood away from the heart?", ["Veins", "Arteries", "Capillaries", "Valves"], 1, "Arteries carry blood away from the heart. Veins carry it back."],
-  ["Biology", "Where does photosynthesis take place in a plant cell?", ["Mitochondria", "Nucleus", "Chloroplasts", "Vacuole"], 2, "Chloroplasts contain chlorophyll, which absorbs light for photosynthesis."],
-  ["Biology", "Different forms of the same gene are called", ["alleles", "chromosomes", "enzymes", "mutations"], 0, "Alleles are alternative versions of a gene."],
-
-  ["Chemistry", "The atomic number of an element is the number of", ["neutrons", "protons", "electron shells", "molecules"], 1, "The atomic number equals the number of protons in the nucleus."],
-  ["Chemistry", "The Group 1 elements are known as the", ["halogens", "noble gases", "alkali metals", "transition metals"], 2, "Group 1 contains the alkali metals, such as lithium, sodium and potassium."],
-  ["Chemistry", "Which bond is formed when atoms share electrons?", ["Ionic", "Covalent", "Metallic", "Hydrogen"], 1, "Sharing electron pairs forms a covalent bond."],
-  ["Chemistry", "A solution with pH 3 is", ["acidic", "neutral", "alkaline", "a salt"], 0, "pH below 7 is acidic."],
-  ["Chemistry", "What is the chemical formula of carbon dioxide?", ["CO", "CO₂", "C₂O", "O₂C₂"], 1, "One carbon atom and two oxygen atoms: CO₂."],
-  ["Chemistry", "What is the test for hydrogen gas?", ["Relights a glowing splint", "Turns limewater milky", "A lit splint gives a squeaky pop", "Bleaches damp litmus paper"], 2, "Hydrogen burns with a squeaky pop when a lit splint is held to it."],
-
-  ["Physics", "The unit of frequency is the", ["watt", "hertz", "newton", "joule"], 1, "Frequency is measured in hertz (Hz)."],
-  ["Physics", "An object travels 150 m in 30 s. What is its average speed?", ["0.2 m/s", "5 m/s", "30 m/s", "4500 m/s"], 1, "Speed = distance ÷ time = 150 ÷ 30 = 5 m/s."],
-  ["Physics", "A 10 kg mass accelerates at 3 m/s². What is the resultant force?", ["13 N", "3.3 N", "30 N", "300 N"], 2, "F = m × a = 10 × 3 = 30 N."],
-  ["Physics", "Which of these is a renewable energy resource?", ["Coal", "Natural gas", "Wind", "Oil"], 2, "Wind will not run out, so it is renewable."],
-  ["Physics", "A current of 2 A flows through a 6 Ω resistor. What is the potential difference?", ["3 V", "8 V", "12 V", "0.33 V"], 2, "V = I × R = 2 × 6 = 12 V."],
-  ["Physics", "Sound waves are", ["transverse", "longitudinal", "electromagnetic", "stationary"], 1, "Sound is a longitudinal wave: the vibrations run along the direction of travel."],
-],
-  US: [
-  ["Math", "If 5x − 3 = 22, what is x?", ["3", "4", "5", "6"], 2, "Add 3: 5x = 25. Then divide by 5: x = 5."],
-  ["Math", "If f(x) = 2x² − 1, what is f(3)?", ["5", "11", "17", "35"], 2, "f(3) = 2(9) − 1 = 17."],
-  ["Math", "Which expression is equivalent to (x + 3)²?", ["x² + 9", "x² + 6x + 9", "x² + 3x + 9", "2x + 6"], 1, "Expand: x² + 3x + 3x + 9 = x² + 6x + 9."],
-  ["Math", "What is 40% of 250?", ["40", "80", "100", "125"], 2, "10% of 250 is 25, so 40% is 100."],
-  ["Math", "A line passes through (0, 2) and (4, 10). What is its slope?", ["1", "2", "3", "4"], 1, "Slope = (10 − 2) ÷ (4 − 0) = 8 ÷ 4 = 2."],
-  ["Math", "A circle has radius 5. What is its circumference?", ["5π", "10π", "25π", "50π"], 1, "Circumference = 2πr = 2π(5) = 10π."],
-
-  ["Reading & Writing", "The team of researchers ___ publishing its results next week.", ["are", "is", "were", "have been"], 1, "“Team” is a single group here, so use the singular verb “is”."],
-  ["Reading & Writing", "Which word is closest in meaning to “meticulous”?", ["Careless", "Careful", "Quick", "Shy"], 1, "Meticulous means very careful about details."],
-  ["Reading & Writing", "The experiment failed. ____, the team learned something useful.", ["Similarly", "However", "Therefore", "Likewise"], 1, "The second sentence contrasts with the first, so “However” fits."],
-  ["Reading & Writing", "Which sentence is punctuated correctly?", ["I bought apples, oranges and, bananas.", "I bought apples, oranges, and bananas.", "I bought, apples oranges and bananas.", "I bought apples oranges, and bananas."], 1, "Items in a list are separated by commas, with no comma right after “and”."],
-  ["Reading & Writing", "Which choice is the most concise and clear?", ["Due to the fact that it rained, the game was cancelled.", "Because it rained, the game was cancelled.", "The game was cancelled on account of the reason of rain.", "It was raining so the game, it got cancelled."], 1, "“Because” says the same thing in fewer words."],
-  ["Reading & Writing", "The word “ephemeral” most nearly means", ["short-lived", "enormous", "ancient", "hidden"], 0, "Ephemeral describes something that lasts only a short time."],
-
-  ["Science", "In a controlled experiment, the variable the scientist changes on purpose is the", ["dependent variable", "independent variable", "control", "constant"], 1, "The independent variable is the one the scientist changes."],
-  ["Science", "At sea level, water boils at", ["50 °C", "90 °C", "100 °C", "212 °C"], 2, "Water boils at 100 °C (212 °F) at sea level."],
-  ["Science", "Which of these is a physical change?", ["Burning wood", "Rusting iron", "Ice melting", "Baking a cake"], 2, "Melting changes the state but not the substance, so it is physical."],
-  ["Science", "A car travels 90 miles in 1.5 hours. What is its average speed?", ["45 mph", "60 mph", "90 mph", "135 mph"], 1, "Speed = distance ÷ time = 90 ÷ 1.5 = 60 mph."],
-  ["Science", "Which layer of the Earth is liquid?", ["Crust", "Mantle", "Outer core", "Inner core"], 2, "The outer core is liquid metal. The inner core is solid."],
-  ["Science", "Newton's third law says that", ["force equals mass times acceleration", "objects at rest stay at rest", "every action has an equal and opposite reaction", "energy cannot be created"], 2, "When one object pushes on another, the second pushes back equally and oppositely."],
-],
-};
-const BANKS = Object.fromEntries(Object.entries(RAW).map(([k, rows]) => [k, rows.map((r, i) => ({ id: `${k}${i}`, sub: r[0], q: r[1], o: r[2], a: r[3], why: r[4] }))]));
-
-
-// Turns maths written the computer way into the signs students see in textbooks.
-const SUP = { "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹", "-": "⁻", "+": "⁺", "n": "ⁿ" };
-const toSup = (t) => t.split("").map((c) => SUP[c] || c).join("");
-function pretty(str) {
-  let t = String(str || "");
-  t = t.replace(/\$/g, "").replace(/\\left|\\right/g, "");
-  t = t.replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, "($1)/($2)");
-  t = t.replace(/\\times|\\cdot/g, "×").replace(/\\div/g, "÷");
-  t = t.replace(/\\sqrt\{([^{}]+)\}/g, "√($1)").replace(/\\pi/g, "π").replace(/\\(le|leq)\b/g, "≤").replace(/\\(ge|geq)\b/g, "≥");
-  t = t.replace(/sqrt\(/gi, "√(").replace(/cbrt\(/gi, "∛(");
-  t = t.replace(/(\d+)\^\(1\/2\)/g, "√$1").replace(/(\d+)\^\(1\/3\)/g, "∛$1").replace(/(\d+)\^\(2\/3\)/g, "(∛$1)²").replace(/(\d+)\^\(1\/4\)/g, "⁴√$1");
-  t = t.replace(/\^\(?(-?\d+)\)?(?!\s*\/\s*\d)/g, (_, d) => toSup(d));
-  t = t.replace(/\s\*\s|(?<=\d|\))\*(?=\d|\()/g, " × ");
-  t = t.replace(/\{|\}/g, "");
-  return t;
-}
-
-function shuffle(arr) {
-  const a = arr.slice();
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
-const mmss = (s) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
-function loadAttempts() {
-  try { return JSON.parse(localStorage.getItem(STORE_KEY) || "[]"); } catch { return []; }
-}
-function saveAttempt(a) {
-  try { localStorage.setItem(STORE_KEY, JSON.stringify([a, ...loadAttempts()].slice(0, 20))); } catch {}
-}
-
-export default function PracticePage() {
-  const [phase, setPhase] = useState("setup"); // setup | exam | result
-  const [qs, setQs] = useState([]);
-  const [ans, setAns] = useState({});
-  const [flags, setFlags] = useState({});
-  const [cur, setCur] = useState(0);
-  const [left, setLeft] = useState(0);
-  const [mode, setMode] = useState("");
-  const [attempts, setAttempts] = useState([]);
-  const [confirm, setConfirm] = useState(false);
-  const [usedSecs, setUsedSecs] = useState(0);
-  const [topic, setTopic] = useState("");
-  const [loadingFresh, setLoadingFresh] = useState("");
-  const [freshErr, setFreshErr] = useState("");
-  const retryRef = useRef(null);
-  const [market, setMarket] = useState("NG");
-  const [me, setMe] = useState(null); // { classLevel, country }
-  const cfg = MARKETS[market];
-  const SUBJECTS = cfg.subjects;
-  const BANK = BANKS[market];
-  const endRef = useRef(0);
-  const startRef = useRef(0);
-  const doneRef = useRef(false);
-
-  useEffect(() => {
-    setAttempts(loadAttempts());
-    let saved = null;
-    try { const m = localStorage.getItem("vreedits.practice.market"); if (MARKETS[m]) saved = m; } catch {}
-    setMarket(saved || guessMarket());
-    fetch("/api/practice/questions", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (!d) return;
-        setMe({ classLevel: d.classLevel, country: d.country });
-        if (!saved && d.market && MARKETS[d.market]) setMarket(d.market);
-      })
-      .catch(() => {});
-  }, []);
-  function pickMarket(m) {
-    setMarket(m); setFreshErr("");
-    try { localStorage.setItem("vreedits.practice.market", m); } catch {}
-  }
-
-  const days = Math.max(0, Math.ceil((EXAM_DATE - Date.now()) / 86400000));
-
-  function start(label, list, minutes) {
-    doneRef.current = false;
-    setQs(list); setAns({}); setFlags({}); setCur(0); setConfirm(false);
-    setMode(label);
-    startRef.current = Date.now();
-    endRef.current = Date.now() + minutes * 60000;
-    setLeft(minutes * 60);
-    setPhase("exam");
-  }
-  const startMixed = () => { retryRef.current = startMixed; start("Mixed mock", shuffle(BANK).slice(0, 20), Math.min(20, BANK.length)); };
-  const startSubject = (s) => { retryRef.current = () => startSubject(s); start(`${s} drill`, shuffle(BANK.filter((q) => q.sub === s)), BANK.filter((q) => q.sub === s).length); };
-  async function startFresh(s) {
-    if (loadingFresh) return;
-    setFreshErr(""); setLoadingFresh(s);
-    try {
-      const r = await fetch("/api/practice/questions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subject: s, topic, market }),
-      });
-      const d = await r.json().catch(() => ({}));
-      if (!r.ok) { setFreshErr(d.error || "Could not get fresh questions."); return; }
-      const list = d.questions.map((q, i) => ({ ...q, id: `f${i}`, sub: s, q: pretty(q.q), o: q.o.map(pretty), why: pretty(q.why) }));
-      retryRef.current = () => startFresh(s);
-      start(`${s} · fresh from Syna`, list, 10);
-    } catch {
-      setFreshErr("Network problem. Check your connection and try again.");
-    } finally {
-      setLoadingFresh("");
+// Builds the week. Weighted round-robin: weak subjects count double.
+function buildPlan({ subjects, weak, days, perDay, mockDay }) {
+  const counts = Object.fromEntries(subjects.map((s) => [s, 0]));
+  const plan = {};
+  let last = null;
+  days.forEach((d, di) => {
+    if (mockDay && di === days.length - 1 && days.length > 1) {
+      plan[d] = Array(perDay).fill("MOCK");
+      return;
     }
-  }
+    const used = new Set();
+    plan[d] = [];
+    for (let k = 0; k < perDay; k++) {
+      const pool = subjects.filter((s) => !used.has(s) && s !== last);
+      const list = pool.length ? pool : subjects.filter((s) => !used.has(s)).length ? subjects.filter((s) => !used.has(s)) : subjects;
+      const pick = list.slice().sort((a, b) => counts[a] / (weak.includes(a) ? 2 : 1) - counts[b] / (weak.includes(b) ? 2 : 1))[0];
+      counts[pick]++; used.add(pick); last = pick;
+      plan[d].push(pick);
+    }
+  });
+  return { plan, counts };
+}
 
-  function submit() {
-    if (doneRef.current) return;
-    doneRef.current = true;
-    const used = Math.min(Math.round((Date.now() - startRef.current) / 1000), Math.round((endRef.current - startRef.current) / 1000));
-    setUsedSecs(used);
-    const bySub = {};
-    qs.forEach((q, i) => {
-      bySub[q.sub] = bySub[q.sub] || { right: 0, total: 0 };
-      bySub[q.sub].total++;
-      if (ans[i] === q.a) bySub[q.sub].right++;
-    });
-    const score = qs.filter((q, i) => ans[i] === q.a).length;
-    saveAttempt({ ts: Date.now(), market, mode, score, total: qs.length, used, bySub });
-    setAttempts(loadAttempts());
-    setPhase("result");
-    setConfirm(false);
-    window.scrollTo?.(0, 0);
-  }
+export default function TimetablePage() {
+  const [preset, setPreset] = useState("UTME");
+  const [subjects, setSubjects] = useState(PRESETS["UTME"]);
+  const [custom, setCustom] = useState("");
+  const [weak, setWeak] = useState([]);
+  const [days, setDays] = useState(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]);
+  const [perDay, setPerDay] = useState(3);
+  const [len, setLen] = useState(45);
+  const [start, setStart] = useState("16:00");
+  const [mockDay, setMockDay] = useState(true);
+  const [built, setBuilt] = useState(false);
+  const [msg, setMsg] = useState("");
+  const canvasRef = useRef(null);
 
   useEffect(() => {
-    if (phase !== "exam") return;
-    const t = setInterval(() => {
-      const s = Math.max(0, Math.round((endRef.current - Date.now()) / 1000));
-      setLeft(s);
-      if (s <= 0) { clearInterval(t); submit(); }
-    }, 500);
-    return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, qs]);
+    try {
+      const s = JSON.parse(localStorage.getItem(STORE) || "null");
+      if (!s) return;
+      s.preset && setPreset(s.preset); s.subjects && setSubjects(s.subjects); s.weak && setWeak(s.weak);
+      s.days && setDays(s.days); s.perDay && setPerDay(s.perDay); s.len && setLen(s.len);
+      s.start && setStart(s.start); typeof s.mockDay === "boolean" && setMockDay(s.mockDay);
+      if (s.built) setBuilt(true);
+    } catch {}
+  }, []);
 
-  const best = useMemo(() => {
-    const m = attempts.filter((a) => (a.market || "NG") === market && a.mode === "Mixed mock").map((a) => Math.round((a.score / a.total) * 100));
-    return m.length ? Math.max(...m) : null;
-  }, [attempts, market]);
-
-  const wrap = { maxWidth: 480, margin: "0 auto", padding: "16px 16px 40px" };
-
-  /* ───────── setup ───────── */
-  if (phase === "setup") {
-    return (
-      <div style={wrap}>
-        <h1 style={{ fontSize: 24, fontWeight: 800, color: "var(--text)", margin: "4px 0 4px" }}>Exam practice</h1>
-        <p style={{ color: "var(--text-muted)", fontSize: 14, margin: "0 0 14px" }}>
-          {cfg.intro}
-        </p>
-
-        {me && me.classLevel && (
-          <div style={{ fontSize: 13, color: "var(--text-muted)", margin: "-6px 0 12px" }}>
-            Your level from sign-up: <b style={{ color: "var(--text)" }}>{me.classLevel}</b>. Fresh Syna questions are pitched to it.
-          </div>
-        )}
-        <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-          {Object.entries(MARKETS).map(([k, m]) => (
-            <button key={k} className={k === market ? "btn-soft" : "raise"} onClick={() => pickMarket(k)}
-              style={{ padding: "6px 14px", fontSize: 13, fontWeight: 700, color: k === market ? undefined : "var(--text-muted)" }}>
-              {m.label}
-            </button>
-          ))}
-        </div>
-
-        {market === "NG" && (
-        <div className="card rise" style={{ padding: 16, marginBottom: 14, display: "flex", alignItems: "center", gap: 14 }}>
-          <div style={{ fontSize: 34, fontWeight: 800, color: "var(--accent)", lineHeight: 1 }}>{days}</div>
-          <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
-            <b style={{ color: "var(--text)" }}>days to UTME</b> (provisional date: 15 March 2027, check JAMB for the final date)
-          </div>
-        </div>
-        )}
-
-        <div className="card rise" style={{ padding: 16, marginBottom: 14, "--i": 1 }}>
-          <div style={{ fontWeight: 800, color: "var(--text)", fontSize: 16 }}>Mixed mock</div>
-          <div style={{ color: "var(--text-muted)", fontSize: 13, margin: "2px 0 12px" }}>
-            {Math.min(20, BANK.length)} questions across all {SUBJECTS.length} subjects, {Math.min(20, BANK.length)} minutes.{best !== null && ` Your best: ${best}%.`}
-          </div>
-          <button className="btn-primary" onClick={startMixed}>Start mock exam</button>
-        </div>
-
-        <div style={{ fontWeight: 700, color: "var(--text)", margin: "18px 2px 8px" }}>Subject drills (one quick set per subject)</div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-          {SUBJECTS.map((s) => (
-            <button key={s} className="raise" onClick={() => startSubject(s)} style={{ padding: "14px 12px", fontWeight: 700, color: "var(--text)", textAlign: "left" }}>
-              {s}
-            </button>
-          ))}
-        </div>
-
-        <div className="card" style={{ padding: 16, marginTop: 22 }}>
-          <div style={{ fontWeight: 800, color: "var(--text)", fontSize: 16 }}>Fresh questions from Syna</div>
-          <div style={{ color: "var(--text-muted)", fontSize: 13, margin: "2px 0 10px" }}>
-            10 new {cfg.style} questions every time, 10 minutes. Add a topic if you want (for example: Quadratic equations).
-          </div>
-          <input
-            className="input"
-            style={{ paddingLeft: 12, marginBottom: 10 }}
-            placeholder="Topic (optional)"
-            value={topic}
-            maxLength={60}
-            onChange={(e) => setTopic(e.target.value)}
-          />
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            {SUBJECTS.map((s) => (
-              <button key={s} className="btn-soft" disabled={!!loadingFresh} onClick={() => startFresh(s)} style={{ opacity: loadingFresh && loadingFresh !== s ? 0.5 : 1 }}>
-                {loadingFresh === s ? "Writing…" : s}
-              </button>
-            ))}
-          </div>
-          {freshErr && <div className="alert alert-error" style={{ marginTop: 10 }}>{freshErr}</div>}
-          <div style={{ color: "var(--text-muted)", fontSize: 12, marginTop: 10 }}>
-            Written by AI, so double-check anything that looks wrong against your textbook.
-          </div>
-        </div>
-
-        <div className="card" style={{ padding: 16, marginTop: 14 }}>
-          <div style={{ fontWeight: 800, color: "var(--text)", fontSize: 16, marginBottom: 8 }}>Official sources</div>
-          {cfg.links.map(([t, u]) => (
-            <a key={u} href={u} target="_blank" rel="noopener noreferrer" style={{ display: "block", padding: "9px 0", fontSize: 14, color: "var(--accent)", fontWeight: 600, borderTop: "1px solid var(--border)" }}>
-              {t} ↗
-            </a>
-          ))}
-          <div style={{ color: "var(--text-muted)", fontSize: 12, marginTop: 6 }}>
-            {cfg.warn}
-          </div>
-        </div>
-
-        {attempts.filter((a) => (a.market || "NG") === market).length > 0 && (
-          <>
-            <div style={{ fontWeight: 700, color: "var(--text)", margin: "22px 2px 8px" }}>Your recent attempts</div>
-            <div className="card" style={{ padding: 6 }}>
-              {attempts.filter((a) => (a.market || "NG") === market).slice(0, 6).map((a) => (
-                <div key={a.ts} style={{ display: "flex", justifyContent: "space-between", padding: "10px 10px", fontSize: 14, color: "var(--text)", borderBottom: "1px solid var(--border)" }}>
-                  <span>{a.mode}</span>
-                  <span style={{ color: "var(--text-muted)" }}>
-                    <b style={{ color: "var(--text)" }}>{a.score}/{a.total}</b> · {mmss(a.used)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-        <p style={{ color: "var(--text-muted)", fontSize: 12, marginTop: 14 }}>
-          Questions are written for Vreedits in the style of the exams, not copied from past papers. Attempts are saved on this device.
-        </p>
-      </div>
-    );
+  function save(extra = {}) {
+    try { localStorage.setItem(STORE, JSON.stringify({ preset, subjects, weak, days, perDay, len, start, mockDay, built: true, ...extra })); } catch {}
   }
 
-  /* ───────── exam ───────── */
-  if (phase === "exam") {
-    const q = qs[cur];
-    const answered = Object.keys(ans).length;
-    return (
-      <div style={wrap}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-          <div style={{ fontSize: 13, color: "var(--text-muted)", fontWeight: 600 }}>{mode} · {answered}/{qs.length} answered</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 800, fontVariantNumeric: "tabular-nums", color: left <= 60 ? "var(--danger)" : "var(--text)" }}>
-            <Clock size={16} /> {mmss(left)}
-          </div>
-        </div>
-        <div className="v-track" style={{ marginBottom: 14 }}>
-          <div className="v-fill" style={{ width: `${(answered / qs.length) * 100}%` }} />
-        </div>
+  const orderedDays = DAYS.filter((d) => days.includes(d));
+  const { plan, counts } = useMemo(
+    () => (subjects.length && orderedDays.length ? buildPlan({ subjects, weak, days: orderedDays, perDay, mockDay }) : { plan: {}, counts: {} }),
+    [subjects, weak, days, perDay, mockDay] // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const [sh, sm] = start.split(":").map(Number);
+  const startMin = (sh || 0) * 60 + (sm || 0);
+  const slotStart = (k) => startMin + k * (len + 10);
+  const colorOf = (s) => (s === "MOCK" ? "hsl(0, 0%, 28%)" : colorFor(subjects.indexOf(s)));
 
-        <div className="card" style={{ padding: 16 }} key={cur}>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--text-muted)", marginBottom: 8 }}>
-            <span>Question {cur + 1} of {qs.length} · {q.sub}</span>
-            <button onClick={() => setFlags((f) => ({ ...f, [cur]: !f[cur] }))} style={{ display: "flex", alignItems: "center", gap: 4, color: flags[cur] ? "var(--accent)" : "var(--text-muted)", fontWeight: 700 }}>
-              <Flag size={14} fill={flags[cur] ? "currentColor" : "none"} /> {flags[cur] ? "Flagged" : "Flag"}
-            </button>
-          </div>
-          <div style={{ fontSize: 17, fontWeight: 700, color: "var(--text)", marginBottom: 14, lineHeight: 1.4 }}>{q.q}</div>
-          <div style={{ display: "grid", gap: 10 }}>
-            {q.o.map((t, n) => {
-              const on = ans[cur] === n;
-              return (
-                <button
-                  key={n}
-                  className="raise"
-                  onClick={() => { setAns((a) => ({ ...a, [cur]: n })); try { navigator.vibrate && navigator.vibrate(10); } catch {} }}
-                  style={{ textAlign: "left", padding: "12px 14px", fontWeight: 600, color: "var(--text)", display: "flex", gap: 10, alignItems: "center", borderColor: on ? "var(--accent)" : undefined, background: on ? "var(--accent-soft)" : undefined }}
-                >
-                  <span style={{ width: 24, height: 24, borderRadius: 999, background: on ? "var(--accent)" : "var(--surface-2)", color: on ? "#fff" : "var(--text-muted)", display: "grid", placeItems: "center", fontSize: 12, fontWeight: 800, flexShrink: 0 }}>
-                    {"ABCD"[n]}
-                  </span>
-                  {t}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
-          <button className="btn-soft" disabled={cur === 0} onClick={() => setCur(cur - 1)} style={{ flex: 1, opacity: cur === 0 ? 0.5 : 1, display: "flex", justifyContent: "center", alignItems: "center", gap: 4 }}>
-            <ChevronLeft size={16} /> Back
-          </button>
-          {cur < qs.length - 1 ? (
-            <button className="btn-primary" onClick={() => setCur(cur + 1)} style={{ flex: 1 }}>Next <ChevronRight size={16} /></button>
-          ) : (
-            <button className="btn-primary" onClick={() => setConfirm(true)} style={{ flex: 1 }}>Finish</button>
-          )}
-        </div>
-
-        <div style={{ margin: "18px 2px 8px", fontSize: 13, fontWeight: 700, color: "var(--text)" }}>Question palette</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: 6 }}>
-          {qs.map((_, i) => (
-            <button key={i} onClick={() => setCur(i)} style={{
-              height: 34, borderRadius: 10, fontWeight: 700, fontSize: 13,
-              border: `2px solid ${i === cur ? "var(--accent)" : flags[i] ? "#f59e0b" : "var(--border)"}`,
-              background: ans[i] !== undefined ? "var(--accent-soft)" : "var(--surface-2)",
-              color: "var(--text)",
-            }}>{i + 1}</button>
-          ))}
-        </div>
-        <button className="btn-soft" style={{ marginTop: 16, width: "100%" }} onClick={() => setConfirm(true)}>Submit exam</button>
-
-        {confirm && (
-          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "grid", placeItems: "center", zIndex: 100, padding: 20 }}>
-            <div className="card pop" style={{ padding: 20, maxWidth: 340, width: "100%", background: "var(--surface)" }}>
-              <div style={{ fontWeight: 800, fontSize: 18, color: "var(--text)" }}>Submit now?</div>
-              <p style={{ color: "var(--text-muted)", fontSize: 14, margin: "8px 0 16px" }}>
-                You answered {answered} of {qs.length}.{answered < qs.length && " Unanswered questions count as wrong."}
-                {Object.values(flags).some(Boolean) && " You still have flagged questions."}
-              </p>
-              <div style={{ display: "flex", gap: 10 }}>
-                <button className="btn-soft" style={{ flex: 1 }} onClick={() => setConfirm(false)}>Keep going</button>
-                <button className="btn-primary" style={{ flex: 1 }} onClick={submit}>Submit</button>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    );
+  const toggle = (arr, set, v) => set(arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
+  function choosePreset(p) { setPreset(p); setSubjects(PRESETS[p]); setWeak([]); setBuilt(false); }
+  function addCustom() {
+    const v = custom.trim().slice(0, 24);
+    if (v && !subjects.includes(v) && subjects.length < 10) setSubjects([...subjects, v]);
+    setCustom("");
   }
 
-  /* ───────── result ───────── */
-  const score = qs.filter((q, i) => ans[i] === q.a).length;
-  const pct = Math.round((score / qs.length) * 100);
-  const bySub = {};
-  qs.forEach((q, i) => {
-    bySub[q.sub] = bySub[q.sub] || { right: 0, total: 0 };
-    bySub[q.sub].total++;
-    if (ans[i] === q.a) bySub[q.sub].right++;
-  });
-  const subs = Object.entries(bySub).sort((a, b) => a[1].right / a[1].total - b[1].right / b[1].total);
-  const weakest = subs[0];
+  // Draws the timetable as a picture
+  function draw() {
+    const cols = orderedDays.length, W = 1200, pad = 40, head = 120, rowH = 90, tcol = 150;
+    const H = head + perDay * rowH + 90 + Math.ceil(subjects.length / 4) * 40;
+    const c = canvasRef.current || document.createElement("canvas");
+    c.width = W; c.height = H;
+    const g = c.getContext("2d");
+    const grad = g.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, "#16062a"); grad.addColorStop(1, "#5a0b86");
+    g.fillStyle = grad; g.fillRect(0, 0, W, H);
+    g.fillStyle = "#fff"; g.font = "bold 44px sans-serif"; g.fillText("My study timetable", pad, 70);
+    g.font = "22px sans-serif"; g.fillStyle = "#d9b8f0"; g.fillText("Made on Vreedits", pad, 102);
+    const cw = (W - pad * 2 - tcol) / cols;
+    orderedDays.forEach((d, i) => {
+      g.fillStyle = "#fff"; g.font = "bold 24px sans-serif";
+      g.fillText(d, pad + tcol + i * cw + 10, head - 12);
+    });
+    for (let k = 0; k < perDay; k++) {
+      const y = head + k * rowH;
+      g.fillStyle = "#d9b8f0"; g.font = "20px sans-serif";
+      g.fillText(fmt(slotStart(k)), pad, y + 52);
+      orderedDays.forEach((d, i) => {
+        const s = plan[d][k];
+        const x = pad + tcol + i * cw + 4;
+        g.fillStyle = colorOf(s);
+        g.beginPath(); g.roundRect ? g.roundRect(x, y + 6, cw - 8, rowH - 12, 14) : g.rect(x, y + 6, cw - 8, rowH - 12); g.fill();
+        g.fillStyle = "#fff"; g.font = "bold 21px sans-serif";
+        const label = s === "MOCK" ? "Mock exam" : s;
+        g.fillText(label.length > 13 ? label.slice(0, 12) + "…" : label, x + 12, y + 54);
+      });
+    }
+    let ly = head + perDay * rowH + 40;
+    subjects.forEach((s, i) => {
+      const lx = pad + (i % 4) * 280;
+      if (i % 4 === 0 && i > 0) ly += 40;
+      g.fillStyle = colorOf(s); g.fillRect(lx, ly - 18, 22, 22);
+      g.fillStyle = "#fff"; g.font = "20px sans-serif"; g.fillText(s, lx + 32, ly);
+    });
+    return c;
+  }
+
+  async function download() {
+    const c = draw();
+    const a = document.createElement("a");
+    a.href = c.toDataURL("image/png"); a.download = "vreedits-timetable.png";
+    document.body.appendChild(a); a.click(); a.remove();
+    setMsg("Saved to your downloads.");
+  }
+  async function share() {
+    const c = draw();
+    try {
+      const blob = await new Promise((r) => c.toBlob(r, "image/png"));
+      const file = new File([blob], "vreedits-timetable.png", { type: "image/png" });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: "My study timetable" });
+      } else { await download(); }
+    } catch {}
+  }
+
+  const wrap = { maxWidth: 520, margin: "0 auto", padding: "16px 16px 40px" };
+  const chip = (on) => ({ padding: "7px 12px", borderRadius: 999, fontSize: 13, fontWeight: 700, border: "1px solid var(--border)", background: on ? "var(--accent)" : "var(--surface-2)", color: on ? "#fff" : "var(--text)" });
 
   return (
     <div style={wrap}>
-      <div className="card rise" style={{ padding: 20, textAlign: "center" }}>
-        <div style={{ fontSize: 13, color: "var(--text-muted)", fontWeight: 600 }}>{mode}</div>
-        <div style={{ fontSize: 44, fontWeight: 800, color: "var(--text)" }}>{score}/{qs.length}</div>
-        <div style={{ color: "var(--text-muted)" }}>{pct}% · time {mmss(usedSecs)}</div>
-        {weakest && weakest[1].right < weakest[1].total && (
-          <p style={{ marginTop: 12, fontSize: 14, color: "var(--text)" }}>
-            {subs.length > 1
-              ? <>Syna says: start with <b>{weakest[0]}</b> next. You got {weakest[1].right} of {weakest[1].total} there.</>
-              : <>Syna says: read the explanations below for the ones you missed, then try again.</>}
-          </p>
-        )}
-      </div>
+      <h1 style={{ fontSize: 24, fontWeight: 800, color: "var(--text)", margin: "4px 0 4px" }}>Timetable maker</h1>
+      <p style={{ color: "var(--text-muted)", fontSize: 14, margin: "0 0 14px" }}>
+        Pick your subjects and times. Vreedits draws your week, and you can save it as a picture.
+      </p>
 
-      {subs.length > 1 && (
-        <div className="card" style={{ padding: 16, marginTop: 14 }}>
-          <div style={{ fontWeight: 800, color: "var(--text)", marginBottom: 10 }}>By subject</div>
-          {subs.map(([s, v]) => (
-            <div key={s} style={{ marginBottom: 10 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "var(--text)", marginBottom: 4 }}>
-                <span>{s}</span><span>{v.right}/{v.total}</span>
-              </div>
-              <div className="v-track"><div className="v-fill" style={{ width: `${(v.right / v.total) * 100}%` }} /></div>
-            </div>
+      <div className="card" style={{ padding: 16 }}>
+        <div style={{ fontWeight: 800, color: "var(--text)", marginBottom: 8 }}>1. Preparing for</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {Object.keys(PRESETS).map((p) => (
+            <button key={p} style={chip(p === preset)} onClick={() => choosePreset(p)}>{p}</button>
           ))}
         </div>
+
+        <div style={{ fontWeight: 800, color: "var(--text)", margin: "16px 0 4px" }}>2. Subjects</div>
+        <div style={{ color: "var(--text-muted)", fontSize: 12, marginBottom: 8 }}>Tap ★ on the ones you find hard. They get more sessions.</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {subjects.map((s, i) => (
+            <span key={s} style={{ ...chip(false), display: "inline-flex", alignItems: "center", gap: 6, borderColor: colorFor(i), }}>
+              <span style={{ width: 10, height: 10, borderRadius: 3, background: colorFor(i) }} />
+              {s}
+              <button aria-label={`Hard: ${s}`} onClick={() => { toggle(weak, setWeak, s); setBuilt(false); }} style={{ color: weak.includes(s) ? "#f5b301" : "var(--text-muted)" }}>
+                <Star size={15} fill={weak.includes(s) ? "#f5b301" : "none"} />
+              </button>
+              <button aria-label={`Remove ${s}`} onClick={() => { setSubjects(subjects.filter((x) => x !== s)); setWeak(weak.filter((x) => x !== s)); setBuilt(false); }} style={{ color: "var(--text-muted)", fontWeight: 800 }}>×</button>
+            </span>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+          <input className="input" style={{ paddingLeft: 12 }} placeholder="Add a subject" value={custom} maxLength={24}
+            onChange={(e) => setCustom(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addCustom()} />
+          <button className="btn-soft" onClick={addCustom}>Add</button>
+        </div>
+
+        <div style={{ fontWeight: 800, color: "var(--text)", margin: "16px 0 8px" }}>3. Days you can study</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {DAYS.map((d) => (<button key={d} style={chip(days.includes(d))} onClick={() => { toggle(days, setDays, d); setBuilt(false); }}>{d}</button>))}
+        </div>
+
+        <div style={{ fontWeight: 800, color: "var(--text)", margin: "16px 0 8px" }}>4. Time</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+          <label style={{ fontSize: 12, color: "var(--text-muted)" }}>Start
+            <input className="input" type="time" style={{ paddingLeft: 10, marginTop: 4 }} value={start} onChange={(e) => { setStart(e.target.value); setBuilt(false); }} />
+          </label>
+          <label style={{ fontSize: 12, color: "var(--text-muted)" }}>Sessions/day
+            <select className="input" style={{ paddingLeft: 10, marginTop: 4 }} value={perDay} onChange={(e) => { setPerDay(Number(e.target.value)); setBuilt(false); }}>
+              {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </label>
+          <label style={{ fontSize: 12, color: "var(--text-muted)" }}>Minutes each
+            <select className="input" style={{ paddingLeft: 10, marginTop: 4 }} value={len} onChange={(e) => { setLen(Number(e.target.value)); setBuilt(false); }}>
+              {[30, 45, 60, 90].map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </label>
+        </div>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, fontSize: 14, color: "var(--text)" }}>
+          <input type="checkbox" checked={mockDay} onChange={(e) => { setMockDay(e.target.checked); setBuilt(false); }} />
+          Make the last day a mock exam day (use Exam practice)
+        </label>
+
+        <button className="btn-primary" style={{ marginTop: 16 }} disabled={!subjects.length || !orderedDays.length}
+          onClick={() => { setBuilt(true); save({ built: true }); setMsg(""); }}>
+          Build my timetable
+        </button>
+      </div>
+
+      {built && subjects.length > 0 && orderedDays.length > 0 && (
+        <div className="card rise" style={{ padding: 14, marginTop: 14 }}>
+          <div style={{ fontWeight: 800, color: "var(--text)", marginBottom: 10 }}>Your week</div>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ borderCollapse: "separate", borderSpacing: 4, minWidth: 100 + orderedDays.length * 78, width: "100%" }}>
+              <thead>
+                <tr>
+                  <th />
+                  {orderedDays.map((d) => <th key={d} style={{ fontSize: 12, color: "var(--text)", fontWeight: 800, padding: 4 }}>{d}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {Array.from({ length: perDay }).map((_, k) => (
+                  <tr key={k}>
+                    <td style={{ fontSize: 11, color: "var(--text-muted)", whiteSpace: "nowrap", paddingRight: 6 }}>{fmt(slotStart(k))}</td>
+                    {orderedDays.map((d) => {
+                      const s = plan[d][k];
+                      return (
+                        <td key={d} style={{ background: colorOf(s), color: "#fff", borderRadius: 10, fontSize: 11.5, fontWeight: 700, textAlign: "center", padding: "10px 4px", boxShadow: "0 2px 0 rgba(0,0,0,0.3)" }}>
+                          {s === "MOCK" ? "Mock exam" : s}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 10 }}>
+            Each session is {len} minutes with a 10 minute break. Slide sideways if it is wide.
+          </div>
+          <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+            <button className="btn-soft" style={{ flex: 1, display: "flex", justifyContent: "center", alignItems: "center", gap: 6 }} onClick={download}><Download size={15} /> Save picture</button>
+            <button className="btn-primary" style={{ flex: 1 }} onClick={share}><Share2 size={15} /> Share</button>
+          </div>
+          {msg && <div className="alert alert-success" style={{ marginTop: 10 }}><Check size={14} />{msg}</div>}
+        </div>
       )}
-
-      <div style={{ fontWeight: 800, color: "var(--text)", margin: "18px 2px 8px" }}>Review with Syna</div>
-      <div style={{ display: "grid", gap: 10 }}>
-        {qs.map((q, i) => {
-          const ok = ans[i] === q.a;
-          return (
-            <div key={i} className="card" style={{ padding: 14 }}>
-              <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-                {ok ? <CheckCircle2 size={18} color="var(--success)" style={{ flexShrink: 0, marginTop: 2 }} /> : <XCircle size={18} color="var(--danger)" style={{ flexShrink: 0, marginTop: 2 }} />}
-                <div style={{ fontWeight: 700, color: "var(--text)", fontSize: 14 }}>{q.q}</div>
-              </div>
-              <div style={{ fontSize: 13, marginTop: 6, color: "var(--text-muted)" }}>
-                {ans[i] === undefined ? "You did not answer. " : !ok ? `You chose: ${q.o[ans[i]]}. ` : ""}
-                Correct answer: <b style={{ color: "var(--text)" }}>{q.o[q.a]}</b>
-              </div>
-              <div style={{ fontSize: 13, marginTop: 4, color: "var(--text)" }}>{q.why}</div>
-            </div>
-          );
-        })}
-      </div>
-
-      <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
-        <button className="btn-soft" style={{ flex: 1 }} onClick={() => setPhase("setup")}>Back</button>
-        <button className="btn-primary" style={{ flex: 1 }} onClick={() => { retryRef.current && retryRef.current(); }}>Try again</button>
-      </div>
+      <canvas ref={canvasRef} style={{ display: "none" }} />
     </div>
   );
 }
