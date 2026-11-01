@@ -33,6 +33,15 @@
   --success: hsl(171, 65%, 34%);
   --success-soft: hsla(171, 65%, 34%, 0.12);
   --shadow: 0 16px 44px hsla(280, 55%, 40%, 0.2);
+
+  /* premium depth tokens */
+  --btn-edge: hsl(297, 92%, 22%);
+  --btn-hi: rgba(255, 255, 255, 0.38);
+  --clay-top: rgba(255, 255, 255, 0.82);
+  --clay-bottom: rgba(255, 255, 255, 0.5);
+  --clay-rim: rgba(255, 255, 255, 0.9);
+  --clay-drop: hsla(280, 60%, 35%, 0.16);
+  --pressed: inset 0 2px 5px hsla(275, 60%, 30%, 0.18);
 }
 
 /* ───────── DARK MODE — Royal Violet, graded (blue-violet → magenta-violet) ───────── */
@@ -71,6 +80,15 @@
   --success: hsl(171, 60%, 52%);
   --success-soft: hsla(171, 60%, 52%, 0.12);
   --shadow: 0 16px 44px rgba(0, 0, 0, 0.55);
+
+  /* premium depth tokens */
+  --btn-edge: hsl(297, 90%, 24%);
+  --btn-hi: rgba(255, 255, 255, 0.3);
+  --clay-top: hsla(274, 52%, 20%, 0.92);
+  --clay-bottom: hsla(272, 56%, 11%, 0.92);
+  --clay-rim: rgba(255, 255, 255, 0.12);
+  --clay-drop: rgba(0, 0, 0, 0.5);
+  --pressed: inset 0 2px 6px rgba(0, 0, 0, 0.5);
 }
 
 body {
@@ -113,46 +131,71 @@ body::before {
 }
 
 .card {
-  background: var(--glass);
+  position: relative;
+  background: linear-gradient(180deg, var(--clay-top) 0%, var(--clay-bottom) 100%);
   border: 1px solid var(--border);
-  border-radius: 18px;
-  box-shadow: var(--shadow);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  border-radius: 24px;
+  box-shadow:
+    inset 0 1px 0 var(--clay-rim),
+    0 2px 0 var(--clay-drop),
+    0 14px 30px -10px var(--clay-drop);
 }
 
 .input {
   width: 100%;
-  padding: 11px 12px 11px 38px;
-  border-radius: 10px;
+  padding: 12px 12px 12px 38px;
+  border-radius: 14px;
   border: 1px solid var(--border);
   background: var(--surface-2);
+  box-shadow: var(--pressed);
   color: var(--text);
   font-size: 14px;
   outline: none;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
 }
 .input:focus {
   border-color: var(--accent);
+  box-shadow: var(--pressed), 0 0 0 3px var(--accent-soft);
 }
 
 .btn-primary {
+  position: relative;
   width: 100%;
-  padding: 12px;
-  border-radius: 10px;
+  padding: 13px 14px;
+  border-radius: 16px;
   background: var(--accent-btn);
   color: white;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: 0.01em;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  transition: filter 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+  border: none;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.25);
+  box-shadow:
+    inset 0 1px 0 var(--btn-hi),
+    0 4px 0 var(--btn-edge),
+    0 10px 18px -4px var(--accent-soft);
+  transform: translateY(0);
+  transition: transform 0.08s ease, box-shadow 0.08s ease, filter 0.15s ease;
 }
-.btn-primary:hover { filter: brightness(1.08); box-shadow: 0 6px 18px var(--accent-soft); }
-.btn-primary:active { transform: scale(0.98); filter: brightness(0.95); }
-.btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+.btn-primary:hover { filter: brightness(1.07); }
+.btn-primary:active {
+  transform: translateY(3px);
+  filter: brightness(0.97);
+  box-shadow:
+    inset 0 1px 0 var(--btn-hi),
+    0 1px 0 var(--btn-edge),
+    0 3px 8px -4px var(--accent-soft);
+}
+.btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: inset 0 1px 0 var(--btn-hi), 0 4px 0 var(--btn-edge);
+}
 
 .btn-ghost {
   display: inline-flex;
@@ -195,9 +238,7 @@ body::before {
   background: var(--glass);
   border: 1px solid var(--border);
   border-radius: 999px;
-  box-shadow: var(--shadow);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  box-shadow: var(--pressed), 0 8px 20px -10px var(--clay-drop);
 }
 .v-search input {
   flex: 1;
@@ -236,3 +277,112 @@ body::before {
 .mg .mg-ck, .mg .mg-qboard, .mg .mg-kk { grid-auto-rows: minmax(0, 1fr); }
 .mg .mg-ck { grid-template-columns: repeat(8, minmax(0, 1fr)); grid-template-rows: repeat(8, minmax(0, 1fr)); }
 .mg .mg-ckc, .mg .mg-qcell, .mg .mg-kkc { min-width: 0; min-height: 0; }
+
+/* ═════════════════ PREMIUM LAYER (depth, motion, nav) ═════════════════ */
+
+/* Soft glow behind everything: static, so it costs nothing while scrolling */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(60% 40% at 15% 0%, rgba(255, 255, 255, 0.28), transparent 70%),
+    radial-gradient(50% 35% at 90% 100%, hsla(297, 90%, 60%, 0.18), transparent 70%);
+}
+
+/* Bottom tab bar: glass only here, solid colour if glass is not supported */
+body .vreedits-tabbar {
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -10px 24px -14px var(--clay-drop);
+}
+@supports (backdrop-filter: blur(1px)) {
+  body .vreedits-tabbar {
+    background: var(--glass);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+}
+body .vreedits-tab.active .vreedits-tab-icon {
+  background: var(--accent-btn);
+  color: #fff;
+  opacity: 1;
+  box-shadow: inset 0 1px 0 var(--btn-hi), 0 3px 0 var(--btn-edge);
+  transform: translateY(-2px);
+}
+body .vreedits-tab.active .vreedits-tab-icon svg { color: #fff; }
+
+/* Raised tiles: use class "raise" on anything that should feel tappable and solid */
+.raise {
+  border-radius: 20px;
+  background: linear-gradient(180deg, var(--clay-top), var(--clay-bottom));
+  border: 1px solid var(--border);
+  box-shadow: inset 0 1px 0 var(--clay-rim), 0 4px 0 var(--clay-drop);
+  transition: transform 0.08s ease, box-shadow 0.08s ease;
+}
+.raise:active {
+  transform: translateY(3px);
+  box-shadow: inset 0 1px 0 var(--clay-rim), 0 1px 0 var(--clay-drop);
+}
+
+/* Secondary chunky button */
+.btn-soft {
+  padding: 11px 16px;
+  border-radius: 14px;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid var(--border);
+  box-shadow: 0 3px 0 var(--clay-drop);
+  transition: transform 0.08s ease, box-shadow 0.08s ease;
+}
+.btn-soft:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--clay-drop); }
+
+/* Progress bars: pressed track, glossy fill */
+.v-track {
+  height: 12px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  box-shadow: var(--pressed);
+  overflow: hidden;
+}
+.v-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent-btn);
+  box-shadow: inset 0 2px 0 var(--btn-hi);
+  transition: width 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* Entrance motion (transform + opacity only). Use class "rise" and style="--i:n" for stagger */
+@keyframes v-rise {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.rise { animation: v-rise 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) both; animation-delay: calc(var(--i, 0) * 60ms); }
+
+@keyframes v-pop {
+  0%   { transform: scale(0.6); opacity: 0; }
+  60%  { transform: scale(1.12); opacity: 1; }
+  100% { transform: scale(1); }
+}
+.pop { animation: v-pop 0.35s ease both; }
+
+/* Syna blink/bob helpers for the mascot SVG */
+@keyframes v-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+@keyframes v-blink { 0%, 92%, 100% { transform: scaleY(1); } 96% { transform: scaleY(0.1); } }
+.syna-bob { animation: v-bob 3s ease-in-out infinite; }
+.syna-eye { transform-box: fill-box; transform-origin: center; animation: v-blink 4.5s infinite; }
+
+/* Weak phones and people who ask for less motion: keep the depth, drop the motion and blur */
+@media (prefers-reduced-motion: reduce), (prefers-reduced-data: reduce) {
+  .rise, .pop, .syna-bob, .syna-eye { animation: none !important; }
+  .btn-primary, .raise, .btn-soft, .v-fill { transition: none !important; }
+  body .vreedits-tabbar { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; background: var(--surface) !important; }
+}
+html.lite .rise, html.lite .pop, html.lite .syna-bob, html.lite .syna-eye { animation: none !important; }
+html.lite .v-search, html.lite body .vreedits-tabbar { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+html.lite body::after { display: none; }
