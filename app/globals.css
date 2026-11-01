@@ -386,3 +386,28 @@ body .vreedits-tab.active .vreedits-tab-icon svg { color: #fff; }
 html.lite .rise, html.lite .pop, html.lite .syna-bob, html.lite .syna-eye { animation: none !important; }
 html.lite .v-search, html.lite body .vreedits-tabbar { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
 html.lite body::after { display: none; }
+
+/* ═════════════════ SYNA THINKING ORB — smoother, no clipping, lighter on weak phones ═════════════════
+   These sit here (not inside SynaChat.js) and use "body" in front so they win over the chat's own
+   styles. The old version clipped the glow and pulse rings inside the pill, and animated blur filters,
+   which is what looked glitchy. */
+body .syna-think { overflow: visible; padding: 12px 20px 12px 16px; }
+body .syna-think::after { display: none; }
+body .syna-glow { filter: none; inset: -10px; opacity: 0.35; }
+body .syna-pulse { animation-name: synaPulseSoft; }
+body .syna-ring, body .syna-sat { will-change: transform; }
+body .syna-label {
+  background: none;
+  -webkit-text-fill-color: var(--text);
+  color: var(--text);
+  animation: none;
+}
+/* Blur-based entrance made every message flicker; use the plain rise instead */
+body .syna-think, body .syna-in { animation: v-rise 0.3s ease both; }
+@keyframes synaPulseSoft {
+  0%   { transform: scale(0.95); opacity: 0.45; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  body .syna-think, body .syna-in { animation: none !important; }
+}
