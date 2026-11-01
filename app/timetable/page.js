@@ -197,7 +197,7 @@ export default function TimetablePage() {
 
   return (
     <div style={wrap}>
-      <h1 style={{ fontSize: 24, fontWeight: 800, color: "var(--text)", margin: "4px 0 4px" }}>Timetable maker</h1>
+      <h1 style={{ fontFamily: "var(--font-display)", fontSize: 42, fontWeight: 400, lineHeight: 1.05, color: "var(--text)", margin: "2px 0 6px" }}>Timetable maker</h1>
       <p style={{ color: "var(--text-muted)", fontSize: 14, margin: "0 0 14px" }}>
         Keep as many timetables as you like. Tap any box in your week to change it or clear it.
       </p>
