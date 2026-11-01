@@ -6,7 +6,11 @@ export const runtime = "nodejs";
 
 // Fresh exam-style questions written by Syna. Logged-in users only, and a small
 // per-user limit protects the AI quota.
-const SUBJECTS = ["English", "Mathematics", "Biology", "Physics", "Chemistry"];
+const SUBJECTS_BY = {
+  NG: ["English", "Mathematics", "Biology", "Physics", "Chemistry"],
+  GB: ["Mathematics", "English", "Biology", "Chemistry", "Physics"],
+  US: ["Math", "Reading & Writing", "Science"],
+};
 const hits = new Map(); // userId -> [timestamps]
 const LIMIT = 15;
 const WINDOW = 60 * 60 * 1000;
@@ -35,18 +39,24 @@ export async function POST(req) {
 
   let body;
   try { body = await req.json(); } catch { return NextResponse.json({ error: "bad request" }, { status: 400 }); }
+  const market = SUBJECTS_BY[body.market] ? body.market : "NG";
   const subject = String(body.subject || "");
-  if (!SUBJECTS.includes(subject)) return NextResponse.json({ error: "bad subject" }, { status: 400 });
+  if (!SUBJECTS_BY[market].includes(subject)) return NextResponse.json({ error: "bad subject" }, { status: 400 });
   const topic = String(body.topic || "").replace(/[^\w\s,.&'/-]/g, "").slice(0, 60).trim();
 
-  const prompt = `You are an experienced Nigerian secondary-school examiner writing practice questions in the style of the JAMB UTME (and WAEC/NECO) for ${subject}${topic ? `, on the topic: ${topic}` : ", covering a spread of topics from the UTME syllabus"}.
+  const WHO = {
+    NG: `an experienced Nigerian secondary-school examiner writing practice questions in the style of the JAMB UTME (and WAEC/NECO) for ${subject}`,
+    GB: `an experienced UK examiner writing GCSE-style practice questions (AQA/Edexcel style, with some A-level-style stretch) for ${subject}, using British spelling`,
+    US: `an experienced SAT and ACT item writer writing practice questions for ${subject}, in the style of the digital SAT and the ACT, using American spelling`,
+  }[market];
+  const prompt = `You are ${WHO}${topic ? `, on the topic: ${topic}` : ", covering a spread of topics from the usual syllabus"}.
 Rules:
-- Write exactly 10 multiple-choice questions at UTME difficulty, with Nigerian context where natural.
+- Write exactly 10 multiple-choice questions at the real exam's difficulty, with local context where natural.
 - Each question has exactly 4 different options and exactly ONE correct option.
 - Solve each question carefully and double-check the correct option before you write it down. Do not write a question you are not certain about.
 - Do not copy real past questions. Write new ones.
 - "why" is one or two short sentences explaining the correct answer.
-- Write maths in plain classroom signs a Nigerian secondary-school student sees in a textbook. Use × for multiply and ÷ for divide. Write powers with superscript digits (x², 2³), roots as √ (for example √36, ∛27), fractions as 3/4, and π for pi. Do NOT use ^, *, LaTeX, backslashes, dollar signs or code-style notation. Do not use fractional powers like 27^(1/3); write ∛27 instead.
+- Write maths in plain classroom signs a student sees in a textbook. Use × for multiply and ÷ for divide. Write powers with superscript digits (x², 2³), roots as √ (for example √36, ∛27), fractions as 3/4, and π for pi. Do NOT use ^, *, LaTeX, backslashes, dollar signs or code-style notation. Do not use fractional powers like 27^(1/3); write ∛27 instead.
 Return ONLY JSON, with no other text, in exactly this shape:
 {"questions":[{"q":"question text","options":["A","B","C","D"],"answer":0,"why":"short explanation"}]}
 "answer" is the index (0 to 3) of the correct option.`;
