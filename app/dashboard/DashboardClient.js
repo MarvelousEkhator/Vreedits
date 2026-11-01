@@ -125,6 +125,7 @@ function greetingFor(hour) {
 
 const SHORTCUTS = [
   { label: "Exam practice", sub: "Timed, like the real test", href: "/practice", gloss: "school" },
+  { label: "Timetable", sub: "Draw your study week", href: "/timetable", gloss: "planner" },
   { label: "Ask Syna", sub: "Chat or upload notes", href: "/ai-tools/chat", gloss: "ai-tools" },
   { label: "Study planner", sub: "Plan your revision", href: "/ai-tools/study-planner", gloss: "planner" },
   { label: "Summarizer", sub: "Shrink long notes", href: "/ai-tools/summarizer", gloss: "summarizer" },
