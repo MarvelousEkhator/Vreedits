@@ -2648,7 +2648,8 @@ const TG_SHAPES = {
   P: [[0, 0], [2, 0], [3, 1], [1, 1]],
 };
 const TG_POOL = ["L", "L", "M", "S", "S", "Q", "P"];
-const TG_VIEW = { w: 16, h: 20, cx: 8, cy: 5.2, maxW: 12, maxH: 9 };
+// The board is 16 wide and 18 tall: the shape sits in the top half, the tray of loose pieces in the bottom half.
+const TG_VIEW = { w: 16, h: 18, cx: 8, cy: 4.6, maxW: 13, maxH: 8.2, divider: 9.5 };
 
 function tgCentroid(poly) {
   let x = 0, y = 0;
@@ -2696,8 +2697,8 @@ function tgFit(type, rot, flip, x, y) {
 // Where each piece starts in the tray: the biggest pieces get the roomy top row, small ones the bottom row.
 const TG_RADIUS = { L: 2.2, M: 1.6, P: 1.7, S: 1.1, Q: 1.1 };
 function tgTraySlots(types) {
-  const top = [[2.9, 13.2], [8, 13.2], [13.1, 13.2]];
-  const bottom = [[2.2, 17.6], [6.2, 17.6], [10.2, 17.6], [14, 17.6]];
+  const top = [[2.9, 11.9], [8, 11.9], [13.1, 11.9]];
+  const bottom = [[2.2, 15.9], [6.2, 15.9], [10.2, 15.9], [14, 15.9]];
   const order = types.map((t, i) => i).sort((a, b) => TG_RADIUS[types[b]] - TG_RADIUS[types[a]]);
   const out = [];
   order.forEach((idx, k) => { out[idx] = k < 3 ? top[k] : bottom[k - 3]; });
@@ -2853,6 +2854,26 @@ function tgSnap(poly, solPolys, limit) {
   }
   return best;
 }
+
+// True when two polygons are the same shape in the same orientation, wherever they sit.
+function tgSameShape(a, b) {
+  if (a.length !== b.length) return false;
+  const ca = tgCentroid(a), cb = tgCentroid(b);
+  return a.every(([x, y]) => b.some(([u, v]) => Math.hypot(u - cb[0] - (x - ca[0]), v - cb[1] - (y - ca[1])) < 0.02));
+}
+
+// If the piece is turned the right way and dropped near a matching spot, returns the move that locks it in exactly.
+function tgLock(poly, solPolys, limit) {
+  const c = tgCentroid(poly);
+  let best = null;
+  for (const sp of solPolys) {
+    if (!tgSameShape(poly, sp)) continue;
+    const s = tgCentroid(sp);
+    const d = Math.hypot(s[0] - c[0], s[1] - c[1]);
+    if (d < limit && (!best || d < best.d)) best = { d, dx: s[0] - c[0], dy: s[1] - c[1] };
+  }
+  return best;
+}
 // ==LOGIC-END==
 
 const TG_LEVELS = {
@@ -2860,17 +2881,26 @@ const TG_LEVELS = {
   medium: { count: 5, label: "Medium" },
   hard: { count: 7, label: "Hard" },
 };
-const TG_FILL = {
-  L: ["#c9a2ff", "#6d28d9"],
-  M: ["#f3a6e8", "#b81eb4"],
-  S: ["#a6e3ff", "#1f78c8"],
-  Q: ["#ffe08a", "#e0841a"],
-  P: ["#b9f0cf", "#1f9d6a"],
-};
+// Six colour sets. Every puzzle uses a different one from the puzzle before it.
+const TG_PALETTES = [
+  { name: "Candy", accent: "#a855f7", fill: { L: ["#c9a2ff", "#6d28d9"], M: ["#f3a6e8", "#b81eb4"], S: ["#a6e3ff", "#1f78c8"], Q: ["#ffe08a", "#e0841a"], P: ["#b9f0cf", "#1f9d6a"] } },
+  { name: "Ocean", accent: "#0ea5e9", fill: { L: ["#8fd3ff", "#0b5fa5"], M: ["#7ff0d8", "#0e8f7e"], S: ["#c4b5fd", "#5b3fd0"], Q: ["#fde68a", "#d97706"], P: ["#fda4af", "#be123c"] } },
+  { name: "Sunset", accent: "#f97316", fill: { L: ["#ffb38a", "#d6451b"], M: ["#ffd166", "#e09a00"], S: ["#f9a8d4", "#be185d"], Q: ["#fecaca", "#dc2626"], P: ["#fde68a", "#b45309"] } },
+  { name: "Forest", accent: "#22c55e", fill: { L: ["#86efac", "#15803d"], M: ["#bef264", "#4d7c0f"], S: ["#67e8f9", "#0e7490"], Q: ["#fcd34d", "#b45309"], P: ["#d8b4fe", "#7e22ce"] } },
+  { name: "Berry", accent: "#d946ef", fill: { L: ["#f0abfc", "#a21caf"], M: ["#fda4af", "#e11d48"], S: ["#a5b4fc", "#4338ca"], Q: ["#fde047", "#ca8a04"], P: ["#99f6e4", "#0f766e"] } },
+  { name: "Sky", accent: "#3b82f6", fill: { L: ["#93c5fd", "#1d4ed8"], M: ["#fdba74", "#c2410c"], S: ["#86efac", "#15803d"], Q: ["#f9a8d4", "#be185d"], P: ["#fde68a", "#a16207"] } },
+];
+function tgPaletteOf(seed) { return hashSeed(String(seed)) % TG_PALETTES.length; }
+function tgNextLevel(level) {
+  const keys = Object.keys(TG_LEVELS);
+  const i = keys.indexOf(level);
+  return i >= 0 && i < keys.length - 1 ? keys[i + 1] : null;
+}
+
 
 function pts(poly) { return poly.map((p) => `${p[0].toFixed(3)},${p[1].toFixed(3)}`).join(" "); }
 
-function TangramPlay({ level, seed, onNew }) {
+function TangramPlay({ level, seed, onNew, onNextLevel }) {
   const count = TG_LEVELS[level].count;
   const puzzle = useMemo(() => tgGenerateSafe(seed, count), [seed, count]);
   const saveKey = `tangram-${level}`;
@@ -2897,7 +2927,9 @@ function TangramPlay({ level, seed, onNew }) {
   const solPolys = useMemo(() => puzzle.sol.map((s) => s.poly), [puzzle]);
   const polys = pieces.map((p) => tgPlace(p.type, p.rot, p.flip, p.x, p.y));
   const coverage = useMemo(() => tgCoverage(solPolys, polys), [pieces]); // eslint-disable-line react-hooks/exhaustive-deps
-  const won = !dragging && coverage >= 0.975;
+  const won = !dragging && coverage >= 0.97;
+  const pal = TG_PALETTES[tgPaletteOf(seed)];
+  const winPal = TG_PALETTES[(tgPaletteOf(seed) + 1) % TG_PALETTES.length];
   const [seconds] = useClock(!paused && !won, saved ? saved.seconds || 0 : 0);
   const secRef = useRef(seconds);
   secRef.current = seconds;
@@ -2968,7 +3000,7 @@ function TangramPlay({ level, seed, onNew }) {
     setPieces((cur) => cur.map((x) => {
       if (x.id !== d.id) return x;
       const poly = tgPlace(x.type, x.rot, x.flip, x.x, x.y);
-      const s = tgSnap(poly, solPolys, 0.35);
+      const s = tgLock(poly, solPolys, 1.1) || tgSnap(poly, solPolys, 0.45);
       if (!s) return x;
       const [nx, ny] = tgFit(x.type, x.rot, x.flip, x.x + s.dx, x.y + s.dy);
       return { ...x, x: nx, y: ny };
@@ -3017,45 +3049,72 @@ function TangramPlay({ level, seed, onNew }) {
       <div className="mg-boardwrap">
         <svg
           ref={svgRef}
-          className="mg-tg"
+          className={`mg-tg ${won ? "won" : ""}`}
           viewBox={`0 0 ${TG_VIEW.w} ${TG_VIEW.h}`}
           onPointerMove={move}
           onPointerUp={up}
           onPointerCancel={up}
-          style={{ visibility: paused ? "hidden" : "visible" }}
+          style={{ visibility: paused ? "hidden" : "visible", background: `color-mix(in srgb, ${pal.accent} 13%, var(--surface))` }}
           role="img"
           aria-label="Tangram board. Drag the pieces to fill the shape."
         >
           <defs>
-            {Object.keys(TG_FILL).map((t) => (
+            {Object.keys(pal.fill).map((t) => (
               <linearGradient key={t} id={`mgtg-${t}`} x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0" stopColor={TG_FILL[t][0]} />
-                <stop offset="1" stopColor={TG_FILL[t][1]} />
+                <stop offset="0" stopColor={pal.fill[t][0]} />
+                <stop offset="1" stopColor={pal.fill[t][1]} />
+              </linearGradient>
+            ))}
+            {Object.keys(winPal.fill).map((t) => (
+              <linearGradient key={t} id={`mgtgw-${t}`} x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stopColor={winPal.fill[t][0]} />
+                <stop offset="1" stopColor={winPal.fill[t][1]} />
               </linearGradient>
             ))}
           </defs>
           <g className="mg-tg-sil">
             {solPolys.map((p, i) => <polygon key={i} points={pts(p)} />)}
           </g>
-          <line x1="0.5" x2={TG_VIEW.w - 0.5} y1="10.4" y2="10.4" className="mg-tg-line" />
-          {hint ? <polygon points={pts(hint.poly)} className="mg-tg-hint" stroke={TG_FILL[hint.type][1]} /> : null}
+          <line x1="0.5" x2={TG_VIEW.w - 0.5} y1={TG_VIEW.divider} y2={TG_VIEW.divider} className="mg-tg-line" />
+          {hint ? <polygon points={pts(hint.poly)} className="mg-tg-hint" stroke={pal.fill[hint.type][1]} /> : null}
           {pieces.map((p) => (
             <polygon
               key={p.id}
               points={pts(tgPlace(p.type, p.rot, p.flip, p.x, p.y))}
-              fill={`url(#mgtg-${p.type})`}
-              className={`mg-tg-piece ${sel === p.id ? "sel" : ""}`}
+              fill={`url(#${won ? "mgtgw" : "mgtg"}-${p.type})`}
+              className={`mg-tg-piece ${sel === p.id && !won ? "sel" : ""} ${won ? "win" : ""}`}
+              style={won ? { animationDelay: `${(p.id % 7) * 90}ms` } : undefined}
               onPointerDown={(e) => down(e, p.id)}
             />
           ))}
+          {won ? (
+            <g className="mg-tg-burst" pointerEvents="none">
+              {Array.from({ length: 14 }, (_, i) => {
+                const ang = (i / 14) * Math.PI * 2;
+                return (
+                  <circle
+                    key={i}
+                    cx={TG_VIEW.cx}
+                    cy={TG_VIEW.cy}
+                    r={i % 2 ? 0.16 : 0.24}
+                    fill={winPal.fill[["L", "M", "S", "Q", "P"][i % 5]][0]}
+                    style={{ "--tx": Math.cos(ang) * 0.9, "--ty": Math.sin(ang) * 0.65, animationDelay: `${i * 25}ms` }}
+                  />
+                );
+              })}
+            </g>
+          ) : null}
         </svg>
         {paused && !won && <PauseCover onResume={() => setPaused(false)} />}
       </div>
 
       {won ? (
         <>
-          <SolvedBanner title={`Solved in ${formatTime(seconds)}${hints ? ` with ${hints} hint${hints === 1 ? "" : "s"}` : ""}.`} text="Every piece is in place." />
-          <ToolRow><ToolBtn onClick={onNew} label="New puzzle"><RotateCw size={15} /> New puzzle</ToolBtn></ToolRow>
+          <SolvedBanner title={`Solved in ${formatTime(seconds)}${hints ? ` with ${hints} hint${hints === 1 ? "" : "s"}` : ""}.`} text="Every piece is in place. The next puzzle has a new shape and new colours." />
+          <ToolRow>
+            <ToolBtn onClick={onNew} label="New puzzle"><RotateCw size={15} /> New puzzle</ToolBtn>
+            {onNextLevel ? <ToolBtn onClick={onNextLevel} label="Try the next level">Next level →</ToolBtn> : null}
+          </ToolRow>
         </>
       ) : (
         <>
@@ -3081,9 +3140,9 @@ export function GameTangram({ onExit }) {
     const out = {};
     Object.keys(TG_LEVELS).forEach((k) => {
       const s = readSave(`tangram-${k}`);
-      // Saves from the old puzzle maker would not match the new shapes, so only keep new-style ones.
-      if (s && s.seed && !String(s.seed).startsWith("tgv2-")) clearSave(`tangram-${k}`);
-      out[k] = s && s.seed && String(s.seed).startsWith("tgv2-") ? s.seed : `tgv2-${k}-${day}-${Math.floor(Math.random() * 1e9).toString(36)}`;
+      // Saves from the older boards would not line up with the new layout, so only keep new-style ones.
+      if (s && s.seed && !String(s.seed).startsWith("tgv3-")) clearSave(`tangram-${k}`);
+      out[k] = s && s.seed && String(s.seed).startsWith("tgv3-") ? s.seed : `tgv3-${k}-${day}-${Math.floor(Math.random() * 1e9).toString(36)}`;
     });
     setSeeds(out);
   }, []);
@@ -3092,15 +3151,27 @@ export function GameTangram({ onExit }) {
   Object.keys(TG_LEVELS).forEach((k) => { if (rec.done && rec.done[k]) marks[k] = "✓"; });
   function fresh() {
     clearSave(`tangram-${level}`);
-    setSeeds((s) => ({ ...s, [level]: `tgv2-${level}-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6)}` }));
+    setSeeds((s) => {
+      // Keep drawing seeds until the colours differ from the puzzle we just had.
+      const before = tgPaletteOf(s[level]);
+      let next = "";
+      for (let i = 0; i < 20; i++) {
+        next = `tgv3-${level}-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e9).toString(36)}`;
+        if (tgPaletteOf(next) !== before) break;
+      }
+      return { ...s, [level]: next };
+    });
   }
+  const upNext = tgNextLevel(level);
   return (
     <GameFrame eyebrow="Spatial reasoning" title="Tangram" onExit={onExit}>
       <Segs value={level} onChange={setLevel} options={Object.keys(TG_LEVELS).map((k) => ({ id: k, label: TG_LEVELS[k].label }))} marks={marks} />
-      {seeds ? <TangramPlay key={`${level}-${seeds[level]}`} level={level} seed={seeds[level]} onNew={fresh} /> : null}
+      {seeds ? <TangramPlay key={`${level}-${seeds[level]}`} level={level} seed={seeds[level]} onNew={fresh} onNextLevel={upNext ? () => setLevel(upNext) : null} /> : null}
     </GameFrame>
   );
-}/* ═══════════════════════════ LOGIC GRID ═══════════════════════════ */
+}
+
+/* ═══════════════════════════ LOGIC GRID ═══════════════════════════ */
 // ==LOGIC-START==
 // Category 0 is an ordered one (days or times). An item's "group" is its position in that order,
 // so every group is one row of the finished table: one item from each category.
@@ -4069,12 +4140,18 @@ const GAMES_CSS = `
 .mg-dot { position: absolute; width: 26%; height: 26%; border-radius: 50%; background: rgba(255, 255, 255, .8); }
 
 /* tangram */
-.mg-tg { display: block; width: min(100%, 460px); margin: 0 auto; border-radius: 14px; background: var(--surface); border: 1px solid var(--border); touch-action: none; user-select: none; -webkit-user-select: none; }
-.mg-tg-sil polygon { fill: var(--text); fill-opacity: .82; stroke: var(--text); stroke-opacity: .82; stroke-width: .04; }
+.mg-tg { display: block; width: 100%; max-width: 460px; height: auto; max-height: max(340px, calc(100svh - 290px)); margin: 0 auto; border-radius: 14px; background: var(--surface); border: 1px solid var(--border); touch-action: none; user-select: none; -webkit-user-select: none; transition: background .4s ease; }
+.mg-tg-sil polygon { fill: var(--text); fill-opacity: .82; stroke: var(--text); stroke-opacity: .82; stroke-width: .04; transition: fill-opacity .5s ease; }
+.mg-tg.won .mg-tg-sil polygon { fill-opacity: .12; stroke-opacity: .12; }
 .mg-tg-line { stroke: var(--border); stroke-width: .05; stroke-dasharray: .3 .3; }
 .mg-tg-piece { stroke: rgba(255,255,255,.92); stroke-width: .07; stroke-linejoin: round; cursor: grab; }
 .mg-tg-piece.sel { stroke: #ffd666; stroke-width: .13; }
+.mg-tg-piece.win { stroke: #fff; stroke-width: .1; cursor: default; transform-box: fill-box; transform-origin: center; animation: mg-tg-pop .7s cubic-bezier(.3, 1.5, .5, 1) both; }
 .mg-tg-hint { fill: none; stroke-width: .1; stroke-dasharray: .25 .2; pointer-events: none; }
+.mg-tg-burst circle { transform-box: fill-box; transform-origin: center; animation: mg-tg-spark 1.1s ease-out both; }
+@keyframes mg-tg-pop { 0% { transform: scale(.82); } 55% { transform: scale(1.1); } 100% { transform: scale(1); } }
+@keyframes mg-tg-spark { 0% { transform: translate(0, 0) scale(.3); opacity: 1; } 100% { transform: translate(calc(var(--tx) * 7px), calc(var(--ty) * 7px)) scale(1.2); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .mg-tg-piece.win, .mg-tg-burst circle { animation: none; } }
 
 /* logic grid */
 .mg-clues { margin: 0 0 6px; padding: 12px 14px 12px 34px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border); font-size: 14px; line-height: 1.5; }
